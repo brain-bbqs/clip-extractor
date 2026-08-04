@@ -4,7 +4,7 @@
 
 # Clip Extractor
 
-**Live:** https://vibes.tlab.sh/clip-extractor/
+**Live:** https://clip-extractor.brain-bbqs.org
 
 A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmolab/sleap-io) for **selecting a frame range and extracting it as an upload-ready payload**. Load a video from a remote URL or a local file, optionally attach a SLEAP `.slp`, scrub to an in/out range, then extract the clip with [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) and package it — together with SLP-free annotation JSON — for a `POST` to a backend REST API.
 
