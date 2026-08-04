@@ -8,7 +8,7 @@ src/
   style.css
   lib/            # framework-free, unit-tested logic (video, pose, annotations, payload, ffmpeg)
   ui/             # small DOM helpers (typed element lookup, log, key/value grid)
-configs/          # vite/eslint/vitest/prettier config, kept out of the repo root
+configs/          # vite/tsconfig/eslint/vitest/prettier config, kept out of the repo root
 tests/unit/       # vitest specs for src/lib
 ```
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/assets/png/mark-612.png" alt="Clip Extractor logo" width="120">
+  <img src="src/assets/mark-612.png" alt="Clip Extractor logo" width="120">
 </p>
 
 # Clip Extractor
