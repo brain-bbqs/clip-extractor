@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="src/assets/mark-612.png" alt="Clip Extractor logo" width="120">
+</p>
+
 # Clip Extractor
 
 **Live:** https://vibes.tlab.sh/clip-extractor/
 
-A single-file video player built on [sleap-io.js](https://github.com/talmolab/sleap-io) for **selecting a frame range and extracting it as an upload-ready payload**. Load a video from a remote URL or a local file, optionally attach a SLEAP `.slp`, scrub to an in/out range, then extract the clip with [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) and package it — together with SLP-free annotation JSON — for a `POST` to a backend REST API.
+A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmolab/sleap-io) for **selecting a frame range and extracting it as an upload-ready payload**. Load a video from a remote URL or a local file, optionally attach a SLEAP `.slp`, scrub to an in/out range, then extract the clip with [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) and package it — together with SLP-free annotation JSON — for a `POST` to a backend REST API.
 
 ## Features
 
@@ -13,7 +17,7 @@ A single-file video player built on [sleap-io.js](https://github.com/talmolab/sl
 - **Frame-accurate player** — play/pause, step, scrub, speed control, and a B-frame decode→display reorder (from `getFrameTimes`) so playback never jumps backwards. Keyboard: `Space` play/pause, `←/→` step (`Shift` = ±10), `I`/`O` set in/out.
 - **Pose overlay** — skeleton edges + nodes drawn per track when a `.slp` is loaded.
 - **Two extraction outputs (selectable)**
-  - **MP4 clip** via ffmpeg.wasm — *precise* (frame-exact `trim` filter, re-encoded) or *fast* (keyframe-aligned stream copy). The live `ffmpeg` command is shown.
+  - **MP4 clip** via ffmpeg.wasm — _precise_ (frame-exact `trim` filter, re-encoded) or _fast_ (keyframe-aligned stream copy). The live `ffmpeg` command is shown.
   - **Frame images** — each frame in the range decoded to PNG or JPEG (optionally with the pose overlay burned in).
 - **SLP-free annotation JSON** — the selected range's labels are re-indexed **clip-relative** (`clip_frame` 0..N alongside `source_frame`) and emitted as a self-describing `sleap-clip-annotations/v1` document with skeleton, tracks, and per-instance points. No SLP dependency on the backend.
 - **Provenance fields** — an **Author** (free text, remembered locally) and an editable **Original filename** (prefilled from the loaded video) ride along with every payload.
@@ -27,10 +31,14 @@ A single-file video player built on [sleap-io.js](https://github.com/talmolab/sl
 
 1. Load a video (URL, **Open file…**, drag-drop, or **Load sample (mice)**), and optionally a `.slp`.
 2. Scrub and press **[ Set In** / **Set Out ]** (or `I` / `O`) to mark the clip range.
-3. In **Extract**, pick *MP4 clip* or *Frame images* and press **Extract selection**. (First MP4 extraction downloads the ~30 MB ffmpeg.wasm core, cached thereafter.)
+3. In **Extract**, pick _MP4 clip_ or _Frame images_ and press **Extract selection**. (First MP4 extraction downloads the ~30 MB ffmpeg.wasm core, cached thereafter.)
 4. In **Transmit**, set **Author**, keep the packaging on **Pozu /clips** (or switch to a generic one), **Preview request** (dry run), then **Send POST** or **Download payload**.
 
 URL params: `?url=<video>&slp=<labels>&endpoint=<url>` auto-load on open.
+
+## Development
+
+A standard TypeScript + Vite app (structure and CI mirror [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader)) — see [docs/README.md](docs/README.md) for the project layout and dev commands.
 
 ## Notes
 
