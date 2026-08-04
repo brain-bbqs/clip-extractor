@@ -11,9 +11,13 @@
     "test": "vitest run --config configs/vitest.config.ts",
     "test:watch": "vitest --config configs/vitest.config.ts",
     "test:coverage": "vitest run --coverage --config configs/vitest.config.ts",
+    "test:integration": "playwright test --config configs/playwright.config.ts",
+    "test:chromatic": "playwright test --config configs/playwright.chromatic.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --config configs/eslint.config.cjs .",
-    "format": "prettier --config configs/prettier.config.cjs --write ."
+    "format": "prettier --config configs/prettier.config.cjs --write .",
+    "storybook": "storybook dev -p 6006 --config-dir configs/storybook",
+    "build-storybook": "storybook build --config-dir configs/storybook"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
@@ -21,12 +25,17 @@
     "@talmolab/sleap-io.js": "^0.5.7"
   },
   "devDependencies": {
+    "@chromatic-com/playwright": "^0.14.11",
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.48.0",
+    "@storybook/html-vite": "^10.5.3",
     "@types/node": "^22.9.0",
     "@vitest/coverage-v8": "^4.1.10",
+    "chromatic": "^18.0.1",
     "eslint": "^9.39.5",
     "jsdom": "^25.0.0",
     "prettier": "^3.3.0",
+    "storybook": "^10.5.3",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.64.0",
     "vite": "^8.1.5",

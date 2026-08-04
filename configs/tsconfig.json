@@ -16,5 +16,14 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["vite/client"]
   },
-  "include": ["../src", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "../src",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts",
+    "playwright.chromatic.config.ts",
+    "playwright.shared.ts",
+    "storybook/main.ts",
+    "storybook/preview.ts"
+  ]
 }

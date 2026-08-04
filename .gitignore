@@ -1,6 +1,9 @@
 node_modules/
 dist/
 coverage/
+storybook-static/
+test-results/
+playwright-report/
 
 # Device-specific hidden files (OS-generated, not project config)
 .DS_Store

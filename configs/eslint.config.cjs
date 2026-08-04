@@ -5,7 +5,7 @@ const path = require("node:path");
 
 module.exports = tseslint.config(
   {
-    ignores: ["dist/", "coverage/"],
+    ignores: ["dist/", "coverage/", "storybook-static/", "test-results/", "playwright-report/"],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
