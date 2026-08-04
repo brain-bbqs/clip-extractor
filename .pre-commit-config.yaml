@@ -37,3 +37,8 @@ repos:
         language: system
         types: [file]
         files: \.(js|cjs|mjs|ts|tsx)$
+
+  - repo: https://github.com/fsfe/reuse-tool
+    rev: v6.2.0
+    hooks:
+      - id: reuse
