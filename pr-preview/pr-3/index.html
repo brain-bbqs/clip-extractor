@@ -4,16 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Clip Extractor</title>
-    <script type="module" crossorigin src="./assets/index-zZws7qrn.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BvbPW-Gu.css">
+    <link rel="icon" type="image/svg+xml" href="./assets/clip-extractor-favicon-small-DABQ8bFu.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-small-32-Dbw-CWbA.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon-small-16-Cy9-lsb0.png" />
+    <link rel="apple-touch-icon" href="./assets/icon-180-qInRyNvI.png" />
+    <script type="module" crossorigin src="./assets/index-CxOpmTSD.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BlBmapsV.css">
   </head>
   <body>
-    <h1>Clip Extractor</h1>
+    <h1 class="title-row">
+      <img class="brand-logo" src="./assets/clip-extractor-icon-BZZEImiC.svg" alt="" width="32" height="32" />
+      Clip Extractor
+    </h1>
     <p class="subtitle">
-      Load a video (remote URL or local file) &plusmn; a SLEAP <code>.slp</code>, scrub to an in/out range, then
-      extract the clip with <a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener"
-        >ffmpeg.wasm</a
-      >
+      Load a video (remote URL or local file) &plusmn; a SLEAP <code>.slp</code>, scrub to an in/out range, then extract the clip with
+      <a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener">ffmpeg.wasm</a>
       and package it with SLP-free annotation JSON for a backend POST. Powered by
       <a href="https://github.com/talmolab/sleap-io" target="_blank" rel="noopener">sleap-io.js</a>.
     </p>
@@ -31,17 +36,11 @@
             <div id="overlayInfo" style="display: none"></div>
           </div>
 
-          <input
-            type="range"
-            id="frameSlider"
-            min="0"
-            max="0"
-            value="0"
-            step="1"
-            disabled
-            style="margin-top: 12px"
-          />
-          <div id="selbar"><div id="selfill" style="display: none"></div><div id="selplay" style="display: none"></div></div>
+          <input type="range" id="frameSlider" min="0" max="0" value="0" step="1" disabled style="margin-top: 12px" />
+          <div id="selbar">
+            <div id="selfill" style="display: none"></div>
+            <div id="selplay" style="display: none"></div>
+          </div>
 
           <div class="transport">
             <button id="btnFirst" class="sec small" title="First frame" disabled>&#124;&#9664;</button>
@@ -65,9 +64,18 @@
           </div>
 
           <div class="seltimes">
-            <div class="box"><div class="k">In</div><div class="v" id="inVal">&mdash;</div></div>
-            <div class="box"><div class="k">Current</div><div class="v" id="curVal">&mdash;</div></div>
-            <div class="box"><div class="k">Out</div><div class="v" id="outVal">&mdash;</div></div>
+            <div class="box">
+              <div class="k">In</div>
+              <div class="v" id="inVal">&mdash;</div>
+            </div>
+            <div class="box">
+              <div class="k">Current</div>
+              <div class="v" id="curVal">&mdash;</div>
+            </div>
+            <div class="box">
+              <div class="k">Out</div>
+              <div class="v" id="outVal">&mdash;</div>
+            </div>
           </div>
           <div class="row" style="margin-top: 8px">
             <span class="hint" id="rangeSummary">Selection: full video</span>
@@ -100,10 +108,7 @@
           </div>
           <div class="row" style="margin-top: 8px">
             <button id="pickSlp" class="sec small">Open .slp&hellip;</button>
-            <label class="hint"
-              ><input type="checkbox" id="showPose" checked style="width: auto; margin: 0 4px 0 0" /> Show
-              overlay</label
-            >
+            <label class="hint"><input type="checkbox" id="showPose" checked style="width: auto; margin: 0 4px 0 0" /> Show overlay</label>
           </div>
           <input type="file" id="videoFile" accept="video/*,.mp4,.avi,.mov,.mkv" />
           <input type="file" id="slpFile" accept=".slp,.h5,.hdf5" />
@@ -133,9 +138,7 @@
             <details>
               <summary>ffmpeg command</summary>
               <pre class="preview" id="ffCmd" style="margin-top: 6px">&mdash;</pre>
-              <div class="gplnote">
-                First extraction downloads the ffmpeg.wasm core (~30&nbsp;MB, cached thereafter). GPL-licensed.
-              </div>
+              <div class="gplnote">First extraction downloads the ffmpeg.wasm core (~30&nbsp;MB, cached thereafter). GPL-licensed.</div>
             </details>
           </div>
 
@@ -160,8 +163,7 @@
               </label>
             </div>
             <label class="hint" style="display: block; margin-top: 8px"
-              ><input type="checkbox" id="burnPose" style="width: auto; margin: 0 4px 0 0" /> Burn pose overlay into
-              frames</label
+              ><input type="checkbox" id="burnPose" style="width: auto; margin: 0 4px 0 0" /> Burn pose overlay into frames</label
             >
             <div class="hint" id="framesWarn" style="margin-top: 6px">
               Frame images decode one-by-one &mdash; large ranges can be slow &amp; heavy.
@@ -179,8 +181,7 @@
         <div class="panel" id="annPanel">
           <h2>3 &middot; Annotations <span class="badge" id="annBadge">no SLP</span></h2>
           <div class="hint" id="annSummary">
-            Load a <code>.slp</code> to attach pose annotations to the payload. The clip is still extractable without
-            one.
+            Load a <code>.slp</code> to attach pose annotations to the payload. The clip is still extractable without one.
           </div>
           <details id="annDetails" style="display: none">
             <summary>Preview annotations JSON (clip-relative, SLP-free)</summary>
@@ -206,8 +207,8 @@
           <input type="url" id="endpoint" placeholder="https://backend.example/api/clips" />
           <label class="hint" style="display: block; margin-top: 4px"
             ><input type="checkbox" id="useProxy" checked style="width: auto; margin: 0 5px 0 0" />Route via
-            <a href="https://github.com/talmolab/nocors" target="_blank" rel="noopener">nocors</a> proxy (needed
-            cross-origin from *.tlab.sh)</label
+            <a href="https://github.com/talmolab/nocors" target="_blank" rel="noopener">nocors</a> proxy (needed cross-origin from
+            *.tlab.sh)</label
           >
           <label class="field">Extra headers (JSON, optional &mdash; e.g. auth)</label>
           <textarea id="headers" placeholder='{ "Authorization": "Bearer &hellip;" }'></textarea>
