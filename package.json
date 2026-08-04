@@ -1,0 +1,35 @@
+{
+  "name": "clip-extractor",
+  "version": "1.0.0",
+  "description": "A single-page video player for selecting a frame range and extracting it as an upload-ready payload, built on sleap-io.js and ffmpeg.wasm.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite --config configs/vite.config.ts",
+    "build": "tsc --noEmit && vite build --config configs/vite.config.ts",
+    "preview": "vite preview --config configs/vite.config.ts",
+    "test": "vitest run --config configs/vitest.config.ts",
+    "test:watch": "vitest --config configs/vitest.config.ts",
+    "test:coverage": "vitest run --coverage --config configs/vitest.config.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint --config configs/eslint.config.cjs .",
+    "format": "prettier --config configs/prettier.config.cjs --write ."
+  },
+  "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "@talmolab/sleap-io.js": "^0.5.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.9.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^9.39.5",
+    "jsdom": "^25.0.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.64.0",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  }
+}
