@@ -6,35 +6,31 @@
 
 **Live:** https://clip-extractor.brain-bbqs.org
 
-A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmolab/sleap-io) for **selecting a frame range and extracting it as an upload-ready payload**. Load a video from a remote URL or a local file, optionally attach a SLEAP `.slp`, scrub to an in/out range, then extract the clip with [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) and package it — together with SLP-free annotation JSON — for a `POST` to a backend REST API.
+A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmolab/sleap-io) for **selecting a clip range or a single frame from a video**, in preparation for upload to a backend. Drop a video (and optionally a SLEAP `.slp` for a pose overlay) into the top file picker, choose **Video** or **Frame** selector mode, and scrub to the range or frame you want. Selections stream directly from the source with no re-encoding. Upload is coming soon.
 
 ## Features
 
+- **Top-loading drag-and-drop file picker** (mirroring [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader)'s dropzone) — drop a video and/or a `.slp`, click to browse, or load the bundled sample.
 - **Load anything sleap-io.js can open**
-  - Remote video URL (streamed via `MediaBunnyVideoBackend.fromUrl`, with a full-download fallback)
-  - Local file via the File System Access picker (`showOpenFilePicker`), a file input, or drag-and-drop
-  - Optional SLEAP `.slp` (remote URL or local), loaded with `loadSlp({ openVideos: false })`
-- **Frame-accurate player** — play/pause, step, scrub, speed control, and a B-frame decode→display reorder (from `getFrameTimes`) so playback never jumps backwards. Keyboard: `Space` play/pause, `←/→` step (`Shift` = ±10), `I`/`O` set in/out.
+  - Local video files (`MediaBunnyVideoBackend.fromBlob`, with an mp4box fallback)
+  - Remote video URLs via the `?url=` param (streamed via `MediaBunnyVideoBackend.fromUrl`, with a full-download fallback)
+  - Optional SLEAP `.slp` (drop it in, or the **Load .slp file** button above the player), loaded with `loadSlp({ openVideos: false })`
+- **Video / Frame selector toggle** above the player:
+  - **Video** — mark an in/out range with **[ Set In** / **Set Out ]** (or `I` / `O`); the clip streams directly, no re-encoding.
+  - **Frame** — scrub to select a single frame.
+- **Frame-accurate player** — play/pause, step, scrub, speed control, and a B-frame decode→display reorder (from `getFrameTimes`) so playback never jumps backwards. Keyboard: `Space` play/pause, `←/→` step, `Shift`+scrub extends the range.
 - **Pose overlay** — skeleton edges + nodes drawn per track when a `.slp` is loaded.
-- **Two extraction outputs (selectable)**
-  - **MP4 clip** via ffmpeg.wasm — _precise_ (frame-exact `trim` filter, re-encoded) or _fast_ (keyframe-aligned stream copy). The live `ffmpeg` command is shown.
-  - **Frame images** — each frame in the range decoded to PNG or JPEG (optionally with the pose overlay burned in).
-- **SLP-free annotation JSON** — the selected range's labels are re-indexed **clip-relative** (`clip_frame` 0..N alongside `source_frame`) and emitted as a self-describing `sleap-clip-annotations/v1` document with skeleton, tracks, and per-instance points. No SLP dependency on the backend.
-- **Provenance fields** — an **Author** (free text, remembered locally) and an editable **Original filename** (prefilled from the loaded video) ride along with every payload.
-- **Three payload packagings (selectable)**:
-  - **Pozu `/clips`** (default) — the shape the [pozu-backend](https://github.com/pozu-project/pozu-backend) `POST /api/v1/clips` endpoint expects: a single `application/json` body `{ mp4: <base64>, filename, author, timestamp }`. The backend validates the MP4 with `ffprobe` and uploads it to DANDI synchronously, returning `{ submission_id, clip_file, clip_size_bytes, push_status }`. MP4-clip output only (no frames/annotations).
-  - **multipart/form-data** — clip/frames + `annotations.json` + `metadata.json` parts (generic backends).
-  - **JSON + base64** — a single `application/json` body with base64 media + annotations + metadata (generic backends).
-- **Transmit** — a **dry-run preview** shows the exact request; **Send POST** goes to the endpoint (with an optional custom-headers field); **Download** saves the payload locally. A **nocors proxy toggle** (default on) routes the send through [nocors.tlab.sh](https://github.com/talmolab/nocors) so the deployed vibe can reach cross-origin backends.
+- **Light/dark theme** with an OS-preference default and a header toggle, styled after [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader).
+- **Upload** — a single button, disabled until the backend handoff lands.
 
 ## Usage
 
-1. Load a video (URL, **Open file…**, drag-drop, or **Load sample (mice)**), and optionally a `.slp`.
-2. Scrub and press **[ Set In** / **Set Out ]** (or `I` / `O`) to mark the clip range.
-3. In **Extract**, pick _MP4 clip_ or _Frame images_ and press **Extract selection**. (First MP4 extraction downloads the ~30 MB ffmpeg.wasm core, cached thereafter.)
-4. In **Transmit**, set **Author**, keep the packaging on **Pozu /clips** (or switch to a generic one), **Preview request** (dry run), then **Send POST** or **Download payload**.
+1. Drop a video (and optionally a `.slp`) into the picker at the top, or click it to browse. **Load the sample (mice)** works too.
+2. Pick **Video** or **Frame** mode above the player.
+3. Scrub to your selection: in Video mode press **[ Set In** / **Set Out ]** (or `I` / `O`); in Frame mode just seek to the frame.
+4. **Upload** is coming soon.
 
-URL params: `?url=<video>&slp=<labels>&endpoint=<url>` auto-load on open.
+URL params: `?url=<video>&slp=<labels>` auto-load on open.
 
 ## Development
 
@@ -42,13 +38,11 @@ A standard TypeScript + Vite app (structure and CI mirror [bbqs-uploader](https:
 
 ## Notes
 
-- **Backend:** the default target is the Pozu `POST /api/v1/clips` endpoint (pozu-project/pozu-backend). It accepts the MP4 clip only; annotation JSON is still built and can be **Download**ed for an annotations-aware endpoint later.
-- **CORS:** the Pozu backend only allow-lists `pozu-project.github.io`, so a direct browser POST from `vibes.tlab.sh` is blocked — the **nocors proxy** (whitelisted for `*.tlab.sh`) carries the send in production. Local dev cannot use the proxy (localhost isn't whitelisted); use the deployed vibe to send for real.
-- Remote video/SLP URLs must be CORS-accessible (or served from a `*.tlab.sh` origin via the proxy).
-- ffmpeg.wasm is GPL-licensed and lazy-loaded only when an MP4 clip is extracted.
+- Remote video/SLP URLs must be CORS-accessible.
+- The extraction/payload libraries (ffmpeg.wasm stream-copy trimming, clip-relative annotation JSON, payload packaging) live in `src/lib/` for the upcoming upload step.
 
 ## Initial prompt
 
 > let's start a /new-vibe in a new PR. use sleap-io.js extensively (look at the other open PR and other vibes that have video players -- though careful, some of them are out of date). make a video player that supports both remote web endpoints + local file system access api reading (this is all handled by sleap-io.js) and is optimized for selecting a clip that we will extract with ffmpeg wasm (see PR 67 and related issue) to transmit to a ember backend (details on the handoff TBD). right now it should just be able to pull up a video, optionally with an SLP file (also sleap-io.js) and pull out the frames (+ annotations, encoded out as json for payload transmission, no SLP dependency), and get it ready for transmission to a POST request to a REST API backend (again, protocol TBD) for upload
 
-Follow-ups locked the name (`clip-extractor`), both extraction outputs (MP4 clip + frame images), and both payload formats (multipart + JSON/base64) with a dry-run preview.
+Follow-ups locked the name (`clip-extractor`) and redesigned the interface: top-loading drag-and-drop file picker, a Video/Frame selector toggle (direct streaming, no re-encoding), an optional `.slp` loader above the player, and a single (coming soon) Upload button, with layout and styling based on [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader).
