@@ -99,7 +99,6 @@
         </div>
         <input type="file" id="videoFile" accept="video/*,.mp4,.avi,.mov,.mkv" hidden />
         <input type="file" id="slpFile" accept=".slp,.h5,.hdf5" hidden />
-        <div class="kv" id="srcInfo" hidden></div>
       </section>
 
       <!-- SLEAP annotations (revealed by the toggle switch on the load card) -->
@@ -125,7 +124,7 @@
       <section class="card" id="playerCard">
         <div class="toggle-row">
           <div class="seg" id="modeSeg" role="group" aria-label="Selector mode">
-            <button type="button" data-mode="video" class="active">Video</button>
+            <button type="button" data-mode="video" class="active">Snippet</button>
             <button type="button" data-mode="frame">Frame</button>
           </div>
         </div>
@@ -177,10 +176,10 @@
             <div class="v" id="outVal">&mdash;</div>
           </div>
         </div>
-        <div class="sel-row">
+        <div class="sel-row video-only">
           <span class="hint" id="rangeSummary">Selection: full video</span>
           <span class="spacer"></span>
-          <button id="btnClearSel" class="ghost small video-only" disabled>Reset range</button>
+          <button id="btnClearSel" class="ghost small" disabled>Reset range</button>
         </div>
       </section>
 

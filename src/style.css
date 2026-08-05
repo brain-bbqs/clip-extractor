@@ -518,22 +518,6 @@ input[type="checkbox"] {
   grid-template-columns: 1fr;
 }
 
-/* Source info */
-.kv {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 2px 12px;
-  font-size: 0.85rem;
-  margin-top: 1rem;
-}
-.kv .k {
-  color: var(--muted);
-}
-.kv .v {
-  font-family: var(--mono);
-  text-align: right;
-}
-
 /* Upload (coming soon) */
 .upload-bar {
   display: flex;

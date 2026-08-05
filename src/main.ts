@@ -1,7 +1,6 @@
 import "./style.css";
 import * as sio from "@talmolab/sleap-io.js";
 import { getElements } from "./ui/elements";
-import { renderKv } from "./ui/kv";
 import { fmtTime } from "./lib/format";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { drawPose, labelsToPose } from "./lib/pose";
@@ -143,7 +142,6 @@ async function loadVideo(source: File | string, name: string, url: string | null
     enablePlayer(true);
     log(`Loaded ${state.width}×${state.height}, ${state.totalFrames} frames @ ${state.fps.toFixed(2)} fps`, "ok");
     await seek(0, true);
-    refreshSource();
     updateSelUI();
   } catch (e) {
     log(`Video error: ${(e as Error).message}`, "err");
@@ -167,7 +165,6 @@ async function loadSlp(source: File | string, name: string): Promise<void> {
     els.slpBadge.textContent = `${nFrames} frames`;
     els.slpBadge.className = "badge ok";
     els.slpStatus.hidden = false;
-    refreshSource();
     renderFrame();
   } catch (e) {
     log(`SLP error: ${(e as Error).message}`, "err");
@@ -320,12 +317,8 @@ function updateSelUI(): void {
   }
   els.selplay.style.display = state.backend ? "block" : "none";
   els.selplay.style.left = `${(state.cur / den) * 100}%`;
-  if (state.mode === "frame") {
-    els.rangeSummary.textContent = state.backend
-      ? `Selection: frame ${state.cur} · ${fmtTime(state.cur, state.fps)}`
-      : "Selection: no video loaded";
-    return;
-  }
+  // Frame mode has no range summary — the current frame is already shown in the stage overlay.
+  if (state.mode === "frame") return;
   const n = hi - lo + 1;
   els.rangeSummary.textContent =
     state.inF == null && state.outF == null
@@ -356,22 +349,6 @@ function enablePlayer(on: boolean): void {
   }
   els.frameSlider.disabled = !on;
   els.frameSlider.max = String(Math.max(0, state.totalFrames - 1));
-}
-
-function refreshSource(): void {
-  if (!state.backend) {
-    els.srcInfo.hidden = true;
-    return;
-  }
-  els.srcInfo.hidden = false;
-  renderKv(els.srcInfo, [
-    ["Video", state.sourceName],
-    ["Resolution", `${state.width}×${state.height}`],
-    ["Frames", state.totalFrames],
-    ["FPS", state.fps.toFixed(2)],
-    ["Reorder", state.frameOrder ? "B-frames (remapped)" : "in order"],
-    ["SLP", state.pose ? `${state.pose.tracks.length} tracks / ${state.pose.skeleton.nodes.length} nodes` : "none"],
-  ]);
 }
 
 // Segmented controls

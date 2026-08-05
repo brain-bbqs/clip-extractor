@@ -20,7 +20,6 @@ export function getElements() {
     sampleBtn: required<HTMLButtonElement>("sampleBtn"),
     videoFile: required<HTMLInputElement>("videoFile"),
     slpFile: required<HTMLInputElement>("slpFile"),
-    srcInfo: required<HTMLDivElement>("srcInfo"),
     slpToggle: required<HTMLInputElement>("slpToggle"),
 
     // Player

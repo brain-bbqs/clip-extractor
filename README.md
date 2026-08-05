@@ -6,7 +6,7 @@
 
 **Live:** https://clip-extractor.brain-bbqs.org
 
-A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmolab/sleap-io) for **selecting a clip range or a single frame from a video**, in preparation for upload to a backend. Drop a video (and optionally a SLEAP `.slp` for a pose overlay) into the top file picker, choose **Video** or **Frame** selector mode, and scrub to the range or frame you want. Selections stream directly from the source with no re-encoding. Upload is coming soon.
+A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmolab/sleap-io) for **selecting a clip range or a single frame from a video**, in preparation for upload to a backend. Drop a video (and optionally a SLEAP `.slp` for a pose overlay) into the top file picker, choose **Snippet** or **Frame** selector mode, and scrub to the range or frame you want. Selections stream directly from the source with no re-encoding. Upload is coming soon.
 
 ## Features
 
@@ -14,8 +14,8 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
   - **Load local file** — a drag-and-drop dropzone (mirroring [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader)'s picker); drop a video, click to browse, or load the bundled sample (`MediaBunnyVideoBackend.fromBlob`, with an mp4box fallback).
   - **Stream from EMBER** — paste an EMBER/DANDI asset URL and stream it directly (`MediaBunnyVideoBackend.fromUrl`, with a full-download fallback); also reachable via the `?url=` param.
 - **Optional SLEAP annotations step** — an on/off switch at the top right of the load card (default off) reveals a second card for loading a `.slp` (`loadSlp({ openVideos: false })`); dropping a `.slp` anywhere enables it automatically.
-- **Video / Frame selector toggle** centered above the player:
-  - **Video** — mark an in/out range with **[ Set In** / **Set Out ]** (or `I` / `O`); the clip streams directly, no re-encoding.
+- **Snippet / Frame selector toggle** centered above the player:
+  - **Snippet** — mark an in/out range with **[ Set In** / **Set Out ]** (or `I` / `O`); the clip streams directly, no re-encoding.
   - **Frame** — scrub to select a single frame.
 - **Frame-accurate player** — play/pause, step, scrub, speed control, and a B-frame decode→display reorder (from `getFrameTimes`) so playback never jumps backwards. Keyboard: `Space` play/pause, `←/→` step, `Shift`+scrub extends the range.
 - **Pose overlay** — skeleton edges + nodes drawn per track when a `.slp` is loaded.
@@ -25,8 +25,8 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
 ## Usage
 
 1. Pick a source at the top: drop a local video into the picker (or click to browse; **Load the sample (mice)** works too), or switch to **Stream from EMBER** and paste an asset URL.
-2. Pick **Video** or **Frame** mode above the player.
-3. Scrub to your selection: in Video mode press **[ Set In** / **Set Out ]** (or `I` / `O`); in Frame mode just seek to the frame.
+2. Pick **Snippet** or **Frame** mode above the player.
+3. Scrub to your selection: in Snippet mode press **[ Set In** / **Set Out ]** (or `I` / `O`); in Frame mode just seek to the frame.
 4. Optionally flip the **SLEAP annotations (.slp)** switch on the load card and drop a `.slp` into the card that appears.
 5. **Upload** is coming soon.
 
