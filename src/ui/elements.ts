@@ -21,15 +21,11 @@ export function getElements() {
     videoFile: required<HTMLInputElement>("videoFile"),
     slpFile: required<HTMLInputElement>("slpFile"),
     srcInfo: required<HTMLDivElement>("srcInfo"),
-    log: required<HTMLDivElement>("log"),
-
-    // Player top bar
-    playerCard: required<HTMLElement>("playerCard"),
-    modeSeg: required<HTMLDivElement>("modeSeg"),
-    modeHint: required<HTMLParagraphElement>("modeHint"),
     slpToggle: required<HTMLInputElement>("slpToggle"),
 
     // Player
+    playerCard: required<HTMLElement>("playerCard"),
+    modeSeg: required<HTMLDivElement>("modeSeg"),
     stage: required<HTMLDivElement>("stage"),
     emptyStage: required<HTMLDivElement>("emptyStage"),
     view: required<HTMLCanvasElement>("view"),

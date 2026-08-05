@@ -1,7 +1,6 @@
 import "./style.css";
 import * as sio from "@talmolab/sleap-io.js";
 import { getElements } from "./ui/elements";
-import { createLogger } from "./ui/log";
 import { renderKv } from "./ui/kv";
 import { fmtTime } from "./lib/format";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
@@ -9,7 +8,16 @@ import { drawPose, labelsToPose } from "./lib/pose";
 import type { PoseModel, SleapLabels, SleapVideoBackend } from "./lib/types";
 
 const els = getElements();
-const log = createLogger(els.log);
+
+// Load/seek diagnostics go to the browser console — the interface deliberately has no on-page
+// log panel.
+type LogClass = "err" | "ok" | "warn" | "";
+function log(msg: string, cls: LogClass = ""): void {
+  if (cls === "err") console.error(msg);
+  else if (cls === "warn") console.warn(msg);
+  else console.info(msg);
+}
+
 const ctx2d = els.view.getContext("2d");
 if (!ctx2d) throw new Error("Canvas 2D context unavailable");
 const ctx: CanvasRenderingContext2D = ctx2d;
@@ -332,8 +340,6 @@ function updateSelUI(): void {
 function setMode(mode: SelectorMode): void {
   state.mode = mode;
   els.playerCard.classList.toggle("mode-frame", mode === "frame");
-  els.modeHint.textContent =
-    mode === "video" ? "Select an in/out range — streamed directly, no re-encoding." : "Scrub to select a single frame.";
   if (mode === "frame") {
     // A frame selection is just the current frame; drop any in/out range.
     state.inF = null;
