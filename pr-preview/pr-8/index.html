@@ -16,8 +16,8 @@
         if (storedTheme === "light" || storedTheme === "dark") document.documentElement.dataset.theme = storedTheme;
       } catch (e) {}
     </script>
-    <script type="module" crossorigin src="./assets/index-COe63dSj.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-15Bx8mpL.css">
+    <script type="module" crossorigin src="./assets/index-Bh_S6UXg.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CO-i2Un4.css">
   </head>
   <body>
     <main>
@@ -106,20 +106,20 @@
 
       <!-- SLEAP annotations (revealed by the toggle switch on the load card) -->
       <section class="card" id="slpCard" hidden>
-        <div class="card-heading">
-          <h2>SLEAP annotations</h2>
-          <div class="slp-status">
-            <span class="badge" id="slpBadge" hidden></span>
-            <label class="hint pose-toggle" id="showPoseWrap" hidden><input type="checkbox" id="showPose" checked /> Show overlay</label>
-          </div>
-        </div>
         <div id="slpDropzone" class="dropzone compact">
           <div class="dz-inner">
+            <div class="dz-icon">
+              <img class="dz-logo" src="./assets/sleap-logo-QmtXJJ2h.png" alt="SLEAP" width="40" height="40" />
+            </div>
             <p>
               Drop a SLEAP <code>.slp</code> here, or click to browse
-              <button type="button" id="browseSlpBtn" class="dz-browse">files</button>. <span class="hint">(optional)</span>
+              <button type="button" id="browseSlpBtn" class="dz-browse">files</button>.
             </p>
           </div>
+        </div>
+        <div class="slp-status" id="slpStatus" hidden>
+          <span class="badge" id="slpBadge"></span>
+          <label class="hint pose-toggle"><input type="checkbox" id="showPose" checked /> Show overlay</label>
         </div>
       </section>
 
