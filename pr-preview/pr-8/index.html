@@ -16,8 +16,8 @@
         if (storedTheme === "light" || storedTheme === "dark") document.documentElement.dataset.theme = storedTheme;
       } catch (e) {}
     </script>
-    <script type="module" crossorigin src="./assets/index-Cv7g6sc2.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-CeWlj-Oj.css">
+    <script type="module" crossorigin src="./assets/index-COe63dSj.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-15Bx8mpL.css">
   </head>
   <body>
     <main>
@@ -68,21 +68,25 @@
 
       <!-- File loading -->
       <section class="card" id="loadCard">
-        <div class="toggle-row">
+        <div class="card-toprow">
+          <span></span>
           <div class="seg" id="srcSeg" role="group" aria-label="Video source">
             <button type="button" data-src="local" class="active">Load local file</button>
             <button type="button" data-src="ember">Stream from EMBER</button>
           </div>
+          <label class="hint slp-toggle">
+            <span>SLEAP annotations (<code>.slp</code>)</span>
+            <input type="checkbox" id="slpToggle" class="switch" role="switch" />
+          </label>
         </div>
         <div id="localPane">
           <div id="dropzone" class="dropzone">
             <div class="dz-inner">
               <div class="dz-icon">
                 <span>🎥</span>
-                <span>🐭</span>
               </div>
               <p>Drop a video here, or click to browse <button type="button" id="browseVideoBtn" class="dz-browse">files</button>.</p>
-              <p class="dz-sample">No data handy? <button type="button" id="sampleBtn" class="dz-browse">Load the sample (mice)</button></p>
+              <p class="dz-sample"><button type="button" id="sampleBtn" class="dz-browse">Load the sample (mice)</button></p>
             </div>
           </div>
         </div>
@@ -98,20 +102,35 @@
         <input type="file" id="videoFile" accept="video/*,.mp4,.avi,.mov,.mkv" hidden />
         <input type="file" id="slpFile" accept=".slp,.h5,.hdf5" hidden />
         <div class="kv" id="srcInfo" hidden></div>
-        <div id="log" aria-live="polite"></div>
+      </section>
+
+      <!-- SLEAP annotations (revealed by the toggle switch on the load card) -->
+      <section class="card" id="slpCard" hidden>
+        <div class="card-heading">
+          <h2>SLEAP annotations</h2>
+          <div class="slp-status">
+            <span class="badge" id="slpBadge" hidden></span>
+            <label class="hint pose-toggle" id="showPoseWrap" hidden><input type="checkbox" id="showPose" checked /> Show overlay</label>
+          </div>
+        </div>
+        <div id="slpDropzone" class="dropzone compact">
+          <div class="dz-inner">
+            <p>
+              Drop a SLEAP <code>.slp</code> here, or click to browse
+              <button type="button" id="browseSlpBtn" class="dz-browse">files</button>. <span class="hint">(optional)</span>
+            </p>
+          </div>
+        </div>
       </section>
 
       <!-- Player -->
       <section class="card" id="playerCard">
-        <div class="player-topbar">
-          <span></span>
+        <div class="toggle-row">
           <div class="seg" id="modeSeg" role="group" aria-label="Selector mode">
             <button type="button" data-mode="video" class="active">Video</button>
             <button type="button" data-mode="frame">Frame</button>
           </div>
-          <label class="hint slp-toggle"><input type="checkbox" id="slpToggle" /> SLEAP annotations (<code>.slp</code>)</label>
         </div>
-        <p class="hint mode-hint" id="modeHint">Select an in/out range — streamed directly, no re-encoding.</p>
 
         <div id="stage">
           <div id="emptyStage">No video loaded — load one above to get started.</div>
@@ -164,25 +183,6 @@
           <span class="hint" id="rangeSummary">Selection: full video</span>
           <span class="spacer"></span>
           <button id="btnClearSel" class="ghost small video-only" disabled>Reset range</button>
-        </div>
-      </section>
-
-      <!-- SLEAP annotations (revealed by the toggle above the player) -->
-      <section class="card" id="slpCard" hidden>
-        <div class="card-heading">
-          <h2>SLEAP annotations</h2>
-          <div class="slp-status">
-            <span class="badge" id="slpBadge" hidden></span>
-            <label class="hint pose-toggle" id="showPoseWrap" hidden><input type="checkbox" id="showPose" checked /> Show overlay</label>
-          </div>
-        </div>
-        <div id="slpDropzone" class="dropzone compact">
-          <div class="dz-inner">
-            <p>
-              Drop a SLEAP <code>.slp</code> here, or click to browse
-              <button type="button" id="browseSlpBtn" class="dz-browse">files</button>. <span class="hint">(optional)</span>
-            </p>
-          </div>
         </div>
       </section>
 
