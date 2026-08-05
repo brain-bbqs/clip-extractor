@@ -166,8 +166,7 @@ async function loadSlp(source: File | string, name: string): Promise<void> {
     log(`SLP loaded: ${state.pose.skeleton.nodes.length} nodes, ${state.pose.tracks.length} tracks, ${nFrames} labeled frames`, "ok");
     els.slpBadge.textContent = `${nFrames} frames`;
     els.slpBadge.className = "badge ok";
-    els.slpBadge.hidden = false;
-    els.showPoseWrap.hidden = false;
+    els.slpStatus.hidden = false;
     refreshSource();
     renderFrame();
   } catch (e) {

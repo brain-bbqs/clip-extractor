@@ -51,8 +51,8 @@ export function getElements() {
     slpCard: required<HTMLElement>("slpCard"),
     slpDropzone: required<HTMLDivElement>("slpDropzone"),
     browseSlpBtn: required<HTMLButtonElement>("browseSlpBtn"),
+    slpStatus: required<HTMLDivElement>("slpStatus"),
     slpBadge: required<HTMLSpanElement>("slpBadge"),
-    showPoseWrap: required<HTMLLabelElement>("showPoseWrap"),
     showPose: required<HTMLInputElement>("showPose"),
 
     // Upload (coming soon)
