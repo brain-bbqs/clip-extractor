@@ -10,6 +10,11 @@ export function getElements() {
     themeToggle: required<HTMLButtonElement>("themeToggle"),
 
     // Load card
+    srcSeg: required<HTMLDivElement>("srcSeg"),
+    localPane: required<HTMLDivElement>("localPane"),
+    emberPane: required<HTMLDivElement>("emberPane"),
+    emberUrl: required<HTMLInputElement>("emberUrl"),
+    emberLoadBtn: required<HTMLButtonElement>("emberLoadBtn"),
     dropzone: required<HTMLDivElement>("dropzone"),
     browseVideoBtn: required<HTMLButtonElement>("browseVideoBtn"),
     sampleBtn: required<HTMLButtonElement>("sampleBtn"),
@@ -21,11 +26,8 @@ export function getElements() {
     // Player top bar
     playerCard: required<HTMLElement>("playerCard"),
     modeSeg: required<HTMLDivElement>("modeSeg"),
-    modeHint: required<HTMLSpanElement>("modeHint"),
-    showPoseWrap: required<HTMLLabelElement>("showPoseWrap"),
-    showPose: required<HTMLInputElement>("showPose"),
-    slpBadge: required<HTMLSpanElement>("slpBadge"),
-    pickSlp: required<HTMLButtonElement>("pickSlp"),
+    modeHint: required<HTMLParagraphElement>("modeHint"),
+    slpToggle: required<HTMLInputElement>("slpToggle"),
 
     // Player
     stage: required<HTMLDivElement>("stage"),
@@ -48,6 +50,14 @@ export function getElements() {
     outVal: required<HTMLDivElement>("outVal"),
     rangeSummary: required<HTMLSpanElement>("rangeSummary"),
     btnClearSel: required<HTMLButtonElement>("btnClearSel"),
+
+    // SLEAP annotations card
+    slpCard: required<HTMLElement>("slpCard"),
+    slpDropzone: required<HTMLDivElement>("slpDropzone"),
+    browseSlpBtn: required<HTMLButtonElement>("browseSlpBtn"),
+    slpBadge: required<HTMLSpanElement>("slpBadge"),
+    showPoseWrap: required<HTMLLabelElement>("showPoseWrap"),
+    showPose: required<HTMLInputElement>("showPose"),
 
     // Upload (coming soon)
     btnUpload: required<HTMLButtonElement>("btnUpload"),

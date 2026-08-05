@@ -147,6 +147,9 @@ async function loadVideo(source: File | string, name: string, url: string | null
 // SLP loading
 // ============================================================
 async function loadSlp(source: File | string, name: string): Promise<void> {
+  // A .slp can arrive via the main dropzone or a URL param while the annotations step is still
+  // toggled off — reveal the step so the load has somewhere visible to land.
+  enableSlpStep();
   log(`Parsing SLP: ${name}…`);
   try {
     const labels = (await sio.loadSlp(source, { openVideos: false })) as unknown as SleapLabels;
@@ -172,7 +175,8 @@ function renderFrame(): void {
   if (!state.curBitmap) return;
   ctx.clearRect(0, 0, els.view.width, els.view.height);
   drawVideoFrame(state.curBitmap, ctx, state.width, state.height);
-  if (state.pose && els.showPose.checked) drawPose(ctx, state.pose.byFrame.get(state.cur), state.pose.skeleton, state.width);
+  if (state.pose && els.slpToggle.checked && els.showPose.checked)
+    drawPose(ctx, state.pose.byFrame.get(state.cur), state.pose.skeleton, state.width);
   els.overlayInfo.textContent = `frame ${state.cur} / ${state.totalFrames - 1}  ·  ${fmtTime(state.cur, state.fps)}`;
 }
 
@@ -369,15 +373,50 @@ function refreshSource(): void {
 function wireSeg(segEl: HTMLElement, apply: (value: string) => void): void {
   segEl.querySelectorAll("button").forEach((b) => {
     b.addEventListener("click", () => {
-      segEl.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
-      b.classList.add("active");
+      selectSeg(segEl, Object.values(b.dataset)[0]);
       const value = Object.values(b.dataset)[0];
       if (value != null) apply(value);
     });
   });
 }
 
+// Marks the button carrying `value` active — used by wireSeg and by programmatic switches
+// (e.g. a ?url= param selecting the EMBER pane).
+function selectSeg(segEl: HTMLElement, value: string | undefined): void {
+  segEl.querySelectorAll("button").forEach((b) => b.classList.toggle("active", Object.values(b.dataset)[0] === value));
+}
+
 wireSeg(els.modeSeg, (v) => setMode(v as SelectorMode));
+
+// Source toggle: local file (dropzone) vs stream from EMBER (URL).
+type SourceKind = "local" | "ember";
+function setSrcPane(src: SourceKind): void {
+  els.localPane.hidden = src !== "local";
+  els.emberPane.hidden = src !== "ember";
+}
+wireSeg(els.srcSeg, (v) => setSrcPane(v as SourceKind));
+
+function loadFromEmberUrl(): void {
+  const url = els.emberUrl.value.trim();
+  if (!url) return;
+  state.sourceFile = null;
+  void loadVideo(url, url.split("/").pop()?.split("?")[0] || "video.mp4", url);
+}
+els.emberLoadBtn.addEventListener("click", loadFromEmberUrl);
+els.emberUrl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") loadFromEmberUrl();
+});
+
+// SLEAP annotations step: hidden until the toggle above the player is switched on.
+function enableSlpStep(): void {
+  els.slpToggle.checked = true;
+  els.slpCard.hidden = false;
+}
+els.slpToggle.addEventListener("change", () => {
+  els.slpCard.hidden = !els.slpToggle.checked;
+  // The overlay is only drawn while the step is enabled, so re-render on either flip.
+  renderFrame();
+});
 
 // Transport buttons
 els.btnPlay.addEventListener("click", togglePlay);
@@ -468,20 +507,46 @@ window.addEventListener("keydown", (e) => {
 // ============================================================
 // File loading (dropzone mirrors bbqs-uploader's picker)
 // ============================================================
+function loadDroppedFile(f: File): void {
+  if (/\.(slp|h5|hdf5)$/i.test(f.name)) void loadSlp(f, f.name);
+  else void loadVideo(f, f.name);
+}
+
+function wireDropzone(dz: HTMLElement): void {
+  ["dragenter", "dragover"].forEach((evt) =>
+    dz.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dz.classList.add("dragover");
+    }),
+  );
+  ["dragleave", "drop"].forEach((evt) =>
+    dz.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dz.classList.remove("dragover");
+    }),
+  );
+  dz.addEventListener("drop", (e) => {
+    for (const f of e.dataTransfer?.files ?? []) loadDroppedFile(f);
+  });
+}
+wireDropzone(els.dropzone);
+wireDropzone(els.slpDropzone);
+
 els.dropzone.addEventListener("click", () => els.videoFile.click());
-// stopPropagation keeps the dropzone's own click handler from also firing on the inner buttons.
+els.slpDropzone.addEventListener("click", () => els.slpFile.click());
+// stopPropagation keeps a dropzone's own click handler from also firing on the inner buttons.
 els.browseVideoBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   els.videoFile.click();
+});
+els.browseSlpBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  els.slpFile.click();
 });
 els.sampleBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   void loadSample();
 });
-// The hidden inputs live inside the dropzone, so the synthetic click from input.click() bubbles
-// back to the dropzone handler and would pop a second picker on top of the first.
-els.videoFile.addEventListener("click", (e) => e.stopPropagation());
-els.slpFile.addEventListener("click", (e) => e.stopPropagation());
 els.videoFile.addEventListener("change", () => {
   const f = els.videoFile.files?.[0];
   if (f) void loadVideo(f, f.name);
@@ -491,26 +556,6 @@ els.slpFile.addEventListener("change", () => {
   const f = els.slpFile.files?.[0];
   if (f) void loadSlp(f, f.name);
   els.slpFile.value = "";
-});
-els.pickSlp.addEventListener("click", () => els.slpFile.click());
-
-["dragenter", "dragover"].forEach((evt) =>
-  els.dropzone.addEventListener(evt, (e) => {
-    e.preventDefault();
-    els.dropzone.classList.add("dragover");
-  }),
-);
-["dragleave", "drop"].forEach((evt) =>
-  els.dropzone.addEventListener(evt, (e) => {
-    e.preventDefault();
-    els.dropzone.classList.remove("dragover");
-  }),
-);
-els.dropzone.addEventListener("drop", (e) => {
-  for (const f of e.dataTransfer?.files ?? []) {
-    if (/\.(slp|h5|hdf5)$/i.test(f.name)) void loadSlp(f, f.name);
-    else void loadVideo(f, f.name);
-  }
 });
 // Prevent the browser from navigating away when a file misses the dropzone.
 window.addEventListener("dragover", (e) => e.preventDefault());
@@ -528,10 +573,16 @@ async function loadSample(): Promise<void> {
 function initFromUrlParams(): void {
   const p = new URLSearchParams(location.search);
   const url = p.get("url");
-  if (url) void loadVideo(url, url.split("/").pop() || "video.mp4", url);
+  if (url) {
+    // A remote URL is the EMBER-stream path — reflect it in the source toggle.
+    selectSeg(els.srcSeg, "ember");
+    setSrcPane("ember");
+    els.emberUrl.value = url;
+    void loadVideo(url, url.split("/").pop() || "video.mp4", url);
+  }
   const slp = p.get("slp");
   if (slp) setTimeout(() => void loadSlp(slp, slp.split("/").pop() || "labels.slp"), 600);
 }
 initFromUrlParams();
 
-log("Ready. Drop a video (± a .slp) above to begin.");
+log("Ready. Load a local video or stream one from EMBER to begin.");

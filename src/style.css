@@ -233,8 +233,27 @@ select {
   color: var(--ok);
 }
 
+/* Centered toggle rows (source picker and video/frame selector) */
+.toggle-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.card-heading h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
 /* Dropzone (mirrors bbqs-uploader's file picker) */
-#dropzone {
+.dropzone {
   border: 2px dashed var(--border);
   border-radius: 12px;
   padding: 2rem 1rem;
@@ -244,9 +263,12 @@ select {
     border-color 0.15s,
     background 0.15s;
 }
-#dropzone.dragover {
+.dropzone.dragover {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+.dropzone.compact {
+  padding: 1rem;
 }
 .dz-icon {
   display: flex;
@@ -274,23 +296,51 @@ select {
   background: none;
 }
 
-/* Player */
-.player-topbar {
+/* Stream-from-EMBER pane */
+.url-row {
   display: flex;
+  gap: 0.5rem;
+}
+input[type="url"] {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+.ember-hint {
+  margin: 0.6rem 0 0;
+}
+
+/* Player */
+/* Equal 1fr side columns keep the Video/Frame toggle truly centered in the card, with the SLEAP
+   annotations toggle pinned to the right. */
+.player-topbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
 }
-.slp-btn .slp-optional {
-  font-weight: 400;
-  color: var(--muted);
-  font-size: 0.85em;
+.player-topbar .slp-toggle {
+  justify-self: end;
 }
-.pose-toggle input {
+.mode-hint {
+  text-align: center;
+  margin: 0 0 1rem;
+}
+input[type="checkbox"] {
   width: auto;
   margin: 0 0.25rem 0 0;
   accent-color: var(--accent);
+}
+.slp-status {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .seg {

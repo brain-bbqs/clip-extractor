@@ -10,12 +10,11 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
 
 ## Features
 
-- **Top-loading drag-and-drop file picker** (mirroring [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader)'s dropzone) — drop a video and/or a `.slp`, click to browse, or load the bundled sample.
-- **Load anything sleap-io.js can open**
-  - Local video files (`MediaBunnyVideoBackend.fromBlob`, with an mp4box fallback)
-  - Remote video URLs via the `?url=` param (streamed via `MediaBunnyVideoBackend.fromUrl`, with a full-download fallback)
-  - Optional SLEAP `.slp` (drop it in, or the **Load .slp file** button above the player), loaded with `loadSlp({ openVideos: false })`
-- **Video / Frame selector toggle** above the player:
+- **Top-loading source picker** with a centered **Load local file / Stream from EMBER** toggle:
+  - **Load local file** — a drag-and-drop dropzone (mirroring [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader)'s picker); drop a video, click to browse, or load the bundled sample (`MediaBunnyVideoBackend.fromBlob`, with an mp4box fallback).
+  - **Stream from EMBER** — paste an EMBER/DANDI asset URL and stream it directly (`MediaBunnyVideoBackend.fromUrl`, with a full-download fallback); also reachable via the `?url=` param.
+- **Optional SLEAP annotations step** — a toggle above the player (default off) reveals a card below the video for loading a `.slp` (`loadSlp({ openVideos: false })`); dropping a `.slp` anywhere enables it automatically.
+- **Video / Frame selector toggle** centered above the player:
   - **Video** — mark an in/out range with **[ Set In** / **Set Out ]** (or `I` / `O`); the clip streams directly, no re-encoding.
   - **Frame** — scrub to select a single frame.
 - **Frame-accurate player** — play/pause, step, scrub, speed control, and a B-frame decode→display reorder (from `getFrameTimes`) so playback never jumps backwards. Keyboard: `Space` play/pause, `←/→` step, `Shift`+scrub extends the range.
@@ -25,10 +24,11 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
 
 ## Usage
 
-1. Drop a video (and optionally a `.slp`) into the picker at the top, or click it to browse. **Load the sample (mice)** works too.
+1. Pick a source at the top: drop a local video into the picker (or click to browse; **Load the sample (mice)** works too), or switch to **Stream from EMBER** and paste an asset URL.
 2. Pick **Video** or **Frame** mode above the player.
 3. Scrub to your selection: in Video mode press **[ Set In** / **Set Out ]** (or `I` / `O`); in Frame mode just seek to the frame.
-4. **Upload** is coming soon.
+4. Optionally switch on **SLEAP annotations (.slp)** above the player and load a `.slp` in the card that appears below the video.
+5. **Upload** is coming soon.
 
 URL params: `?url=<video>&slp=<labels>` auto-load on open.
 
