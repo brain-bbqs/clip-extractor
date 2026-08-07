@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Contact EMBER
+    url: https://emberarchive.org/about
+    about: Do you have a bunch of really specific questions you don't want to raise on GitHub? Are you looking to learn more about the EMBER archive? Reach out via e-mail!
+  - name: General questions
+    url: https://github.com/brain-bbqs/bbqs-helpdesk
+    about: Do you have specific questions about data standards and archives in general? The BBQS helpdesk is a great way to connect with people who can help!
