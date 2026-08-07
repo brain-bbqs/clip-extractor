@@ -592,3 +592,44 @@ input[type="checkbox"] {
   font-weight: 600;
   text-decoration: underline;
 }
+
+.consent-banner {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 32px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  z-index: 30;
+}
+
+.consent-banner[hidden] {
+  display: none;
+}
+
+.consent-banner-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.consent-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 700px) {
+  .consent-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
