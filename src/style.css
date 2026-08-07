@@ -554,3 +554,34 @@ input[type="checkbox"] {
 .disabledpanel:hover .comingSoonOverlay {
   opacity: 1;
 }
+
+.page-footer-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 0 0.75rem 0.35rem 0.5rem;
+  /* The bar spans the full viewport width but is mostly empty middle; without this, that empty
+     stretch swallows clicks aimed at page content behind it. Pointer events are re-enabled on the
+     bar's real contents below. */
+  pointer-events: none;
+}
+.page-footer-bar > * {
+  pointer-events: auto;
+}
+
+.footer-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.footer-text-link {
+  color: var(--accent);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: underline;
+}
