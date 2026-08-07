@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clip Extractor</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/clip-extractor-favicon-small-C0Zcyx20.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-small-32-Dbw-CWbA.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon-small-16-Cy9-lsb0.png" />
+    <link rel="apple-touch-icon" href="./assets/icon-180-qInRyNvI.png" />
+    <script>
+      // Applies the stored theme override before first paint so a saved dark/light choice doesn't
+      // flash the OS-preferred theme first. Key kept in sync with THEME_KEY in src/main.ts.
+      try {
+        var storedTheme = localStorage.getItem("clip-extractor.theme");
+        if (storedTheme === "light" || storedTheme === "dark") document.documentElement.dataset.theme = storedTheme;
+      } catch (e) {}
+    </script>
+    <script>
+      // Google Analytics is never loaded until the user explicitly accepts via the consent
+      // banner below; declining (or leaving the choice unset) never touches gtag.js or any GA
+      // cookie. Consent is re-checked on every page load from this localStorage key.
+      var GA_MEASUREMENT_ID = "G-CQZQL50EFX";
+      var ANALYTICS_CONSENT_KEY = "clip-extractor.analytics-consent";
+
+      function getAnalyticsConsent() {
+        try {
+          return localStorage.getItem(ANALYTICS_CONSENT_KEY);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function setAnalyticsConsent(value) {
+        try {
+          localStorage.setItem(ANALYTICS_CONSENT_KEY, value);
+        } catch (e) {}
+      }
+
+      function loadGoogleAnalytics() {
+        if (window.gtag) return;
+
+        window.dataLayer = window.dataLayer || [];
+        function gtag() {
+          window.dataLayer.push(arguments);
+        }
+        window.gtag = gtag;
+        window.gtag("js", new Date());
+        window.gtag("config", GA_MEASUREMENT_ID);
+
+        var gtagScript = document.createElement("script");
+        gtagScript.async = true;
+        gtagScript.src = "https://www.googletagmanager.com/gtag/js?id=" + GA_MEASUREMENT_ID;
+        document.head.appendChild(gtagScript);
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        var banner = document.getElementById("analytics-consent-banner");
+        var acceptBtn = document.getElementById("analytics-accept-btn");
+        var declineBtn = document.getElementById("analytics-decline-btn");
+        if (!banner || !acceptBtn || !declineBtn) return;
+
+        var consent = getAnalyticsConsent();
+        if (consent === "accepted") {
+          loadGoogleAnalytics();
+          banner.hidden = true;
+        } else if (consent === "declined") {
+          banner.hidden = true;
+        } else {
+          banner.hidden = false;
+        }
+
+        acceptBtn.addEventListener("click", function () {
+          setAnalyticsConsent("accepted");
+          loadGoogleAnalytics();
+          banner.hidden = true;
+        });
+
+        declineBtn.addEventListener("click", function () {
+          setAnalyticsConsent("declined");
+          banner.hidden = true;
+        });
+      });
+    </script>
+    <script type="module" crossorigin src="./assets/index-BrQorsnq.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CGXEMsET.css">
+  </head>
+  <body>
+    <main>
+      <header class="site-header">
+        <img class="brand-logo" src="./assets/clip-extractor-icon-DF8u0q4x.svg" alt="" width="48" height="48" />
+        <h1>Clip Extractor</h1>
+        <div class="header-actions">
+          <button type="button" id="themeToggle" class="theme-toggle" aria-label="Toggle light/dark mode" title="Toggle light/dark mode">
+            <svg
+              class="theme-toggle-moon"
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            <svg
+              class="theme-toggle-sun"
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="5" />
+              <line x1="12" y1="1" x2="12" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="23" />
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+              <line x1="1" y1="12" x2="3" y2="12" />
+              <line x1="21" y1="12" x2="23" y2="12" />
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- File loading -->
+      <section class="card" id="loadCard">
+        <div class="card-toprow">
+          <span></span>
+          <div class="seg" id="srcSeg" role="group" aria-label="Video source">
+            <button type="button" data-src="local" class="active">Load local file</button>
+            <button type="button" data-src="ember">Stream from EMBER</button>
+          </div>
+          <label class="hint slp-toggle">
+            <span>SLEAP annotations (<code>.slp</code>)</span>
+            <input type="checkbox" id="slpToggle" class="switch" role="switch" />
+          </label>
+        </div>
+        <div id="localPane">
+          <div id="dropzone" class="dropzone">
+            <div class="dz-inner">
+              <div class="dz-icon">
+                <span>🎥</span>
+              </div>
+              <p>Drop a video here, or click to browse <button type="button" id="browseVideoBtn" class="dz-browse">files</button>.</p>
+              <p class="dz-sample"><button type="button" id="sampleBtn" class="dz-browse">Load the sample (mice)</button></p>
+            </div>
+          </div>
+        </div>
+        <div id="emberPane" hidden>
+          <div class="url-row">
+            <input type="url" id="emberUrl" placeholder="https://&hellip;/video.mp4" aria-label="EMBER video URL" />
+            <button type="button" id="emberLoadBtn" class="primary">Stream</button>
+          </div>
+          <p class="hint ember-hint">
+            Streams the video directly from an EMBER / DANDI asset URL — nothing is downloaded up front. The URL must be CORS-accessible.
+          </p>
+        </div>
+        <input type="file" id="videoFile" accept="video/*,.mp4,.avi,.mov,.mkv" hidden />
+        <input type="file" id="slpFile" accept=".slp,.h5,.hdf5" hidden />
+      </section>
+
+      <!-- SLEAP annotations (revealed by the toggle switch on the load card) -->
+      <section class="card" id="slpCard" hidden>
+        <div id="slpDropzone" class="dropzone compact">
+          <div class="dz-inner">
+            <div class="dz-icon">
+              <img class="dz-logo" src="./assets/sleap-logo-QmtXJJ2h.png" alt="SLEAP" width="40" height="40" />
+            </div>
+            <p>
+              Drop a SLEAP <code>.slp</code> here, or click to browse
+              <button type="button" id="browseSlpBtn" class="dz-browse">files</button>.
+            </p>
+          </div>
+        </div>
+        <div class="slp-status" id="slpStatus" hidden>
+          <span class="badge" id="slpBadge"></span>
+          <label class="hint pose-toggle"><input type="checkbox" id="showPose" checked /> Show overlay</label>
+        </div>
+      </section>
+
+      <!-- Player -->
+      <section class="card" id="playerCard">
+        <div class="toggle-row">
+          <div class="seg" id="modeSeg" role="group" aria-label="Selector mode">
+            <button type="button" data-mode="video" class="active">Snippet</button>
+            <button type="button" data-mode="frame">Frame</button>
+          </div>
+        </div>
+
+        <div id="stage">
+          <div id="emptyStage">No video loaded — load one above to get started.</div>
+          <canvas id="view" style="display: none"></canvas>
+          <div id="overlayInfo" style="display: none"></div>
+        </div>
+
+        <input type="range" id="frameSlider" min="0" max="0" value="0" step="1" disabled />
+        <div id="selbar" class="video-only">
+          <div id="selfill" style="display: none"></div>
+          <div id="selplay" style="display: none"></div>
+        </div>
+
+        <div class="transport">
+          <button id="btnFirst" class="sec small" title="First frame" disabled>&#124;&#9664;</button>
+          <button id="btnPrev" class="sec small" title="Prev frame (&larr;)" disabled>&#9664;</button>
+          <button id="btnPlay" class="primary" title="Play/Pause (space)" disabled>&#9654; Play</button>
+          <button id="btnNext" class="sec small" title="Next frame (&rarr;)" disabled>&#9654;</button>
+          <button id="btnLast" class="sec small" title="Last frame" disabled>&#9654;&#124;</button>
+          <label class="hint speed-label">
+            Speed
+            <select id="speed">
+              <option value="0.25">0.25&times;</option>
+              <option value="0.5">0.5&times;</option>
+              <option value="1" selected>1&times;</option>
+              <option value="2">2&times;</option>
+              <option value="4">4&times;</option>
+            </select>
+          </label>
+          <span class="spacer"></span>
+          <button id="btnSetIn" class="sec small video-only" title="Set in point ([ or I)" disabled>[ Set In</button>
+          <button id="btnSetOut" class="sec small video-only" title="Set out point (] or O)" disabled>Set Out ]</button>
+        </div>
+
+        <div class="seltimes">
+          <div class="box video-only">
+            <div class="k">In</div>
+            <div class="v" id="inVal">&mdash;</div>
+          </div>
+          <div class="box">
+            <div class="k">Current</div>
+            <div class="v" id="curVal">&mdash;</div>
+          </div>
+          <div class="box video-only">
+            <div class="k">Out</div>
+            <div class="v" id="outVal">&mdash;</div>
+          </div>
+        </div>
+        <div class="sel-row video-only">
+          <span class="hint" id="rangeSummary">Selection: full video</span>
+          <span class="spacer"></span>
+          <button id="btnClearSel" class="ghost small" disabled>Reset range</button>
+        </div>
+      </section>
+
+      <!-- Upload (coming soon) -->
+      <section class="card disabledpanel" id="uploadCard">
+        <div class="comingSoonOverlay"><span class="icon">&#128683;</span> Coming soon</div>
+        <div class="upload-bar">
+          <button type="button" id="btnUpload" class="primary upload-btn" disabled>Upload</button>
+          <span class="hint">Uploads the current selection.</span>
+        </div>
+      </section>
+    </main>
+
+    <div id="analytics-consent-banner" class="consent-banner" hidden role="region" aria-label="Analytics consent">
+      <p class="consent-banner-text">
+        We use analytics tracking to understand how this page is used. No tracking is enabled unless you accept.
+      </p>
+      <div class="consent-banner-actions">
+        <button type="button" id="analytics-accept-btn" class="primary">Accept</button>
+        <button type="button" id="analytics-decline-btn">Decline</button>
+      </div>
+    </div>
+
+    <div class="page-footer-bar">
+      <div class="footer-left">
+        <div class="footer-row">
+          <a
+            class="footer-text-link"
+            href="https://github.com/brain-bbqs/clip-extractor/issues/new?template=bug_report.yml"
+            target="_blank"
+            rel="noopener"
+          >
+            🐛 Report a bug
+          </a>
+        </div>
+        <div class="footer-row">
+          <a
+            class="footer-text-link"
+            href="https://github.com/brain-bbqs/clip-extractor/issues/new?template=feature_request.yml"
+            target="_blank"
+            rel="noopener"
+          >
+            💡 Request a feature
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </body>
+</html>
