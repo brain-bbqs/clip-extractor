@@ -8,227 +8,190 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/src/assets/favicon-small-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/src/assets/favicon-small-16.png" />
     <link rel="apple-touch-icon" href="/src/assets/icon-180.png" />
+    <script>
+      // Applies the stored theme override before first paint so a saved dark/light choice doesn't
+      // flash the OS-preferred theme first. Key kept in sync with THEME_KEY in src/main.ts.
+      try {
+        var storedTheme = localStorage.getItem("clip-extractor.theme");
+        if (storedTheme === "light" || storedTheme === "dark") document.documentElement.dataset.theme = storedTheme;
+      } catch (e) {}
+    </script>
   </head>
   <body>
-    <h1 class="title-row">
-      <img class="brand-logo" src="/src/assets/clip-extractor-icon.svg" alt="" width="32" height="32" />
-      Clip Extractor
-    </h1>
-    <p class="subtitle">
-      Load a video (remote URL or local file) &plusmn; a SLEAP <code>.slp</code>, scrub to an in/out range, then extract the clip with
-      <a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener">ffmpeg.wasm</a>
-      and package it with SLP-free annotation JSON for a backend POST. Powered by
-      <a href="https://github.com/talmolab/sleap-io" target="_blank" rel="noopener">sleap-io.js</a>.
-    </p>
-
-    <div class="grid">
-      <!-- LEFT: player -->
-      <div>
-        <div class="panel">
-          <div id="stage">
-            <div id="emptyStage">
-              No video loaded &mdash; use <b>Source</b> &rarr; or
-              <button id="sampleBtn2" class="small ghost" style="margin-left: 4px">Load sample</button>
-            </div>
-            <canvas id="view" style="display: none"></canvas>
-            <div id="overlayInfo" style="display: none"></div>
-          </div>
-
-          <input type="range" id="frameSlider" min="0" max="0" value="0" step="1" disabled style="margin-top: 12px" />
-          <div id="selbar">
-            <div id="selfill" style="display: none"></div>
-            <div id="selplay" style="display: none"></div>
-          </div>
-
-          <div class="transport">
-            <button id="btnFirst" class="sec small" title="First frame" disabled>&#124;&#9664;</button>
-            <button id="btnPrev" class="sec small" title="Prev frame (&larr;)" disabled>&#9664;</button>
-            <button id="btnPlay" title="Play/Pause (space)" disabled>&#9654; Play</button>
-            <button id="btnNext" class="sec small" title="Next frame (&rarr;)" disabled>&#9654;</button>
-            <button id="btnLast" class="sec small" title="Last frame" disabled>&#9654;&#124;</button>
-            <label class="hint" style="margin-left: 6px">
-              Speed
-              <select id="speed" style="width: auto; display: inline-block; padding: 5px 6px; font-size: 13px">
-                <option value="0.25">0.25&times;</option>
-                <option value="0.5">0.5&times;</option>
-                <option value="1" selected>1&times;</option>
-                <option value="2">2&times;</option>
-                <option value="4">4&times;</option>
-              </select>
-            </label>
-            <span style="flex: 1"></span>
-            <button id="btnSetIn" class="sec small" title="Set in point ([ or I)" disabled>[ Set In</button>
-            <button id="btnSetOut" class="sec small" title="Set out point (] or O)" disabled>Set Out ]</button>
-          </div>
-
-          <div class="seltimes">
-            <div class="box">
-              <div class="k">In</div>
-              <div class="v" id="inVal">&mdash;</div>
-            </div>
-            <div class="box">
-              <div class="k">Current</div>
-              <div class="v" id="curVal">&mdash;</div>
-            </div>
-            <div class="box">
-              <div class="k">Out</div>
-              <div class="v" id="outVal">&mdash;</div>
-            </div>
-          </div>
-          <div class="row" style="margin-top: 8px">
-            <span class="hint" id="rangeSummary">Selection: full video</span>
-            <span style="flex: 1"></span>
-            <button id="btnClearSel" class="ghost small" disabled>Reset range</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- RIGHT: controls -->
-      <div>
-        <div class="panel">
-          <h2>1 &middot; Source</h2>
-          <label class="field">Video URL (remote endpoint)</label>
-          <div class="row">
-            <input type="url" id="videoUrl" class="flex1" placeholder="https://&hellip;/video.mp4" />
-            <button id="loadVideoUrl">Load</button>
-          </div>
-          <div class="row" style="margin-top: 8px">
-            <button id="pickVideo" class="sec small">Open file&hellip;</button>
-            <button id="sampleBtn" class="ghost small">Load sample (mice)</button>
-            <span class="hint">or drag &amp; drop below</span>
-          </div>
-          <div class="drop" id="drop" style="margin-top: 8px">Drop a video and/or <code>.slp</code> here</div>
-
-          <label class="field" style="margin-top: 12px">SLEAP labels (optional)</label>
-          <div class="row">
-            <input type="url" id="slpUrl" class="flex1" placeholder="https://&hellip;/labels.slp" />
-            <button id="loadSlpUrl" class="sec">Load</button>
-          </div>
-          <div class="row" style="margin-top: 8px">
-            <button id="pickSlp" class="sec small">Open .slp&hellip;</button>
-            <label class="hint"><input type="checkbox" id="showPose" checked style="width: auto; margin: 0 4px 0 0" /> Show overlay</label>
-          </div>
-          <input type="file" id="videoFile" accept="video/*,.mp4,.avi,.mov,.mkv" />
-          <input type="file" id="slpFile" accept=".slp,.h5,.hdf5" />
-
-          <div class="kv" id="srcInfo" style="margin-top: 12px; display: none"></div>
-          <div id="log" style="margin-top: 10px" aria-live="polite"></div>
-        </div>
-
-        <div class="panel" id="extractPanel">
-          <h2>2 &middot; Extract</h2>
-          <div class="row">
-            <span class="hint">Output</span>
-            <div class="seg" id="outSeg">
-              <button data-out="clip" class="active">MP4 clip</button>
-              <button data-out="frames">Frame images</button>
-            </div>
-          </div>
-
-          <div id="clipOpts" style="margin-top: 10px">
-            <div class="row">
-              <span class="hint">Trim mode</span>
-              <div class="seg" id="trimSeg">
-                <button data-trim="precise" class="active">Precise (re-encode)</button>
-                <button data-trim="fast">Fast (stream copy)</button>
-              </div>
-            </div>
-            <details>
-              <summary>ffmpeg command</summary>
-              <pre class="preview" id="ffCmd" style="margin-top: 6px">&mdash;</pre>
-              <div class="gplnote">First extraction downloads the ffmpeg.wasm core (~30&nbsp;MB, cached thereafter). GPL-licensed.</div>
-            </details>
-          </div>
-
-          <div id="framesOpts" style="margin-top: 10px; display: none">
-            <div class="row">
-              <span class="hint">Format</span>
-              <div class="seg" id="fmtSeg">
-                <button data-fmt="image/png" class="active">PNG</button>
-                <button data-fmt="image/jpeg">JPEG</button>
-              </div>
-              <label class="hint" id="jpgQWrap" style="display: none"
-                >Quality
-                <input
-                  type="number"
-                  id="jpgQ"
-                  min="0.1"
-                  max="1"
-                  step="0.05"
-                  value="0.9"
-                  style="width: 70px; display: inline-block; padding: 4px 6px; font-size: 13px"
-                />
-              </label>
-            </div>
-            <label class="hint" style="display: block; margin-top: 8px"
-              ><input type="checkbox" id="burnPose" style="width: auto; margin: 0 4px 0 0" /> Burn pose overlay into frames</label
+    <main>
+      <header class="site-header">
+        <img class="brand-logo" src="/src/assets/clip-extractor-icon.svg" alt="" width="48" height="48" />
+        <h1>Clip Extractor</h1>
+        <div class="header-actions">
+          <button type="button" id="themeToggle" class="theme-toggle" aria-label="Toggle light/dark mode" title="Toggle light/dark mode">
+            <svg
+              class="theme-toggle-moon"
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
             >
-            <div class="hint" id="framesWarn" style="margin-top: 6px">
-              Frame images decode one-by-one &mdash; large ranges can be slow &amp; heavy.
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            <svg
+              class="theme-toggle-sun"
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="5" />
+              <line x1="12" y1="1" x2="12" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="23" />
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+              <line x1="1" y1="12" x2="3" y2="12" />
+              <line x1="21" y1="12" x2="23" y2="12" />
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- File loading -->
+      <section class="card" id="loadCard">
+        <div class="card-toprow">
+          <span></span>
+          <div class="seg" id="srcSeg" role="group" aria-label="Video source">
+            <button type="button" data-src="local" class="active">Load local file</button>
+            <button type="button" data-src="ember">Stream from EMBER</button>
+          </div>
+          <label class="hint slp-toggle">
+            <span>SLEAP annotations (<code>.slp</code>)</span>
+            <input type="checkbox" id="slpToggle" class="switch" role="switch" />
+          </label>
+        </div>
+        <div id="localPane">
+          <div id="dropzone" class="dropzone">
+            <div class="dz-inner">
+              <div class="dz-icon">
+                <span>🎥</span>
+              </div>
+              <p>Drop a video here, or click to browse <button type="button" id="browseVideoBtn" class="dz-browse">files</button>.</p>
+              <p class="dz-sample"><button type="button" id="sampleBtn" class="dz-browse">Load the sample (mice)</button></p>
             </div>
           </div>
-
-          <div class="row" style="margin-top: 12px">
-            <button id="btnExtract" class="flex1" disabled>Extract selection</button>
+        </div>
+        <div id="emberPane" hidden>
+          <div class="url-row">
+            <input type="url" id="emberUrl" placeholder="https://&hellip;/video.mp4" aria-label="EMBER video URL" />
+            <button type="button" id="emberLoadBtn" class="primary">Stream</button>
           </div>
-          <div class="progress" id="exProg"><div class="fill"></div></div>
-          <div class="hint" id="exNote" style="margin-top: 6px"></div>
-          <div class="kv" id="exResult" style="margin-top: 8px; display: none"></div>
+          <p class="hint ember-hint">
+            Streams the video directly from an EMBER / DANDI asset URL — nothing is downloaded up front. The URL must be CORS-accessible.
+          </p>
+        </div>
+        <input type="file" id="videoFile" accept="video/*,.mp4,.avi,.mov,.mkv" hidden />
+        <input type="file" id="slpFile" accept=".slp,.h5,.hdf5" hidden />
+      </section>
+
+      <!-- SLEAP annotations (revealed by the toggle switch on the load card) -->
+      <section class="card" id="slpCard" hidden>
+        <div id="slpDropzone" class="dropzone compact">
+          <div class="dz-inner">
+            <div class="dz-icon">
+              <img class="dz-logo" src="/src/assets/sleap-logo.png" alt="SLEAP" width="40" height="40" />
+            </div>
+            <p>
+              Drop a SLEAP <code>.slp</code> here, or click to browse
+              <button type="button" id="browseSlpBtn" class="dz-browse">files</button>.
+            </p>
+          </div>
+        </div>
+        <div class="slp-status" id="slpStatus" hidden>
+          <span class="badge" id="slpBadge"></span>
+          <label class="hint pose-toggle"><input type="checkbox" id="showPose" checked /> Show overlay</label>
+        </div>
+      </section>
+
+      <!-- Player -->
+      <section class="card" id="playerCard">
+        <div class="toggle-row">
+          <div class="seg" id="modeSeg" role="group" aria-label="Selector mode">
+            <button type="button" data-mode="video" class="active">Snippet</button>
+            <button type="button" data-mode="frame">Frame</button>
+          </div>
         </div>
 
-        <div class="panel" id="annPanel">
-          <h2>3 &middot; Annotations <span class="badge" id="annBadge">no SLP</span></h2>
-          <div class="hint" id="annSummary">
-            Load a <code>.slp</code> to attach pose annotations to the payload. The clip is still extractable without one.
-          </div>
-          <details id="annDetails" style="display: none">
-            <summary>Preview annotations JSON (clip-relative, SLP-free)</summary>
-            <pre class="preview" id="annPreview">&mdash;</pre>
-            <button id="dlAnn" class="ghost small" style="margin-top: 6px">Download annotations.json</button>
-          </details>
+        <div id="stage">
+          <div id="emptyStage">No video loaded — load one above to get started.</div>
+          <canvas id="view" style="display: none"></canvas>
+          <div id="overlayInfo" style="display: none"></div>
         </div>
 
-        <div class="panel disabledpanel" id="txPanel">
-          <div class="comingSoonOverlay"><span class="icon">&#128683;</span> Coming soon</div>
-          <h2>4 &middot; Transmit <span class="badge" id="txBadge">Pozu /clips</span></h2>
-          <div class="row">
-            <div class="flex1">
-              <label class="field">Author (free text)</label>
-              <input type="text" id="author" placeholder="Name / lab" />
-            </div>
-            <div class="flex1">
-              <label class="field">Original filename</label>
-              <input type="text" id="origFilename" placeholder="video.mp4" />
-            </div>
-          </div>
-          <label class="field">POST endpoint (leave blank for dry-run only)</label>
-          <input type="url" id="endpoint" placeholder="https://backend.example/api/clips" />
-          <label class="hint" style="display: block; margin-top: 4px"
-            ><input type="checkbox" id="useProxy" checked style="width: auto; margin: 0 5px 0 0" />Route via
-            <a href="https://github.com/talmolab/nocors" target="_blank" rel="noopener">nocors</a> proxy (needed cross-origin from
-            *.tlab.sh)</label
-          >
-          <label class="field">Extra headers (JSON, optional &mdash; e.g. auth)</label>
-          <textarea id="headers" placeholder='{ "Authorization": "Bearer &hellip;" }'></textarea>
-          <div class="row" style="margin-top: 8px">
-            <span class="hint">Packaging</span>
-            <div class="seg" id="pkgSeg">
-              <button data-pkg="pozu" class="active">Pozu /clips</button>
-              <button data-pkg="multipart">multipart</button>
-              <button data-pkg="json">JSON+base64</button>
-            </div>
-          </div>
-          <div class="hint" id="pkgNote" style="margin-top: 6px"></div>
-          <div class="row" style="margin-top: 12px">
-            <button id="btnPreview" class="sec" disabled>Preview request</button>
-            <button id="btnSend" disabled>Send POST</button>
-            <button id="btnDownload" class="ghost" disabled>Download payload</button>
-          </div>
-          <div class="hint" id="txNote" style="margin-top: 6px"></div>
-          <pre class="preview" id="txPreview" style="display: none; margin-top: 8px"></pre>
+        <input type="range" id="frameSlider" min="0" max="0" value="0" step="1" disabled />
+        <div id="selbar" class="video-only">
+          <div id="selfill" style="display: none"></div>
+          <div id="selplay" style="display: none"></div>
         </div>
-      </div>
-    </div>
+
+        <div class="transport">
+          <button id="btnFirst" class="sec small" title="First frame" disabled>&#124;&#9664;</button>
+          <button id="btnPrev" class="sec small" title="Prev frame (&larr;)" disabled>&#9664;</button>
+          <button id="btnPlay" class="primary" title="Play/Pause (space)" disabled>&#9654; Play</button>
+          <button id="btnNext" class="sec small" title="Next frame (&rarr;)" disabled>&#9654;</button>
+          <button id="btnLast" class="sec small" title="Last frame" disabled>&#9654;&#124;</button>
+          <label class="hint speed-label">
+            Speed
+            <select id="speed">
+              <option value="0.25">0.25&times;</option>
+              <option value="0.5">0.5&times;</option>
+              <option value="1" selected>1&times;</option>
+              <option value="2">2&times;</option>
+              <option value="4">4&times;</option>
+            </select>
+          </label>
+          <span class="spacer"></span>
+          <button id="btnSetIn" class="sec small video-only" title="Set in point ([ or I)" disabled>[ Set In</button>
+          <button id="btnSetOut" class="sec small video-only" title="Set out point (] or O)" disabled>Set Out ]</button>
+        </div>
+
+        <div class="seltimes">
+          <div class="box video-only">
+            <div class="k">In</div>
+            <div class="v" id="inVal">&mdash;</div>
+          </div>
+          <div class="box">
+            <div class="k">Current</div>
+            <div class="v" id="curVal">&mdash;</div>
+          </div>
+          <div class="box video-only">
+            <div class="k">Out</div>
+            <div class="v" id="outVal">&mdash;</div>
+          </div>
+        </div>
+        <div class="sel-row video-only">
+          <span class="hint" id="rangeSummary">Selection: full video</span>
+          <span class="spacer"></span>
+          <button id="btnClearSel" class="ghost small" disabled>Reset range</button>
+        </div>
+      </section>
+
+      <!-- Upload (coming soon) -->
+      <section class="card disabledpanel" id="uploadCard">
+        <div class="comingSoonOverlay"><span class="icon">&#128683;</span> Coming soon</div>
+        <div class="upload-bar">
+          <button type="button" id="btnUpload" class="primary upload-btn" disabled>Upload</button>
+          <span class="hint">Uploads the current selection.</span>
+        </div>
+      </section>
+    </main>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

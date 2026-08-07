@@ -6,7 +6,25 @@ function required<T extends Element>(id: string): T {
 
 export function getElements() {
   return {
+    // Header
+    themeToggle: required<HTMLButtonElement>("themeToggle"),
+
+    // Load card
+    srcSeg: required<HTMLDivElement>("srcSeg"),
+    localPane: required<HTMLDivElement>("localPane"),
+    emberPane: required<HTMLDivElement>("emberPane"),
+    emberUrl: required<HTMLInputElement>("emberUrl"),
+    emberLoadBtn: required<HTMLButtonElement>("emberLoadBtn"),
+    dropzone: required<HTMLDivElement>("dropzone"),
+    browseVideoBtn: required<HTMLButtonElement>("browseVideoBtn"),
+    sampleBtn: required<HTMLButtonElement>("sampleBtn"),
+    videoFile: required<HTMLInputElement>("videoFile"),
+    slpFile: required<HTMLInputElement>("slpFile"),
+    slpToggle: required<HTMLInputElement>("slpToggle"),
+
     // Player
+    playerCard: required<HTMLElement>("playerCard"),
+    modeSeg: required<HTMLDivElement>("modeSeg"),
     stage: required<HTMLDivElement>("stage"),
     emptyStage: required<HTMLDivElement>("emptyStage"),
     view: required<HTMLCanvasElement>("view"),
@@ -28,58 +46,16 @@ export function getElements() {
     rangeSummary: required<HTMLSpanElement>("rangeSummary"),
     btnClearSel: required<HTMLButtonElement>("btnClearSel"),
 
-    // Source
-    videoUrl: required<HTMLInputElement>("videoUrl"),
-    loadVideoUrl: required<HTMLButtonElement>("loadVideoUrl"),
-    pickVideo: required<HTMLButtonElement>("pickVideo"),
-    sampleBtn: required<HTMLButtonElement>("sampleBtn"),
-    sampleBtn2: required<HTMLButtonElement>("sampleBtn2"),
-    drop: required<HTMLDivElement>("drop"),
-    slpUrl: required<HTMLInputElement>("slpUrl"),
-    loadSlpUrl: required<HTMLButtonElement>("loadSlpUrl"),
-    pickSlp: required<HTMLButtonElement>("pickSlp"),
+    // SLEAP annotations card
+    slpCard: required<HTMLElement>("slpCard"),
+    slpDropzone: required<HTMLDivElement>("slpDropzone"),
+    browseSlpBtn: required<HTMLButtonElement>("browseSlpBtn"),
+    slpStatus: required<HTMLDivElement>("slpStatus"),
+    slpBadge: required<HTMLSpanElement>("slpBadge"),
     showPose: required<HTMLInputElement>("showPose"),
-    videoFile: required<HTMLInputElement>("videoFile"),
-    slpFile: required<HTMLInputElement>("slpFile"),
-    srcInfo: required<HTMLDivElement>("srcInfo"),
-    log: required<HTMLDivElement>("log"),
 
-    // Extract
-    outSeg: required<HTMLDivElement>("outSeg"),
-    clipOpts: required<HTMLDivElement>("clipOpts"),
-    trimSeg: required<HTMLDivElement>("trimSeg"),
-    ffCmd: required<HTMLPreElement>("ffCmd"),
-    framesOpts: required<HTMLDivElement>("framesOpts"),
-    fmtSeg: required<HTMLDivElement>("fmtSeg"),
-    jpgQWrap: required<HTMLLabelElement>("jpgQWrap"),
-    jpgQ: required<HTMLInputElement>("jpgQ"),
-    burnPose: required<HTMLInputElement>("burnPose"),
-    btnExtract: required<HTMLButtonElement>("btnExtract"),
-    exProg: required<HTMLDivElement>("exProg"),
-    exNote: required<HTMLDivElement>("exNote"),
-    exResult: required<HTMLDivElement>("exResult"),
-
-    // Annotations
-    annBadge: required<HTMLSpanElement>("annBadge"),
-    annSummary: required<HTMLDivElement>("annSummary"),
-    annDetails: required<HTMLDetailsElement>("annDetails"),
-    annPreview: required<HTMLPreElement>("annPreview"),
-    dlAnn: required<HTMLButtonElement>("dlAnn"),
-
-    // Transmit
-    author: required<HTMLInputElement>("author"),
-    origFilename: required<HTMLInputElement>("origFilename"),
-    endpoint: required<HTMLInputElement>("endpoint"),
-    useProxy: required<HTMLInputElement>("useProxy"),
-    headers: required<HTMLTextAreaElement>("headers"),
-    pkgSeg: required<HTMLDivElement>("pkgSeg"),
-    pkgNote: required<HTMLDivElement>("pkgNote"),
-    txBadge: required<HTMLSpanElement>("txBadge"),
-    btnPreview: required<HTMLButtonElement>("btnPreview"),
-    btnSend: required<HTMLButtonElement>("btnSend"),
-    btnDownload: required<HTMLButtonElement>("btnDownload"),
-    txNote: required<HTMLDivElement>("txNote"),
-    txPreview: required<HTMLPreElement>("txPreview"),
+    // Upload (coming soon)
+    btnUpload: required<HTMLButtonElement>("btnUpload"),
   };
 }
 
