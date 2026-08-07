@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem with Clip Extractor
+description: Report a problem with the EMBER Clip Extractor
 body:
   - type: textarea
     id: description

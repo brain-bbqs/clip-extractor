@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an idea or improvement for Clip Extractor
+description: Suggest an idea or improvement for the EMBER Clip Extractor
 body:
   - type: textarea
     id: solution
