@@ -15,6 +15,17 @@
         var storedTheme = localStorage.getItem("clip-extractor.theme");
         if (storedTheme === "light" || storedTheme === "dark") document.documentElement.dataset.theme = storedTheme;
       } catch (e) {}
+      // Swaps the sign-in button for the (still-empty) signed-in avatar slot before first paint
+      // when a previous session's tokens are still in storage, so refreshing while already signed
+      // in neither flashes the sign-in button nor pops the avatar in afterwards and shifts the
+      // theme toggle sideways. main.ts's renderAuthUI() clears this attribute once the real state
+      // is known. Key kept in sync with STORAGE_KEY in src/lib/settings.ts.
+      try {
+        var storedSettings = JSON.parse(localStorage.getItem("clip-extractor.settings.v1"));
+        if (storedSettings && storedSettings.oauth && storedSettings.oauth.accessToken) {
+          document.documentElement.dataset.signedIn = "1";
+        }
+      } catch (e) {}
     </script>
     <script>
       // Google Analytics is never loaded until the user explicitly accepts via the consent
@@ -82,8 +93,8 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-BrQorsnq.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-CGXEMsET.css">
+    <script type="module" crossorigin src="./assets/index-D8ry2-v6.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-9mIVuPoR.css">
   </head>
   <body>
     <main>
@@ -129,6 +140,33 @@
               <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
             </svg>
           </button>
+          <button type="button" id="oauthSigninBtn" class="primary">Sign in with EMBER</button>
+          <div id="oauthSignedIn" class="oauth-signed-in" hidden>
+            <span id="oauthAvatar" class="oauth-avatar" tabindex="0" aria-label="Account menu"></span>
+            <div class="oauth-popover" role="menu">
+              <p class="oauth-popover-greeting">You are logged in as <strong id="oauthUsername"></strong>.</p>
+              <hr class="oauth-popover-divider" />
+              <button type="button" id="oauthSignoutBtn" class="oauth-popover-signout" role="menuitem">
+                <span>Sign out</span>
+                <svg
+                  class="oauth-popover-signout-icon"
+                  viewBox="0 0 24 24"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -251,12 +289,23 @@
         </div>
       </section>
 
-      <!-- Upload (coming soon) -->
-      <section class="card disabledpanel" id="uploadCard">
-        <div class="comingSoonOverlay"><span class="icon">&#128683;</span> Coming soon</div>
+      <!-- Upload destination (the upload itself is still coming soon) -->
+      <section class="card" id="uploadCard">
+        <div class="card-heading">
+          <h2>Upload destination</h2>
+          <a id="viewDatasetLink" class="view-dataset-link" target="_blank" rel="noopener" hidden
+            >View on EMBER <span class="btn-arrow" aria-hidden="true">↗</span></a
+          >
+        </div>
+        <select id="dandisetId" aria-label="Incoming dataset" hidden></select>
+        <p id="dandisetMessage" class="dandiset-single">Please sign in to see your incoming datasets.</p>
+        <p id="dandisetSingle" class="dandiset-single" hidden><span id="dandisetSingleText"></span></p>
+        <p id="dandisetEmbargoError" class="dandiset-embargo-error" hidden>
+          This dataset is not embargoed. Direct uploads are only allowed to embargoed dandisets; contact EMBER/BBQS admins.
+        </p>
         <div class="upload-bar">
           <button type="button" id="btnUpload" class="primary upload-btn" disabled>Upload</button>
-          <span class="hint">Uploads the current selection.</span>
+          <span class="hint">Uploads the current selection to the dataset above. &#128683; Coming soon.</span>
         </div>
       </section>
     </main>
