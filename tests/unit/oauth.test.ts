@@ -49,9 +49,7 @@ describe("handleRedirectCallback", () => {
   });
 
   it("exchanges the code for tokens and strips the OAuth params from the URL", async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(tokenResponse({ access_token: "at", refresh_token: "rt", expires_in: 3600 })),
-    );
+    const fetchMock = vi.fn(() => Promise.resolve(tokenResponse({ access_token: "at", refresh_token: "rt", expires_in: 3600 })));
     vi.stubGlobal("fetch", fetchMock);
     await startLogin(() => {});
     const state = (JSON.parse(sessionStorage.getItem("clip-extractor.oauth-pkce.v1") ?? "{}") as { state: string }).state;
@@ -103,8 +101,6 @@ describe("ensureFreshToken", () => {
       "fetch",
       vi.fn(() => Promise.resolve(tokenResponse({}, false, 400))),
     );
-    await expect(ensureFreshToken({ accessToken: "at", refreshToken: "rt", expiresAt: 0 })).rejects.toThrow(
-      /HTTP 400/,
-    );
+    await expect(ensureFreshToken({ accessToken: "at", refreshToken: "rt", expiresAt: 0 })).rejects.toThrow(/HTTP 400/);
   });
 });

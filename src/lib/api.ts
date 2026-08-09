@@ -23,9 +23,7 @@ export async function apiFetch<T = unknown>(
     resp = await fetch(`${cfg.api}${path}`, { method, headers, body });
   } catch (e) {
     throw new ApiError(
-      `Network error calling ${path}. Check your connection (or the server's CORS policy): ${
-        e instanceof Error ? e.message : String(e)
-      }`,
+      `Network error calling ${path}. Check your connection (or the server's CORS policy): ${e instanceof Error ? e.message : String(e)}`,
       0,
     );
   }
