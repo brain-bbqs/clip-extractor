@@ -17,6 +17,13 @@ export function bytes(n: number | null | undefined): string {
   return `${(n / 1048576).toFixed(2)} MB`;
 }
 
+/** Two-letter avatar initials from a full name, or "??" when there isn't a first and last name. */
+export function initialsFrom(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return "??";
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 /** Formats a Blob's size via {@link bytes}. */
 export function blobSize(b: Blob): string {
   return bytes(b.size);

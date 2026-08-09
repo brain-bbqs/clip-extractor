@@ -1,6 +1,37 @@
 // Domain types shared across the player, extraction, and payload modules. Kept independent of
 // any single UI framework — main.ts and ui/* are the only places that touch the DOM.
 
+// ------------------------------------------------------------------
+// EMBER archive sign-in and upload destination (see lib/oauth.ts, lib/dandisets.ts)
+// ------------------------------------------------------------------
+
+export interface DandiInstance {
+  api: string;
+  web: string;
+  oauth: string;
+}
+
+export interface ArchiveConfig {
+  api: string;
+  web: string;
+  accessToken: string;
+  dandisetId: string;
+  /** Whether the selected dandiset is embargoed, if known. Undefined when not yet resolved. */
+  embargoed?: boolean;
+}
+
+export interface OAuthTokenSet {
+  accessToken: string;
+  refreshToken?: string;
+  /** ms since epoch */
+  expiresAt: number;
+}
+
+export interface StoredSettings {
+  dandisetId?: string;
+  oauth?: OAuthTokenSet;
+}
+
 /** Minimal duck-typed surface of sleap-io.js's video backend that this app actually calls. The
  * upstream package's generated declarations are heavily mangled/overloaded; re-declaring just the
  * members used here keeps the rest of the codebase strictly typed without fighting that. */

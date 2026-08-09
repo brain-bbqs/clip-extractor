@@ -55,9 +55,24 @@ test("SLEAP annotations card is revealed by its toggle (default off)", async ({ 
   await expect(page.locator("#slpCard")).toBeHidden();
 });
 
-test("upload card is marked coming soon", async ({ page }) => {
+test("upload destination card prompts for sign-in while signed out", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("#uploadCard")).toHaveClass(/disabledpanel/);
-  await expect(page.locator("#uploadCard .comingSoonOverlay")).toBeVisible();
+  await expect(page.locator("#oauthSigninBtn")).toBeVisible();
+  await expect(page.locator("#oauthSignedIn")).toBeHidden();
+  await expect(page.locator("#dandisetMessage")).toContainText("sign in");
+  await expect(page.locator("#dandisetId")).toBeHidden();
+  await expect(page.locator("#viewDatasetLink")).toBeHidden();
   await expect(page.locator("#btnUpload")).toBeDisabled();
+});
+
+test("sign-in button starts the EMBER OAuth redirect", async ({ page }) => {
+  await page.goto("/");
+  // The archive itself is out of scope for this smoke test: intercept the redirect and assert
+  // only that the app leaves for the right authorize URL.
+  await page.route("https://api-dandi.emberarchive.org/**", (route) => route.fulfill({ body: "" }));
+  await page.locator("#oauthSigninBtn").click();
+  await page.waitForURL(/api-dandi\.emberarchive\.org\/oauth\/authorize\//);
+  const url = new URL(page.url());
+  expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+  expect(url.searchParams.get("response_type")).toBe("code");
 });
