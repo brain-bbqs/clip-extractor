@@ -7,6 +7,16 @@ export interface IncomingDandiset {
   embargoed: boolean;
 }
 
+export interface IncomingDandisetsResult {
+  datasets: IncomingDandiset[];
+  /**
+   * How many "Incoming: " candidates were dropped because their admin-owner check could not be
+   * completed at all (service down, CORS, network), as opposed to answering "no". Reported so the
+   * UI can say "couldn't verify" instead of the indistinguishable "you have no datasets".
+   */
+  unverified: number;
+}
+
 interface DandisetListItem {
   identifier: string;
   embargo_status?: string;
@@ -52,7 +62,7 @@ async function hasAdminOwner(cfg: ArchiveConfig, identifier: string): Promise<bo
  * page_size=1000 is the archive's max page size and comfortably covers any one user's owned
  * dandisets, so further pages are never followed.
  */
-export async function listIncomingDandisets(cfg: ArchiveConfig): Promise<IncomingDandiset[]> {
+export async function listIncomingDandisets(cfg: ArchiveConfig): Promise<IncomingDandisetsResult> {
   const resp = await apiFetch<DandisetListResponse>(cfg, "/dandisets/?user=me&embargoed=true&page_size=1000");
   const candidates = (resp?.results ?? [])
     .map((d) => ({
@@ -63,7 +73,19 @@ export async function listIncomingDandisets(cfg: ArchiveConfig): Promise<Incomin
     .filter((d) => d.title.startsWith(INCOMING_PREFIX));
 
   // Fail closed: a dandiset whose owner list can't be confirmed is excluded rather than shown.
-  const adminOwned = await Promise.all(candidates.map((d) => hasAdminOwner(cfg, d.identifier).catch(() => false)));
+  // null (the check never completed) is tracked apart from false (it completed and said no), so a
+  // service outage doesn't masquerade as "you own no incoming datasets".
+  const checks = await Promise.all(
+    candidates.map((d) =>
+      hasAdminOwner(cfg, d.identifier).catch((e: unknown) => {
+        console.warn(`Could not verify admin ownership of dandiset ${d.identifier}:`, e);
+        return null;
+      }),
+    ),
+  );
 
-  return candidates.filter((_, i) => adminOwned[i]).sort((a, b) => a.title.localeCompare(b.title));
+  return {
+    datasets: candidates.filter((_, i) => checks[i] === true).sort((a, b) => a.title.localeCompare(b.title)),
+    unverified: checks.filter((c) => c === null).length,
+  };
 }

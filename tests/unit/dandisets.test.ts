@@ -57,8 +57,8 @@ describe("listIncomingDandisets", () => {
       ],
       () => true,
     );
-    const found = await listIncomingDandisets(cfg);
-    expect(found.map((d) => d.identifier)).toEqual(["000001"]);
+    const { datasets } = await listIncomingDandisets(cfg);
+    expect(datasets.map((d) => d.identifier)).toEqual(["000001"]);
   });
 
   it("drops an 'Incoming: ' dataset no admin owns, so it can't be self-provisioned", async () => {
@@ -69,13 +69,30 @@ describe("listIncomingDandisets", () => {
       ],
       (identifier) => identifier === "000001",
     );
-    const found = await listIncomingDandisets(cfg);
-    expect(found.map((d) => d.identifier)).toEqual(["000001"]);
+    const { datasets, unverified } = await listIncomingDandisets(cfg);
+    expect(datasets.map((d) => d.identifier)).toEqual(["000001"]);
+    // A completed "no" is not an outage — nothing to warn the user about.
+    expect(unverified).toBe(0);
   });
 
-  it("fails closed when the admin check itself errors", async () => {
+  it("fails closed when the admin check itself errors, and reports it as unverified", async () => {
     stubArchive([{ identifier: "000001", title: "Incoming: Lab A" }], () => "error");
-    expect(await listIncomingDandisets(cfg)).toEqual([]);
+    const { datasets, unverified } = await listIncomingDandisets(cfg);
+    expect(datasets).toEqual([]);
+    expect(unverified).toBe(1);
+  });
+
+  it("separates a verified dataset from one whose check could not complete", async () => {
+    stubArchive(
+      [
+        { identifier: "000001", title: "Incoming: Reachable" },
+        { identifier: "000002", title: "Incoming: Service down" },
+      ],
+      (identifier) => (identifier === "000001" ? true : "error"),
+    );
+    const { datasets, unverified } = await listIncomingDandisets(cfg);
+    expect(datasets.map((d) => d.identifier)).toEqual(["000001"]);
+    expect(unverified).toBe(1);
   });
 
   it("sorts by title and reports the embargo status", async () => {
@@ -86,9 +103,9 @@ describe("listIncomingDandisets", () => {
       ],
       () => true,
     );
-    const found = await listIncomingDandisets(cfg);
-    expect(found.map((d) => d.title)).toEqual(["Incoming: Ant lab", "Incoming: Zebra lab"]);
-    expect(found[0].embargoed).toBe(false);
-    expect(found[1].embargoed).toBe(true);
+    const { datasets } = await listIncomingDandisets(cfg);
+    expect(datasets.map((d) => d.title)).toEqual(["Incoming: Ant lab", "Incoming: Zebra lab"]);
+    expect(datasets[0].embargoed).toBe(false);
+    expect(datasets[1].embargoed).toBe(true);
   });
 });

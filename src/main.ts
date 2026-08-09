@@ -632,10 +632,17 @@ function showDandisetSingle(dataset: IncomingDandiset): void {
   els.dandisetSingleText.replaceChildren("Uploading directly to EMBER Dandiset ", idCode, `, "${dataset.title}"`);
 }
 
-function applyDatasetList(datasets: IncomingDandiset[]): void {
+function applyDatasetList(datasets: IncomingDandiset[], unverified = 0): void {
   currentDatasets = datasets;
   if (!datasets.length) {
-    setDandisetPlaceholder("You have not been added to any direct-upload datasets; please reach out to EMBER/BBQS admins to request this.");
+    // "Nothing to offer" has two very different causes: the admin check answered no (or the user
+    // genuinely owns no incoming datasets), or it never answered at all. Telling someone to ask
+    // an admin for access when the service is simply unreachable sends them after the wrong bug.
+    setDandisetPlaceholder(
+      unverified > 0
+        ? "Could not verify your incoming datasets with the BBQS/EMBER admin service; datasets that cannot be verified are never offered. See the browser console for details."
+        : "You have not been added to any direct-upload datasets; please reach out to EMBER/BBQS admins to request this.",
+    );
     return;
   }
   // Dropdown mode always ranks options by ascending integer id, oldest dandiset first, regardless
@@ -681,7 +688,8 @@ async function refreshDandisetOptions(): Promise<void> {
   void renderIdentity(els, currentConfig());
   setDandisetPlaceholder("Loading your incoming datasets…");
   try {
-    applyDatasetList(await listIncomingDandisets(currentConfig()));
+    const { datasets, unverified } = await listIncomingDandisets(currentConfig());
+    applyDatasetList(datasets, unverified);
   } catch (e) {
     log(`Could not load your datasets: ${(e as Error).message}`, "err");
     setDandisetPlaceholder("Could not load your datasets");
