@@ -41,6 +41,7 @@ A standard TypeScript + Vite app (structure and CI mirror [bbqs-uploader](https:
 ## Notes
 
 - Remote video/SLP URLs must be CORS-accessible.
+- Sign-in, token storage, and the admin-check service's trust boundary are documented in [SECURITY.md](SECURITY.md), mirroring [bbqs-uploader's](https://github.com/brain-bbqs/bbqs-uploader/blob/main/SECURITY.md).
 - The extraction/payload libraries (ffmpeg.wasm stream-copy trimming, clip-relative annotation JSON, payload packaging) live in `src/lib/` for the upcoming upload step.
 
 ## Initial prompt

@@ -22,13 +22,10 @@ export function saveStoredSettings(settings: StoredSettings | null): void {
       return;
     }
     // clip-extractor is a fully static, backend-free page (no server to hold a session), so
-    // client storage is the only place to persist the OAuth token between page loads. Accepted
-    // and documented trade-off, following the "clear text storage" playbook in bbqs-uploader's
-    // SECURITY.md: there is no HTML-injection sink in this app to exploit it through (the only
-    // innerHTML writes are two static glyph literals, and every archive-supplied string is
-    // rendered via textContent), sessionStorage is flagged the same way, and client-side
-    // "encryption" of a client-held secret is theater — any key this app's JS can reach,
-    // injected JS can reach too.
+    // client storage is the only place to persist the OAuth token between page loads. This is an
+    // accepted, documented trade-off — see SECURITY.md ("Handling a 'clear text storage' alert on
+    // a new credential") for the reasoning and for why the marker below documents intent but does
+    // not clear the check under this repo's CodeQL setup.
     // codeql[js/clear-text-storage-of-sensitive-data]
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   } catch (e) {
