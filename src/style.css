@@ -329,6 +329,13 @@ select {
   font-size: 0.8rem;
   color: var(--muted);
 }
+/* Status lines that report an outcome rather than describing a control */
+.hint.ok {
+  color: var(--ok);
+}
+.hint.err {
+  color: var(--err);
+}
 .spacer {
   flex: 1;
 }
@@ -635,6 +642,11 @@ input[type="checkbox"] {
   grid-template-columns: 1fr;
 }
 
+/* Delivery card: Download / Upload toggle, then whichever pane it selected. */
+.deliver-hint {
+  margin: 0;
+}
+
 /* Upload destination: the EMBER dataset the extracted selection is bound for. */
 .card-heading {
   display: flex;
@@ -693,6 +705,22 @@ input[type="checkbox"] {
   font-size: 0.9rem;
 }
 
+/* Destination path readout + the "also upload the original" recommendation */
+.upload-path {
+  margin: 0.75rem 0 0;
+}
+.upload-original {
+  margin-top: 0.75rem;
+}
+.upload-original em {
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 600;
+}
+.upload-original-note {
+  margin: 0.75rem 0 0;
+}
+
 .upload-bar {
   display: flex;
   align-items: center;
@@ -701,6 +729,24 @@ input[type="checkbox"] {
 }
 .upload-btn {
   min-width: 8rem;
+}
+
+/* Upload progress (checksum -> transfer -> registration), one bar across all phases */
+.progress {
+  height: 6px;
+  margin-top: 0.75rem;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+.progress-fill.ok {
+  background: var(--ok);
 }
 
 .page-footer-bar {

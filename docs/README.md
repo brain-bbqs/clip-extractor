@@ -6,8 +6,8 @@ A standard TypeScript + Vite app (structure and CI mirror [bbqs-uploader](https:
 src/
   main.ts         # wires everything together (state, event handlers)
   style.css
-  lib/            # framework-free, unit-tested logic (video, pose, annotations, payload, ffmpeg)
-  ui/             # small DOM helpers (typed element lookup, log, key/value grid)
+  lib/            # framework-free, unit-tested logic (video, pose, annotations, extraction, upload)
+  ui/             # small DOM helpers (typed element lookup, identity readout, blob download)
 configs/          # vite/tsconfig/eslint/vitest/prettier/playwright/storybook config, kept out of the repo root
 stories/          # Storybook stories (visual snapshots, checked by Chromatic)
 tests/unit/       # vitest specs for src/lib

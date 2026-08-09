@@ -1,13 +1,18 @@
 import "./style.css";
 import * as sio from "@talmolab/sleap-io.js";
 import { getElements } from "./ui/elements";
-import { fmtTime } from "./lib/format";
+import { bytes, fmtTime } from "./lib/format";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { drawPose, labelsToPose } from "./lib/pose";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
+import { defaultDeliveryMode, uploadAssetPath, uploadDirectory, type DeliveryMode } from "./lib/delivery";
+import { extractClip, extractFrame, type ExtractedMedia, type ExtractProgress } from "./lib/extract";
+import { uploadAsset, type UploadPhase } from "./lib/upload";
+import { friendlyError } from "./lib/errors";
 import { renderIdentity } from "./ui/connection";
+import { saveBlob } from "./ui/download";
 import type { ArchiveConfig, OAuthTokenSet, PoseModel, SleapLabels, SleapVideoBackend } from "./lib/types";
 
 const els = getElements();
@@ -93,29 +98,35 @@ const state: AppState = {
 // ============================================================
 // Video loading (remote URL + local file)
 // ============================================================
-async function openVideoBackend(source: File | string, name: string): Promise<SleapVideoBackend> {
+/** An opened source plus the local bytes behind it, if any: `file` is null only for a URL that is
+ * genuinely being range-streamed, so extraction and the "upload the original too" option can tell
+ * "bytes in hand" from "would have to be fetched". */
+interface OpenedSource {
+  backend: SleapVideoBackend;
+  file: File | null;
+}
+
+async function openVideoBackend(source: File | string, name: string): Promise<OpenedSource> {
   if (typeof source === "string") {
     try {
-      return await sio.MediaBunnyVideoBackend.fromUrl(source, { cacheSize: 96 });
+      return { backend: await sio.MediaBunnyVideoBackend.fromUrl(source, { cacheSize: 96 }), file: null };
     } catch (e) {
       log(`Range/stream open failed (${(e as Error).message}); downloading full file…`, "warn");
       const resp = await fetch(source);
       if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching video`);
       const blob = await resp.blob();
-      state.sourceFile = new File([blob], name, { type: blob.type || "video/mp4" });
-      return await sio.MediaBunnyVideoBackend.fromBlob(state.sourceFile, name, {
-        cacheSize: 96,
-      });
+      const file = new File([blob], name, { type: blob.type || "video/mp4" });
+      return { backend: await sio.MediaBunnyVideoBackend.fromBlob(file, name, { cacheSize: 96 }), file };
     }
   }
   try {
-    return await sio.MediaBunnyVideoBackend.fromBlob(source, name, { cacheSize: 96 });
+    return { backend: await sio.MediaBunnyVideoBackend.fromBlob(source, name, { cacheSize: 96 }), file: source };
   } catch (e) {
     log(`MediaBunny failed (${(e as Error).message}); trying mp4box…`, "warn");
     const vb = await sio.createVideoBackend(source, { backend: "mp4box" });
     const maybeReady = (vb as { ready?: Promise<unknown> }).ready;
     if (maybeReady) await maybeReady;
-    return vb;
+    return { backend: vb, file: source };
   }
 }
 
@@ -123,7 +134,7 @@ async function loadVideo(source: File | string, name: string, url: string | null
   stopPlay();
   log(`Loading video: ${name}…`);
   try {
-    const backend = await openVideoBackend(source, name);
+    const { backend, file } = await openVideoBackend(source, name);
     state.backend = backend;
     state.frameOrder = await buildFrameOrder(backend);
     const shape = backend.shape ?? [];
@@ -133,8 +144,9 @@ async function loadVideo(source: File | string, name: string, url: string | null
     state.fps = backend.fps || 30;
     state.sourceName = name;
     state.sourceUrl = url;
-    // loadVideo fully owns source state: clear any prior local File on a URL load.
-    state.sourceFile = source instanceof File ? source : null;
+    // loadVideo fully owns source state: this is either the dropped File, the one the stream
+    // fallback materialized, or null for a live-streamed URL — never a previous load's leftover.
+    state.sourceFile = file;
     state.cur = 0;
     state.inF = null;
     state.outF = null;
@@ -342,6 +354,8 @@ function setMode(mode: SelectorMode): void {
     state.outF = null;
   }
   updateSelUI();
+  // The delivery card names what it will produce (MP4 vs PNG), so it follows the selector mode.
+  updateDeliveryGate();
 }
 
 // ============================================================
@@ -353,6 +367,7 @@ function enablePlayer(on: boolean): void {
   }
   els.frameSlider.disabled = !on;
   els.frameSlider.max = String(Math.max(0, state.totalFrames - 1));
+  updateDeliveryGate();
 }
 
 // Segmented controls
@@ -367,9 +382,14 @@ function wireSeg(segEl: HTMLElement, apply: (value: string) => void): void {
 }
 
 // Marks the button carrying `value` active — used by wireSeg and by programmatic switches
-// (e.g. a ?url= param selecting the EMBER pane).
+// (e.g. a ?url= param selecting the EMBER pane). aria-pressed carries the same state to screen
+// readers, which otherwise hear an unremarkable row of buttons.
 function selectSeg(segEl: HTMLElement, value: string | undefined): void {
-  segEl.querySelectorAll("button").forEach((b) => b.classList.toggle("active", Object.values(b.dataset)[0] === value));
+  segEl.querySelectorAll("button").forEach((b) => {
+    const active = Object.values(b.dataset)[0] === value;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-pressed", String(active));
+  });
 }
 
 wireSeg(els.modeSeg, (v) => setMode(v as SelectorMode));
@@ -617,7 +637,7 @@ function showDandisetView(view: "message" | "single" | "dropdown"): void {
   els.dandisetMessage.hidden = view !== "message";
   els.dandisetSingle.hidden = view !== "single";
   els.dandisetId.hidden = view !== "dropdown";
-  updateUploadGate();
+  updateDeliveryGate();
 }
 
 function setDandisetPlaceholder(text: string): void {
@@ -671,17 +691,12 @@ function updateViewDatasetLink(): void {
   if (cfg.dandisetId) els.viewDatasetLink.href = `${cfg.web}/dandiset/${cfg.dandisetId}/draft`;
 }
 
-// Surfaces the one condition that would block an upload to the selected dataset. The Upload
-// button itself stays disabled until the upload path is actually built.
-function updateUploadGate(): void {
-  els.dandisetEmbargoError.hidden = currentConfig().embargoed !== false;
-}
-
 async function refreshDandisetOptions(): Promise<void> {
   if (!oauthTokens) {
     currentDatasets = [];
     setDandisetPlaceholder("Please sign in to see your incoming datasets.");
     updateViewDatasetLink();
+    applyDefaultDeliveryMode();
     return;
   }
   await ensureFreshOAuth();
@@ -692,10 +707,12 @@ async function refreshDandisetOptions(): Promise<void> {
     applyDatasetList(datasets, unverified);
   } catch (e) {
     log(`Could not load your datasets: ${(e as Error).message}`, "err");
+    currentDatasets = [];
     setDandisetPlaceholder("Could not load your datasets");
   }
   saveAuthSettings();
   updateViewDatasetLink();
+  applyDefaultDeliveryMode();
 }
 
 async function initEmberAuth(): Promise<void> {
@@ -721,10 +738,192 @@ els.oauthSignoutBtn.addEventListener("click", () => {
   void refreshDandisetOptions();
 });
 els.dandisetId.addEventListener("change", () => {
-  updateUploadGate();
+  updateDeliveryGate();
   updateViewDatasetLink();
   saveAuthSettings();
 });
+
+// ============================================================
+// Delivery: download the extracted selection, or upload it to EMBER
+// ============================================================
+// Extraction runs on demand, when either button is pressed, so what leaves the page always matches
+// the selection currently on screen — there is no stale "extracted" artifact to invalidate.
+
+// Set once the visitor picks a side themselves, after which sign-in state no longer moves the
+// toggle under them.
+let deliveryChosen = false;
+// Guards both actions while an extraction or upload is in flight.
+let deliveryBusy = false;
+
+function setDeliveryMode(mode: DeliveryMode): void {
+  els.downloadPane.hidden = mode !== "download";
+  els.uploadPane.hidden = mode !== "upload";
+  updateDeliveryGate();
+}
+
+/** Upload leads whenever it is actually usable (signed in, with at least one incoming dataset);
+ * otherwise Download does, since there would be nowhere to upload to. */
+function applyDefaultDeliveryMode(): void {
+  if (deliveryChosen) return;
+  const mode = defaultDeliveryMode(currentDatasets.length);
+  selectSeg(els.deliverSeg, mode);
+  setDeliveryMode(mode);
+}
+
+wireSeg(els.deliverSeg, (v) => {
+  deliveryChosen = true;
+  setDeliveryMode(v as DeliveryMode);
+});
+
+function setStatus(el: HTMLElement, message: string, cls: "" | "ok" | "err" = ""): void {
+  el.textContent = message;
+  el.className = cls ? `hint ${cls}` : "hint";
+}
+
+/** Drives the single progress bar in the upload pane; null hides it. */
+function setUploadProgress(fraction: number | null, done = false): void {
+  els.uploadProgress.hidden = fraction === null;
+  els.uploadProgressFill.style.width = `${Math.min(100, Math.max(0, (fraction ?? 0) * 100)).toFixed(1)}%`;
+  els.uploadProgressFill.className = done ? "progress-fill ok" : "progress-fill";
+}
+
+// Enablement, the embargo warning, and both panes' idle copy, all derived from the current video,
+// selector mode, and destination.
+function updateDeliveryGate(): void {
+  const cfg = currentConfig();
+  const hasVideo = state.backend !== null;
+  const notEmbargoed = cfg.embargoed === false;
+  const frameMode = state.mode === "frame";
+  els.dandisetEmbargoError.hidden = !notEmbargoed;
+  els.btnDownload.disabled = deliveryBusy || !hasVideo;
+  els.btnUpload.disabled = deliveryBusy || !hasVideo || !cfg.dandisetId || notEmbargoed;
+  els.downloadHint.textContent = frameMode
+    ? "Saves the selected frame to your computer as a PNG."
+    : "Saves the selected snippet to your computer as a frame-exact MP4 (re-encoded by ffmpeg.wasm).";
+  // The original can only ride along when its bytes are already in the browser; a range-streamed
+  // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
+  const canSendOriginal = state.sourceFile !== null;
+  els.uploadOriginalRow.hidden = !canSendOriginal;
+  els.uploadOriginalNote.hidden = canSendOriginal || !hasVideo;
+  if (deliveryBusy) return;
+  setStatus(els.downloadStatus, hasVideo ? "" : "Load a video to extract a selection.");
+  setStatus(
+    els.uploadStatus,
+    !hasVideo
+      ? "Load a video to extract a selection."
+      : !cfg.dandisetId
+        ? "Pick an upload destination above."
+        : notEmbargoed
+          ? "This destination cannot accept direct uploads."
+          : `Uploads the selected ${frameMode ? "frame" : "snippet"} to the dataset above.`,
+  );
+}
+
+function setDeliveryBusy(busy: boolean): void {
+  deliveryBusy = busy;
+  updateDeliveryGate();
+}
+
+/** Extracts whatever the selector currently points at: an MP4 snippet, or a single PNG frame. */
+async function extractSelection(onProgress: ExtractProgress): Promise<ExtractedMedia> {
+  const backend = state.backend;
+  if (!backend) throw new Error("No video loaded");
+  if (state.mode === "frame") {
+    onProgress(`Encoding frame ${state.cur}…`);
+    return extractFrame({
+      backend,
+      frameOrder: state.frameOrder,
+      frame: state.cur,
+      width: state.width,
+      height: state.height,
+      sourceName: state.sourceName,
+    });
+  }
+  const [lo, hi] = selRange();
+  return extractClip({
+    sourceFile: state.sourceFile,
+    sourceUrl: state.sourceUrl,
+    sourceName: state.sourceName,
+    lo,
+    hi,
+    fps: state.fps,
+    onProgress,
+  });
+}
+
+async function runDownload(): Promise<void> {
+  if (!state.backend) return;
+  setDeliveryBusy(true);
+  try {
+    const media = await extractSelection((message) => setStatus(els.downloadStatus, message));
+    saveBlob(media.blob, media.filename);
+    setDeliveryBusy(false);
+    setStatus(els.downloadStatus, `Saved ${media.filename} (${bytes(media.blob.size)}).`, "ok");
+    log(`Downloaded ${media.filename} (${bytes(media.blob.size)})`, "ok");
+  } catch (e) {
+    setDeliveryBusy(false);
+    setStatus(els.downloadStatus, friendlyError(e), "err");
+    log(`Download failed: ${friendlyError(e)}`, "err");
+    console.error(e);
+  }
+}
+
+const PHASE_LABEL: Record<UploadPhase, string> = { checksum: "Checksumming", upload: "Uploading", register: "Registering" };
+
+async function uploadOne(cfg: ArchiveConfig, blob: Blob, path: string, contentType: string, label: string): Promise<void> {
+  log(`Uploading ${label} to ${path} (${bytes(blob.size)})…`);
+  await uploadAsset(cfg, {
+    blob,
+    path,
+    contentType,
+    onPhase: (phase, fraction) => {
+      setStatus(els.uploadStatus, `${PHASE_LABEL[phase]} ${label}… ${(fraction * 100).toFixed(0)}%`);
+      setUploadProgress(fraction);
+    },
+  });
+  log(`Uploaded ${path}`, "ok");
+}
+
+async function runUpload(): Promise<void> {
+  if (!state.backend) return;
+  setDeliveryBusy(true);
+  setUploadProgress(0);
+  try {
+    const media = await extractSelection((message, fraction) => {
+      setStatus(els.uploadStatus, message);
+      setUploadProgress(fraction ?? 0);
+    });
+    // Refresh the token before the first request rather than mid-transfer, where an expiry would
+    // strand a half-finished multipart upload.
+    await ensureFreshOAuth();
+    const cfg = currentConfig();
+    if (!cfg.dandisetId) throw new Error("Pick an upload destination first.");
+    const directory = uploadDirectory(new Date());
+    els.uploadPathPreview.textContent = `${directory}/`;
+    const uploaded: string[] = [];
+    // The extracted selection goes first: it is the point of the upload, and the original — which
+    // can be orders of magnitude larger — is a recommended companion, not a prerequisite for it.
+    await uploadOne(cfg, media.blob, uploadAssetPath(directory, media.filename), media.mime, state.mode === "frame" ? "frame" : "snippet");
+    uploaded.push(media.filename);
+    const original = els.uploadOriginal.checked ? state.sourceFile : null;
+    if (original) {
+      await uploadOne(cfg, original, uploadAssetPath(directory, original.name), original.type || "video/mp4", "original video");
+      uploaded.push(original.name);
+    }
+    setDeliveryBusy(false);
+    setUploadProgress(1, true);
+    setStatus(els.uploadStatus, `Uploaded ${uploaded.join(" and ")} to ${directory}/`, "ok");
+  } catch (e) {
+    setDeliveryBusy(false);
+    setUploadProgress(null);
+    setStatus(els.uploadStatus, `Upload failed: ${friendlyError(e)}`, "err");
+    log(`Upload failed: ${friendlyError(e)}`, "err");
+    console.error(e);
+  }
+}
+
+els.btnDownload.addEventListener("click", () => void runDownload());
+els.btnUpload.addEventListener("click", () => void runUpload());
 
 loadAuthSettings();
 renderAuthUI();

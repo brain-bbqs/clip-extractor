@@ -22,7 +22,8 @@
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
-    "@talmolab/sleap-io.js": "^0.5.7"
+    "@talmolab/sleap-io.js": "^0.5.7",
+    "spark-md5": "^3.0.2"
   },
   "devDependencies": {
     "@chromatic-com/playwright": "^0.14.11",
@@ -30,6 +31,7 @@
     "@playwright/test": "^1.48.0",
     "@storybook/html-vite": "^10.5.3",
     "@types/node": "^22.9.0",
+    "@types/spark-md5": "^3.0.5",
     "@vitest/coverage-v8": "^4.1.10",
     "chromatic": "^18.0.1",
     "eslint": "^9.39.5",

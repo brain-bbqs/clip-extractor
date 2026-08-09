@@ -55,10 +55,35 @@ test("SLEAP annotations card is revealed by its toggle (default off)", async ({ 
   await expect(page.locator("#slpCard")).toBeHidden();
 });
 
-test("upload destination card prompts for sign-in while signed out", async ({ page }) => {
+test("delivery card defaults to Download while signed out", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('#deliverSeg button[data-deliver="download"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#downloadPane")).toBeVisible();
+  await expect(page.locator("#uploadPane")).toBeHidden();
+  await expect(page.locator("#btnDownload")).toBeDisabled();
+  await expect(page.locator("#downloadStatus")).toContainText("Load a video");
+});
+
+test("delivery toggle swaps between the download and upload panes", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator('#deliverSeg button[data-deliver="upload"]').click();
+  await expect(page.locator("#uploadPane")).toBeVisible();
+  await expect(page.locator("#downloadPane")).toBeHidden();
+  // The recommended companion upload is on by default, and the destination path is spelled out.
+  await expect(page.locator("#uploadOriginal")).toBeChecked();
+  await expect(page.locator("#uploadPathPreview")).toContainText("sourcedata/raw/clip-extractor/");
+
+  await page.locator('#deliverSeg button[data-deliver="download"]').click();
+  await expect(page.locator("#downloadPane")).toBeVisible();
+  await expect(page.locator("#uploadPane")).toBeHidden();
+});
+
+test("upload pane prompts for sign-in while signed out", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#oauthSigninBtn")).toBeVisible();
   await expect(page.locator("#oauthSignedIn")).toBeHidden();
+  await page.locator('#deliverSeg button[data-deliver="upload"]').click();
   await expect(page.locator("#dandisetMessage")).toContainText("sign in");
   await expect(page.locator("#dandisetId")).toBeHidden();
   await expect(page.locator("#viewDatasetLink")).toBeHidden();

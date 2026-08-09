@@ -32,6 +32,39 @@ export interface StoredSettings {
   oauth?: OAuthTokenSet;
 }
 
+// ------------------------------------------------------------------
+// Archive upload (see lib/etag.ts, lib/upload.ts)
+// ------------------------------------------------------------------
+
+/** One slice of a blob in the S3 multipart layout: `number` is 1-based, like S3's part numbers. */
+export interface FilePart {
+  number: number;
+  offset: number;
+  size: number;
+}
+
+export interface ServerPart {
+  part_number: number;
+  size: number;
+  upload_url: string;
+}
+
+export interface UploadInitResponse {
+  upload_id: string;
+  parts: ServerPart[];
+}
+
+export interface CompletedPart {
+  part_number: number;
+  size: number;
+  etag: string;
+}
+
+export interface Asset {
+  asset_id: string;
+  path: string;
+}
+
 /** Minimal duck-typed surface of sleap-io.js's video backend that this app actually calls. The
  * upstream package's generated declarations are heavily mangled/overloaded; re-declaring just the
  * members used here keeps the rest of the codebase strictly typed without fighting that. */

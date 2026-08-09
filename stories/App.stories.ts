@@ -8,7 +8,8 @@ interface AppStoryOptions {
 }
 
 // Mirrors what main.ts renders once an EMBER sign-in resolves and the incoming datasets load:
-// the header avatar in place of the sign-in button, and the populated destination picker.
+// the header avatar in place of the sign-in button, the delivery card switched to Upload (its
+// default once there is a dataset to upload to), and the populated destination picker.
 // Storybook never talks to the archive, so the story fills in the same elements by hand.
 function applySignedIn(wrapper: HTMLElement): void {
   wrapper.querySelector("#oauthSigninBtn")?.setAttribute("hidden", "");
@@ -36,6 +37,21 @@ function applySignedIn(wrapper: HTMLElement): void {
     link.hidden = false;
     link.href = "https://dandi.emberarchive.org/dandiset/000123/draft";
   }
+  selectDelivery(wrapper, "upload");
+}
+
+// Mirrors setDeliveryMode() in main.ts: activates one side of the Download/Upload toggle and shows
+// the matching pane.
+function selectDelivery(wrapper: HTMLElement, mode: "download" | "upload"): void {
+  wrapper.querySelectorAll<HTMLButtonElement>("#deliverSeg button").forEach((b) => {
+    const active = b.dataset.deliver === mode;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-pressed", String(active));
+  });
+  const download = wrapper.querySelector<HTMLElement>("#downloadPane");
+  const upload = wrapper.querySelector<HTMLElement>("#uploadPane");
+  if (download) download.hidden = mode !== "download";
+  if (upload) upload.hidden = mode !== "upload";
 }
 
 function buildApp({ withSlp = false, signedIn = false }: AppStoryOptions = {}): HTMLElement {
