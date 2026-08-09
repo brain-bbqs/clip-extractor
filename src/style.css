@@ -9,10 +9,15 @@
   --border: #dde1ec;
   --accent: #4f46e5;
   --accent-soft: #eef0ff;
+  /* EMBER's flame red, matched from the logo mark — used for the archive sign-in button and the
+     signed-in avatar/sign-out accents. Brand colors, so identical in both themes. */
+  --ember-red: #c81a24;
+  --ember-red-hover: #a8151d;
   --ok: #15803d;
   --ok-soft: #e9f9ef;
   --warn: #b45309;
   --err: #b91c1c;
+  --err-soft: #fdecec;
   --stage-bg: #000;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -30,6 +35,7 @@
     --ok-soft: #16321f;
     --warn: #fbbf24;
     --err: #f87171;
+    --err-soft: #3a1d1d;
   }
 }
 
@@ -45,6 +51,7 @@
   --ok-soft: #16321f;
   --warn: #fbbf24;
   --err: #f87171;
+  --err-soft: #3a1d1d;
 }
 
 * {
@@ -98,7 +105,117 @@ header h1 {
 .header-actions {
   display: flex;
   align-items: center;
+  gap: 0.75rem;
   justify-self: end;
+}
+
+/* EMBER sign-in (mirrors bbqs-uploader's header): the red sign-in button is swapped for an
+   avatar whose hover/focus popover holds the username and the sign-out action. */
+#oauthSigninBtn {
+  background: var(--ember-red);
+  border-color: var(--ember-red);
+}
+#oauthSigninBtn:hover:not(:disabled) {
+  background: var(--ember-red-hover);
+  border-color: var(--ember-red-hover);
+  filter: none;
+}
+#oauthSigninBtn:focus-visible {
+  outline-color: var(--ember-red);
+}
+/* Set on <html> by index.html's pre-paint script when stored OAuth tokens exist, so a refresh
+   while already signed in doesn't flash the sign-in button before main.ts's renderAuthUI()
+   determines the real state and clears the attribute. Both rules toggle together so the avatar's
+   spot in the (right-aligned) header row is reserved from the first frame, instead of popping in
+   and shifting the theme toggle sideways. */
+:root[data-signed-in="1"] #oauthSigninBtn {
+  display: none;
+}
+:root[data-signed-in="1"] #oauthSignedIn[hidden] {
+  display: inline-flex !important;
+}
+.oauth-signed-in {
+  position: relative;
+  display: inline-flex;
+}
+.oauth-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Matches .brand-logo and .theme-toggle, so the header circles line up. */
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: var(--card);
+  border: 2px solid var(--ember-red);
+  color: var(--ember-red);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  cursor: default;
+}
+/* Revealed on hover/focus, mirroring the main archive's own avatar-menu behavior. */
+.oauth-popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.15);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.7rem;
+  min-width: 220px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease,
+    visibility 0.12s;
+  z-index: 20;
+}
+.oauth-signed-in:hover .oauth-popover,
+.oauth-signed-in:focus-within .oauth-popover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.oauth-popover-greeting {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.oauth-popover-divider {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+.oauth-popover-signout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.oauth-popover-signout:hover:not(:disabled) {
+  background: none;
+  color: var(--ember-red);
+}
+.oauth-popover-signout-icon {
+  flex-shrink: 0;
 }
 
 .theme-toggle {
@@ -518,41 +635,72 @@ input[type="checkbox"] {
   grid-template-columns: 1fr;
 }
 
-/* Upload (coming soon) */
+/* Upload destination: the EMBER dataset the extracted selection is bound for. */
+.card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.card-heading h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.view-dataset-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  background: var(--ember-red);
+  border: 1px solid var(--ember-red);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.4rem 0.85rem;
+}
+.view-dataset-link:hover {
+  background: var(--ember-red-hover);
+  border-color: var(--ember-red-hover);
+}
+.view-dataset-link:focus-visible {
+  outline: 2px solid var(--ember-red);
+  outline-offset: 1px;
+}
+#dandisetId {
+  width: 100%;
+  font-size: 0.95rem;
+  padding: 0.4rem 0.5rem;
+}
+/* Both the plain-text status line (signed out, loading, no datasets) and the single-dataset
+   readout that replaces the dropdown when there is nothing to choose between. */
+.dandiset-single {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0;
+  font-size: 0.95rem;
+}
+.dandiset-embargo-error {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: var(--err-soft);
+  color: var(--err);
+  font-size: 0.9rem;
+}
+
 .upload-bar {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  margin-top: 1rem;
 }
 .upload-btn {
   min-width: 8rem;
-}
-.disabledpanel {
-  position: relative;
-  opacity: 0.5;
-  pointer-events: none;
-}
-.comingSoonOverlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
-  border-radius: 12px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  cursor: not-allowed;
-  pointer-events: auto;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-.comingSoonOverlay .icon {
-  font-size: 1.3rem;
-}
-.disabledpanel:hover .comingSoonOverlay {
-  opacity: 1;
 }
 
 .page-footer-bar {

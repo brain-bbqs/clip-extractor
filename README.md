@@ -20,7 +20,8 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
 - **Frame-accurate player** — play/pause, step, scrub, speed control, and a B-frame decode→display reorder (from `getFrameTimes`) so playback never jumps backwards. Keyboard: `Space` play/pause, `←/→` step, `Shift`+scrub extends the range.
 - **Pose overlay** — skeleton edges + nodes drawn per track when a `.slp` is loaded.
 - **Light/dark theme** with an OS-preference default and a header toggle, styled after [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader).
-- **Upload** — a single button, disabled until the backend handoff lands.
+- **Sign in with EMBER** — the same browser-side OAuth2 (Authorization Code + PKCE) flow as [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader), with the signed-in account behind the header avatar.
+- **Upload destination** — the bottom card lists the signed-in user's `Incoming: ` datasets (the BBQS staging convention), narrowed by the same server-side check that a BBQS/EMBER admin co-owns the dataset, and flags a destination that is not embargoed. The Upload button itself is disabled until the backend handoff lands.
 
 ## Usage
 
@@ -28,7 +29,8 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
 2. Pick **Snippet** or **Frame** mode above the player.
 3. Scrub to your selection: in Snippet mode press **[ Set In** / **Set Out ]** (or `I` / `O`); in Frame mode just seek to the frame.
 4. Optionally flip the **SLEAP annotations (.slp)** switch on the load card and drop a `.slp` into the card that appears.
-5. **Upload** is coming soon.
+5. **Sign in with EMBER** in the header to pick the upload destination in the bottom card; only `Incoming: ` datasets you own that a BBQS/EMBER admin also owns are offered.
+6. **Upload** is coming soon.
 
 URL params: `?url=<video>&slp=<labels>` auto-load on open.
 
@@ -39,6 +41,7 @@ A standard TypeScript + Vite app (structure and CI mirror [bbqs-uploader](https:
 ## Notes
 
 - Remote video/SLP URLs must be CORS-accessible.
+- Sign-in, token storage, and the admin-check service's trust boundary are documented in [SECURITY.md](SECURITY.md), mirroring [bbqs-uploader's](https://github.com/brain-bbqs/bbqs-uploader/blob/main/SECURITY.md).
 - The extraction/payload libraries (ffmpeg.wasm stream-copy trimming, clip-relative annotation JSON, payload packaging) live in `src/lib/` for the upcoming upload step.
 
 ## Initial prompt

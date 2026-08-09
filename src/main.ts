@@ -4,7 +4,11 @@ import { getElements } from "./ui/elements";
 import { fmtTime } from "./lib/format";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { drawPose, labelsToPose } from "./lib/pose";
-import type { PoseModel, SleapLabels, SleapVideoBackend } from "./lib/types";
+import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
+import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
+import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
+import { renderIdentity } from "./ui/connection";
+import type { ArchiveConfig, OAuthTokenSet, PoseModel, SleapLabels, SleapVideoBackend } from "./lib/types";
 
 const els = getElements();
 
@@ -550,6 +554,181 @@ async function loadSample(): Promise<void> {
   await loadVideo(`${base}slp-viewer/mice.mp4`, "mice.mp4", `${base}slp-viewer/mice.mp4`);
   await loadSlp(`${base}slp-viewer/mice.tracked.slp`, "mice.tracked.slp");
 }
+
+// ============================================================
+// EMBER sign-in + upload destination (mirrors bbqs-uploader)
+// ============================================================
+// Authorization Code + PKCE against the EMBER archive, then the same "Incoming: " dataset
+// discovery the uploader uses: datasets the signed-in user owns whose title carries the BBQS
+// staging-dataset prefix and that a BBQS/EMBER admin co-owns (see lib/dandisets.ts).
+let oauthTokens: OAuthTokenSet | null = null;
+// The dandiset id restored from a previous session, applied once the dropdown holds the signed-in
+// user's incoming datasets (a <select> can't carry a value before its options exist).
+let storedDandisetId = "";
+// The picker's current option list, kept around so currentConfig() can read the selected
+// dataset's embargo status without a second API round-trip.
+let currentDatasets: IncomingDandiset[] = [];
+
+function loadAuthSettings(): void {
+  const s = loadStoredSettings();
+  if (!s) return;
+  if (s.dandisetId) storedDandisetId = s.dandisetId;
+  if (s.oauth) oauthTokens = s.oauth;
+}
+
+function saveAuthSettings(): void {
+  saveStoredSettings({ dandisetId: els.dandisetId.value.trim(), oauth: oauthTokens ?? undefined });
+}
+
+function currentConfig(): ArchiveConfig {
+  const selected = currentDatasets.find((d) => d.identifier === els.dandisetId.value);
+  return resolveConfig({
+    dandisetId: els.dandisetId.value,
+    oauthAccessToken: oauthTokens?.accessToken,
+    embargoed: selected?.embargoed,
+  });
+}
+
+function renderAuthUI(): void {
+  const signedIn = oauthTokens !== null;
+  els.oauthSigninBtn.hidden = signedIn;
+  els.oauthSignedIn.hidden = !signedIn;
+  // Once the real auth state is known, this element-level hidden state is authoritative; the
+  // pre-paint script's stand-in attribute (see index.html) is no longer needed.
+  delete document.documentElement.dataset.signedIn;
+}
+
+// Refreshes the access token first if it's near expiry, so the config used for the request that
+// follows always carries a live token instead of one that's about to be rejected.
+async function ensureFreshOAuth(): Promise<void> {
+  if (!oauthTokens) return;
+  const current = oauthTokens;
+  const fresh = await ensureFreshToken(current).catch(() => current);
+  if (fresh !== current) {
+    oauthTokens = fresh;
+    saveAuthSettings();
+  }
+}
+
+// The destination picker has three mutually exclusive views: a plain-text status message (signed
+// out, loading, no datasets, error), plain text naming the one dataset there's nothing to choose
+// between, or a dropdown when there's an actual choice to make.
+function showDandisetView(view: "message" | "single" | "dropdown"): void {
+  els.dandisetMessage.hidden = view !== "message";
+  els.dandisetSingle.hidden = view !== "single";
+  els.dandisetId.hidden = view !== "dropdown";
+  updateUploadGate();
+}
+
+function setDandisetPlaceholder(text: string): void {
+  els.dandisetMessage.textContent = text;
+  showDandisetView("message");
+}
+
+function showDandisetSingle(dataset: IncomingDandiset): void {
+  showDandisetView("single");
+  const idCode = document.createElement("code");
+  idCode.textContent = dataset.identifier;
+  els.dandisetSingleText.replaceChildren("Uploading directly to EMBER Dandiset ", idCode, `, "${dataset.title}"`);
+}
+
+function applyDatasetList(datasets: IncomingDandiset[], unverified = 0): void {
+  currentDatasets = datasets;
+  if (!datasets.length) {
+    // "Nothing to offer" has two very different causes: the admin check answered no (or the user
+    // genuinely owns no incoming datasets), or it never answered at all. Telling someone to ask
+    // an admin for access when the service is simply unreachable sends them after the wrong bug.
+    setDandisetPlaceholder(
+      unverified > 0
+        ? "Could not verify your incoming datasets with the BBQS/EMBER admin service; datasets that cannot be verified are never offered. See the browser console for details."
+        : "You have not been added to any direct-upload datasets; please reach out to EMBER/BBQS admins to request this.",
+    );
+    return;
+  }
+  // Dropdown mode always ranks options by ascending integer id, oldest dandiset first, regardless
+  // of the order the archive returned them in.
+  const ordered = datasets.length > 1 ? [...datasets].sort((a, b) => Number(a.identifier) - Number(b.identifier)) : datasets;
+  els.dandisetId.replaceChildren(
+    ...ordered.map((d) => {
+      const opt = document.createElement("option");
+      opt.value = d.identifier;
+      opt.textContent = `(${d.identifier}) ${d.title}`;
+      return opt;
+    }),
+  );
+  const match = ordered.find((d) => d.identifier === storedDandisetId);
+  const selected = match ?? ordered[0];
+  // The select stays populated even while hidden (single-dataset view) so currentConfig() keeps
+  // reading a real dandiset id from it.
+  els.dandisetId.value = selected.identifier;
+  if (datasets.length === 1) showDandisetSingle(selected);
+  else showDandisetView("dropdown");
+}
+
+function updateViewDatasetLink(): void {
+  const cfg = currentConfig();
+  els.viewDatasetLink.hidden = !cfg.dandisetId;
+  if (cfg.dandisetId) els.viewDatasetLink.href = `${cfg.web}/dandiset/${cfg.dandisetId}/draft`;
+}
+
+// Surfaces the one condition that would block an upload to the selected dataset. The Upload
+// button itself stays disabled until the upload path is actually built.
+function updateUploadGate(): void {
+  els.dandisetEmbargoError.hidden = currentConfig().embargoed !== false;
+}
+
+async function refreshDandisetOptions(): Promise<void> {
+  if (!oauthTokens) {
+    currentDatasets = [];
+    setDandisetPlaceholder("Please sign in to see your incoming datasets.");
+    updateViewDatasetLink();
+    return;
+  }
+  await ensureFreshOAuth();
+  void renderIdentity(els, currentConfig());
+  setDandisetPlaceholder("Loading your incoming datasets…");
+  try {
+    const { datasets, unverified } = await listIncomingDandisets(currentConfig());
+    applyDatasetList(datasets, unverified);
+  } catch (e) {
+    log(`Could not load your datasets: ${(e as Error).message}`, "err");
+    setDandisetPlaceholder("Could not load your datasets");
+  }
+  saveAuthSettings();
+  updateViewDatasetLink();
+}
+
+async function initEmberAuth(): Promise<void> {
+  const callbackTokens = await handleRedirectCallback().catch((e) => {
+    log(`OAuth sign-in callback failed: ${(e as Error).message}`, "err");
+    return null;
+  });
+  if (callbackTokens) {
+    oauthTokens = callbackTokens;
+    saveAuthSettings();
+    renderAuthUI();
+  }
+  await refreshDandisetOptions();
+}
+
+els.oauthSigninBtn.addEventListener("click", () => void startLogin());
+els.oauthSignoutBtn.addEventListener("click", () => {
+  const tokens = oauthTokens;
+  oauthTokens = null;
+  saveAuthSettings();
+  renderAuthUI();
+  if (tokens) void revokeToken(tokens);
+  void refreshDandisetOptions();
+});
+els.dandisetId.addEventListener("change", () => {
+  updateUploadGate();
+  updateViewDatasetLink();
+  saveAuthSettings();
+});
+
+loadAuthSettings();
+renderAuthUI();
+void initEmberAuth();
 
 // URL params: ?url=<video>&slp=<slp>
 function initFromUrlParams(): void {

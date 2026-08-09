@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bytes, fmtTime } from "../../src/lib/format";
+import { bytes, fmtTime, initialsFrom } from "../../src/lib/format";
 
 describe("fmtTime", () => {
   it("formats frame 0 at 30fps as 0:00.00", () => {
@@ -12,6 +12,18 @@ describe("fmtTime", () => {
 
   it("falls back to the bare frame number when fps is 0", () => {
     expect(fmtTime(42, 0)).toBe("42");
+  });
+});
+
+describe("initialsFrom", () => {
+  it("takes the first and last name initials", () => {
+    expect(initialsFrom("ada lovelace")).toBe("AL");
+    expect(initialsFrom("Grace Brewster Murray Hopper")).toBe("GH");
+  });
+
+  it("falls back to ?? without both a first and a last name", () => {
+    expect(initialsFrom("")).toBe("??");
+    expect(initialsFrom("Prince")).toBe("??");
   });
 });
 

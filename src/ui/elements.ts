@@ -8,6 +8,11 @@ export function getElements() {
   return {
     // Header
     themeToggle: required<HTMLButtonElement>("themeToggle"),
+    oauthSigninBtn: required<HTMLButtonElement>("oauthSigninBtn"),
+    oauthSignedIn: required<HTMLDivElement>("oauthSignedIn"),
+    oauthAvatar: required<HTMLSpanElement>("oauthAvatar"),
+    oauthUsername: required<HTMLElement>("oauthUsername"),
+    oauthSignoutBtn: required<HTMLButtonElement>("oauthSignoutBtn"),
 
     // Load card
     srcSeg: required<HTMLDivElement>("srcSeg"),
@@ -54,7 +59,13 @@ export function getElements() {
     slpBadge: required<HTMLSpanElement>("slpBadge"),
     showPose: required<HTMLInputElement>("showPose"),
 
-    // Upload (coming soon)
+    // Upload destination
+    dandisetId: required<HTMLSelectElement>("dandisetId"),
+    dandisetMessage: required<HTMLParagraphElement>("dandisetMessage"),
+    dandisetSingle: required<HTMLParagraphElement>("dandisetSingle"),
+    dandisetSingleText: required<HTMLSpanElement>("dandisetSingleText"),
+    dandisetEmbargoError: required<HTMLParagraphElement>("dandisetEmbargoError"),
+    viewDatasetLink: required<HTMLAnchorElement>("viewDatasetLink"),
     btnUpload: required<HTMLButtonElement>("btnUpload"),
   };
 }
