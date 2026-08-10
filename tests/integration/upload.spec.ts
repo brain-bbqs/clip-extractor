@@ -69,6 +69,8 @@ test("the completion link survives a look at the other pane, and retires with th
   await page.locator("#btnUpload").click();
   const status = page.locator("#uploadStatus");
   await expect(status).toContainText("Upload complete", { timeout: 60_000 });
+  // Pressing Upload takes the button away, so the same selection cannot be sent twice over.
+  await expect(page.locator("#btnUpload")).toBeHidden();
 
   // Looking at what Save would have done, then coming back, is not a reason to lose the link to
   // where the upload landed.
@@ -76,8 +78,11 @@ test("the completion link survives a look at the other pane, and retires with th
   await page.locator('#deliverSeg button[data-deliver="upload"]').click();
   await expect(status).toContainText("Upload complete");
   await expect(status.locator("a")).toHaveText("click here to view and share");
+  await expect(page.locator("#btnUpload")).toBeHidden();
 
-  // Moving to another frame does retire it: it named where a different selection went.
+  // Moving to another frame retires both: the line named where a different selection went, and
+  // this one has not been uploaded yet.
   await page.locator("#frameSlider").fill("9");
   await expect(status).not.toContainText("Upload complete");
+  await expect(page.locator("#btnUpload")).toBeVisible();
 });

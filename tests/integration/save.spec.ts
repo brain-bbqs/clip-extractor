@@ -57,10 +57,11 @@ test("a save writes a bundle holding the extract, the original and their provena
   await expect(page.locator("#downloadStatus")).toContainText("Saved");
 
   const entries = listTar(readFileSync((await download.path())!));
-  // The same tree, at the same paths, an upload would have written — extract first, then the
-  // original, then the sidecar naming both.
+  // The same files, in the same order, an upload would have written — extract first, then the
+  // original, then the sidecar naming both. They unpack into one dated folder: the archive's
+  // `sourcedata/raw/` prefix means nothing outside a dandiset, so a bundle does not carry it.
   const directory = entries[0].path.slice(0, entries[0].path.lastIndexOf("/"));
-  expect(directory).toMatch(/^sourcedata\/raw\/clip-extractor\/date-\d{8}_time-\d{6}_type-frame$/);
+  expect(directory).toMatch(/^date-\d{8}_time-\d{6}_type-frame$/);
   expect(entries.map((e) => e.path.slice(directory.length + 1))).toEqual([
     "name-file+example+480+Copy_index-5_type-frame_image.png",
     "file_example_480-Copy.webm",

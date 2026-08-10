@@ -10,6 +10,7 @@ import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/set
 import {
   defaultDeliveryMode,
   fileBrowserUrl,
+  selectionDirectory,
   uploadAssetPath,
   uploadDirectory,
   uploadOriginalPath,
@@ -870,6 +871,10 @@ els.dandisetId.addEventListener("change", () => {
 
 // Guards both actions while an extraction or upload is in flight.
 let deliveryBusy = false;
+// True from the press of Upload until that upload either fails or is retired by a change to what it
+// sent. While it is set the button is gone rather than merely disabled: the upload is either still
+// running or already done, and in neither case is pressing it again the thing to do.
+let uploadSubmitted = false;
 
 function setDeliveryMode(mode: DeliveryMode): void {
   els.downloadPane.hidden = mode !== "download";
@@ -923,8 +928,14 @@ function showsOutcome(el: HTMLElement): boolean {
  * selection, a different source, a different destination, or another delivery starting. Merely
  * looking at the other pane is not one of those, which is why the panes do not clear them. */
 function clearDeliveryOutcomes(): void {
+  // Nothing to retire is the common case — this runs on every seek in frame mode — so it costs a
+  // couple of reads rather than a whole re-derivation of the card.
+  if (!uploadSubmitted && !showsOutcome(els.downloadStatus) && !showsOutcome(els.uploadStatus)) return;
   for (const el of [els.downloadStatus, els.uploadStatus]) if (showsOutcome(el)) setStatus(el, "");
   setUploadProgress(null);
+  // Whatever went up no longer describes what is on screen, so offering to send it again does.
+  uploadSubmitted = false;
+  updateDeliveryGate();
 }
 
 /** Same, with a file name set in the monospace `code` style so it stands out from the prose. */
@@ -969,6 +980,7 @@ function updateDeliveryGate(): void {
   els.dandisetEmbargoError.hidden = !notEmbargoed;
   els.btnDownload.disabled = deliveryBusy || !hasVideo || !selected || !described;
   els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !described || !cfg.dandisetId || notEmbargoed;
+  els.btnUpload.hidden = uploadSubmitted;
   updateDeliveryCopy(kind);
   // Original content can only ride along when its bytes are already in the browser; a range-streamed
   // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
@@ -1252,9 +1264,10 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   await params.onReady?.();
   const destination = params.destination();
   // One instant for the whole delivery, so the directory's date/time entities and the provenance
-  // record's `created_at` name the same moment.
+  // record's `created_at` name the same moment. Under the archive's upload root for an upload; the
+  // bare directory for a bundle, which is a folder on someone's computer, not a dandiset.
   const createdAt = new Date();
-  const directory = uploadDirectory(createdAt, kind);
+  const directory = destination ? uploadDirectory(createdAt, kind) : selectionDirectory(createdAt, kind);
 
   // The extracted selection goes first: it is the point of the delivery, and the original — which
   // can be orders of magnitude larger — is a recommended companion, not a prerequisite for it.
@@ -1362,7 +1375,11 @@ async function runDownload(): Promise<void> {
 async function runUpload(): Promise<void> {
   const backend = state.backend;
   if (!backend) return;
+  // Set after setDeliveryBusy, which retires the previous delivery — and would otherwise retire this
+  // one's flag with it.
   setDeliveryBusy(true);
+  uploadSubmitted = true;
+  updateDeliveryGate();
   setUploadProgress(0);
   try {
     const { directory } = await assembleSelection({
@@ -1402,6 +1419,8 @@ async function runUpload(): Promise<void> {
     );
     log(`Upload complete: ${directory}/`, "ok");
   } catch (e) {
+    // Back on offer: a failed upload is one worth pressing again.
+    uploadSubmitted = false;
     setDeliveryBusy(false);
     setUploadProgress(null);
     setStatus(els.uploadStatus, `Upload failed: ${friendlyError(e)}`, "err");

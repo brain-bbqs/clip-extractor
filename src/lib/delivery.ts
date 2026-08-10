@@ -11,19 +11,27 @@ export const UPLOAD_ROOT = "sourcedata/raw/clip-extractor";
 /** What a single upload carries: a trimmed range, or one still frame. */
 export type SelectionKind = "snippet" | "frame";
 
-/** The per-upload directory, named in the same BIDS entity style as the files inside it:
- * `date-YYYYMMDD_time-HHMMSS_type-<snippet|frame>`. One timestamp per press of Upload, so a later
- * upload of the same selection never overwrites an earlier one, and the `type-` entity lets a
- * listing be read at a glance.
+/** The per-delivery directory, named in the same BIDS entity style as the files inside it:
+ * `date-YYYYMMDD_time-HHMMSS_type-<snippet|frame>`. One timestamp per press of Save or Upload, so a
+ * later delivery of the same selection never overwrites an earlier one, and the `type-` entity lets
+ * a listing be read at a glance.
  *
  * Both stamps are digits only — no separators, and no `Z`, even though the clock is UTC. The exact
  * instant, timezone designator and all, is recorded as `created_at` in the provenance sidecar. */
-export function uploadDirectory(now: Date, kind: SelectionKind): string {
+export function selectionDirectory(now: Date, kind: SelectionKind): string {
   // toISOString is fixed-width (YYYY-MM-DDTHH:MM:SS.sssZ), so these slices are stable.
   const iso = now.toISOString();
   const date = iso.slice(0, 10).replace(/-/g, "");
   const time = iso.slice(11, 19).replace(/:/g, "");
-  return `${UPLOAD_ROOT}/date-${date}_time-${time}_type-${kind}`;
+  return `date-${date}_time-${time}_type-${kind}`;
+}
+
+/** The same directory under the archive's upload root, which is where an upload's assets go. A
+ * saved bundle uses the bare name instead: `sourcedata/raw/` is a convention for where files sit
+ * *in a dandiset*, and prefixing a local download with it would only bury the contents three levels
+ * deep in folders that mean nothing outside the archive. */
+export function uploadDirectory(now: Date, kind: SelectionKind): string {
+  return `${UPLOAD_ROOT}/${selectionDirectory(now, kind)}`;
 }
 
 /** Joins an upload directory and a file name into the sanitized asset path to register. */

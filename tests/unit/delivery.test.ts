@@ -3,10 +3,21 @@ import {
   UPLOAD_ROOT,
   defaultDeliveryMode,
   fileBrowserUrl,
+  selectionDirectory,
   uploadAssetPath,
   uploadDirectory,
   uploadOriginalPath,
 } from "../../src/lib/delivery";
+
+describe("selectionDirectory", () => {
+  it("names the directory with separate date and time entities, plus what it holds", () => {
+    expect(selectionDirectory(new Date("2026-08-09T22:49:13.482Z"), "snippet")).toBe("date-20260809_time-224913_type-snippet");
+  });
+
+  it("stands alone, with no archive prefix — a saved bundle unpacks to just this folder", () => {
+    expect(selectionDirectory(new Date("2026-08-09T22:49:13.482Z"), "frame")).toBe("date-20260809_time-224913_type-frame");
+  });
+});
 
 describe("uploadDirectory", () => {
   it("names the directory with separate date and time entities, plus what it holds", () => {
@@ -31,6 +42,11 @@ describe("uploadDirectory", () => {
 
   it("keeps the root at sourcedata/raw", () => {
     expect(UPLOAD_ROOT).toBe("sourcedata/raw/clip-extractor");
+  });
+
+  it("is the selection directory under that root, and nothing else", () => {
+    const at = new Date("2026-08-09T22:49:13.482Z");
+    expect(uploadDirectory(at, "snippet")).toBe(`${UPLOAD_ROOT}/${selectionDirectory(at, "snippet")}`);
   });
 
   it("gives two uploads a second apart their own directories", () => {
