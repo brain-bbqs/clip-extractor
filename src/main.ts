@@ -827,6 +827,14 @@ function setStatus(el: HTMLElement, message: string, cls: "" | "ok" | "err" = ""
   el.className = cls ? `hint ${cls}` : "hint";
 }
 
+/** Same, with a file name set in the monospace `code` style so it stands out from the prose. */
+function setStatusNaming(el: HTMLElement, before: string, filename: string, after: string, cls: "" | "ok" | "err" = ""): void {
+  const code = document.createElement("code");
+  code.textContent = filename;
+  el.replaceChildren(before, code, after);
+  el.className = cls ? `hint ${cls}` : "hint";
+}
+
 /** Drives the single progress bar in the upload pane; null hides it. */
 function setUploadProgress(fraction: number | null, done = false): void {
   els.uploadProgress.hidden = fraction === null;
@@ -921,7 +929,7 @@ async function runDownload(): Promise<void> {
     const media = await extractSelection((message) => setStatus(els.downloadStatus, message));
     saveBlob(media.blob, media.filename);
     setDeliveryBusy(false);
-    setStatus(els.downloadStatus, `Saved ${media.filename} (${bytes(media.blob.size)}).`, "ok");
+    setStatusNaming(els.downloadStatus, "Saved ", media.filename, ` (${bytes(media.blob.size)})`, "ok");
     log(`Downloaded ${media.filename} (${bytes(media.blob.size)})`, "ok");
   } catch (e) {
     setDeliveryBusy(false);

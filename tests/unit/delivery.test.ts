@@ -27,8 +27,8 @@ describe("uploadDirectory", () => {
 
 describe("uploadAssetPath", () => {
   it("joins the directory and file name", () => {
-    expect(uploadAssetPath("sourcedata/raw/clip-extractor/2026-08-09T22-49-13Z", "name-mice_range-0+30_type-snippet.mp4")).toBe(
-      "sourcedata/raw/clip-extractor/2026-08-09T22-49-13Z/name-mice_range-0+30_type-snippet.mp4",
+    expect(uploadAssetPath("sourcedata/raw/clip-extractor/2026-08-09T22-49-13Z", "name-mice_range-0+30_type-snippet_video.mp4")).toBe(
+      "sourcedata/raw/clip-extractor/2026-08-09T22-49-13Z/name-mice_range-0+30_type-snippet_video.mp4",
     );
   });
 

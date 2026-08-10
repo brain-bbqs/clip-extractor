@@ -20,12 +20,12 @@ export interface ExtractedMedia {
 export type ExtractProgress = (message: string, fraction?: number) => void;
 
 // Every file this app produces is named in BIDS entity style — `key-value` pairs joined by
-// underscores, closing with a `type-` entity that says what the file is:
-//   name-<source>_index-<frame>_type-frame.png
+// underscores, then a suffix naming what the file holds:
+//   name-<source>_index-<frame>_type-frame_image.png
 //   name-<source>_index-<frame>_type-frame_provenance.json
-//   name-<source>_range-<in>+<out>_type-snippet.mp4
+//   name-<source>_range-<in>+<out>_type-snippet_video.mp4
 //   name-<source>_range-<in>+<out>_type-snippet_provenance.json
-// The sidecar carries the same entities as the file it describes, plus a `provenance` suffix, so the
+// A sidecar shares every entity with the file it describes and differs only in that suffix, so the
 // pair sits side by side in a listing. The original video is not renamed at all — it keeps the name
 // it arrived with (see runUpload in main.ts).
 
@@ -74,15 +74,15 @@ export function assetFileName(entities: AssetEntities, type: string, extension: 
 }
 
 export function clipFileName(sourceName: string, lo: number, hi: number): string {
-  return assetFileName({ sourceName, mode: "snippet", inFrame: lo, outFrame: hi }, "snippet", "mp4");
+  return assetFileName({ sourceName, mode: "snippet", inFrame: lo, outFrame: hi }, "snippet", "mp4", "video");
 }
 
 export function frameFileName(sourceName: string, frame: number): string {
-  return assetFileName({ sourceName, mode: "frame", inFrame: frame, outFrame: frame }, "frame", "png");
+  return assetFileName({ sourceName, mode: "frame", inFrame: frame, outFrame: frame }, "frame", "png", "image");
 }
 
-/** The sidecar carries every entity of the file it describes — including its `type-` — and adds a
- * `provenance` suffix, so the pair sits side by side in a listing. */
+/** The sidecar shares every entity with the file it describes — including its `type-` — and differs
+ * only in its suffix, so the pair sits side by side in a listing. */
 export function provenanceFileName(entities: AssetEntities): string {
   return assetFileName(entities, entities.mode, "json", "provenance");
 }

@@ -43,17 +43,17 @@ describe("bidsLabel", () => {
 
 describe("clipFileName", () => {
   it("names a snippet with its frame range in BIDS entity style", () => {
-    expect(clipFileName("mice.mp4", 120, 300)).toBe("name-mice_range-120+300_type-snippet.mp4");
+    expect(clipFileName("mice.mp4", 120, 300)).toBe("name-mice_range-120+300_type-snippet_video.mp4");
   });
 
   it("reduces the source name to a legal label", () => {
-    expect(clipFileName("my video - Copy.mp4", 0, 20)).toBe("name-my+video+Copy_range-0+20_type-snippet.mp4");
+    expect(clipFileName("my video - Copy.mp4", 0, 20)).toBe("name-my+video+Copy_range-0+20_type-snippet_video.mp4");
   });
 });
 
 describe("frameFileName", () => {
   it("names a single frame with its index in BIDS entity style", () => {
-    expect(frameFileName("mice.mp4", 42)).toBe("name-mice_index-42_type-frame.png");
+    expect(frameFileName("mice.mp4", 42)).toBe("name-mice_index-42_type-frame_image.png");
   });
 });
 

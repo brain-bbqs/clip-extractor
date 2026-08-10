@@ -25,9 +25,9 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
   - **Save** — writes the selection to your computer: the snippet as a frame-exact MP4 (trimmed by ffmpeg.wasm), or the selected frame as a PNG.
   - **Upload** — sends the same file to the EMBER dataset picked below the toggle, into its own directory under `sourcedata/raw/clip-extractor/date-<YYYYMMDD>_time-<HHMMSS>_type-snippet/` (or `_type-frame`), following the same `sourcedata/raw/` convention as [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader). Uploading the **original video** alongside it is recommended and pre-selected, but optional; the extracted selection always goes first. Transfers use DANDI's own multipart flow: dandi-etag checksum, presigned part PUTs straight to S3, then asset registration.
 - **BIDS-style names** — every file this app writes is named in entity style, `key-value` pairs joined by underscores and closed by a `type-` entity, so one glance says what a file is:
-  - `name-mice_range-120+300_type-snippet.mp4` — the extracted snippet, with its inclusive frame range
-  - `name-mice_range-120+300_type-snippet_provenance.json` — its sidecar, carrying the same entities plus a `provenance` suffix
-  - `name-mice_index-42_type-frame.png` and `name-mice_index-42_type-frame_provenance.json` — a single extracted frame and its sidecar
+  - `name-mice_range-120+300_type-snippet_video.mp4` — the extracted snippet, with its inclusive frame range
+  - `name-mice_range-120+300_type-snippet_provenance.json` — its sidecar, sharing every entity and differing only in the suffix
+  - `name-mice_index-42_type-frame_image.png` and `name-mice_index-42_type-frame_provenance.json` — a single extracted frame and its sidecar
   - The `name-` label is reduced to alphanumerics (spaces become `+`) so the entities stay unambiguous to parse; the unabridged original file name is preserved in the provenance record.
   - The **original video is never renamed** — it is the untouched source, so it keeps the name it arrived with.
 - **Provenance sidecar** — every upload also writes a provenance JSON into the same directory: who uploaded it, the destination dataset, the source video's name and `dandi:dandi-etag` checksum (recorded **even when the original is not uploaded**, so the clip can always be traced back to it), the video's fps/dimensions/frame count, the exact frame range, the extracted file's own size and checksum, the literal ffmpeg command that produced it, and a summary of any loaded SLEAP annotations.

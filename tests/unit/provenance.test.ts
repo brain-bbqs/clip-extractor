@@ -25,8 +25,8 @@ const base: ProvenanceInput = {
     assetPath: "sourcedata/raw/clip-extractor/2026-08-10T01-23-56Z_snippet/mice.mp4",
   },
   extracted: {
-    filename: "name-mice_range-120+149_type-snippet.mp4",
-    assetPath: "sourcedata/raw/clip-extractor/2026-08-10T01-23-56Z_snippet/name-mice_range-120+149_type-snippet.mp4",
+    filename: "name-mice_range-120+149_type-snippet_video.mp4",
+    assetPath: "sourcedata/raw/clip-extractor/2026-08-10T01-23-56Z_snippet/name-mice_range-120+149_type-snippet_video.mp4",
     mediaType: "video/mp4",
     sizeBytes: 2048,
     checksum: `${"b".repeat(32)}-1`,
