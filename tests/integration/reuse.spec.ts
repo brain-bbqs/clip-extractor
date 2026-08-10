@@ -52,7 +52,10 @@ test("delivering the same selection twice re-uses the extract and the overlay", 
   await page.locator("#frameSlider").fill("9");
   await Promise.all([
     page.waitForEvent("download", { timeout: 60_000 }),
-    page.locator('#deliverSeg button[data-deliver="download"]').click().then(() => page.locator("#btnDownload").click()),
+    page
+      .locator('#deliverSeg button[data-deliver="download"]')
+      .click()
+      .then(() => page.locator("#btnDownload").click()),
   ]);
   expect(await countEncodes(page)).toBe(afterSave + 2);
 });
