@@ -61,6 +61,10 @@ export function getElements() {
 
     // Delivery card (Download / Upload)
     deliverSeg: required<HTMLDivElement>("deliverSeg"),
+    selectionDescription: required<HTMLTextAreaElement>("selectionDescription"),
+    uploadOriginalRow: required<HTMLLabelElement>("uploadOriginalRow"),
+    uploadOriginal: required<HTMLInputElement>("uploadOriginal"),
+    uploadOriginalNote: required<HTMLParagraphElement>("uploadOriginalNote"),
     downloadPane: required<HTMLDivElement>("downloadPane"),
     downloadHint: required<HTMLParagraphElement>("downloadHint"),
     downloadPreview: required<HTMLParagraphElement>("downloadPreview"),
@@ -76,9 +80,6 @@ export function getElements() {
     dandisetSingleText: required<HTMLSpanElement>("dandisetSingleText"),
     dandisetEmbargoError: required<HTMLParagraphElement>("dandisetEmbargoError"),
     viewDatasetLink: required<HTMLAnchorElement>("viewDatasetLink"),
-    uploadOriginalRow: required<HTMLLabelElement>("uploadOriginalRow"),
-    uploadOriginal: required<HTMLInputElement>("uploadOriginal"),
-    uploadOriginalNote: required<HTMLParagraphElement>("uploadOriginalNote"),
     btnUpload: required<HTMLButtonElement>("btnUpload"),
     uploadStatus: required<HTMLSpanElement>("uploadStatus"),
     uploadProgress: required<HTMLDivElement>("uploadProgress"),

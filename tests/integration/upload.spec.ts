@@ -7,7 +7,7 @@ import { stubArchive, loadRecordedVideo } from "./helpers";
 // because that path needs no ffmpeg.wasm (and so no CDN) to produce a real file.
 
 test("an upload registers the extract, the original and a matching provenance sidecar", async ({ page }) => {
-  const registered = await stubArchive(page);
+  const { registered, uploaded } = await stubArchive(page);
 
   await page.goto("/");
   await expect(page.locator("#dandisetSingleText")).toContainText("000123");
@@ -15,6 +15,7 @@ test("an upload registers the extract, the original and a matching provenance si
   await loadRecordedVideo(page, "file_example_480 - Copy.webm");
   await page.locator('#modeSeg button[data-mode="frame"]').click();
   await page.locator("#frameSlider").fill("5");
+  await page.locator("#selectionDescription").fill("Frame 5 is where the two tracks swap identities.");
   await expect(page.locator("#uploadOriginal")).toBeChecked();
   await expect(page.locator("#btnUpload")).toBeEnabled();
 
@@ -34,8 +35,20 @@ test("an upload registers the extract, the original and a matching provenance si
     "name-file+example+480+Copy_index-5_type-frame_provenance.json",
   ]);
 
-  // The completion link opens the archive's file browser at this upload's own directory.
+  // The sidecar that actually went up carries the description written for this selection, and names
+  // the dataset it was uploaded to.
   const directory = [...directories][0];
+  const sidecar = uploaded.map((part) => part.toString()).find((body) => body.startsWith("{"));
+  const provenance = JSON.parse(sidecar!) as Record<string, unknown>;
+  expect(provenance.description).toBe("Frame 5 is where the two tracks swap identities.");
+  expect(provenance.destination).toEqual({
+    api: "https://api-dandi.emberarchive.org/api",
+    dandiset_id: "000123",
+    directory,
+  });
+  expect(provenance.uploaded_by).toEqual({ username: "ada-lovelace", name: "Ada Lovelace" });
+
+  // The completion link opens the archive's file browser at this upload's own directory.
   await expect(status.locator("a")).toHaveText("click here to view and share");
   await expect(status.locator("a")).toHaveAttribute(
     "href",

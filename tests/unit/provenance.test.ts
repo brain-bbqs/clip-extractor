@@ -4,6 +4,7 @@ import { PROVENANCE_FORMAT, buildProvenance, type ProvenanceInput } from "../../
 const base: ProvenanceInput = {
   createdAt: new Date("2026-08-10T01:23:56.000Z"),
   pageUrl: "https://clip-extractor.brain-bbqs.org/",
+  description: null,
   user: { username: "ada-lovelace", name: "Ada Lovelace" },
   api: "https://api-dandi.emberarchive.org/api",
   dandisetId: "000123",
@@ -52,6 +53,28 @@ describe("buildProvenance", () => {
       dandiset_id: "000123",
       directory: "sourcedata/raw/clip-extractor/2026-08-10T01-23-56Z_snippet",
     });
+  });
+
+  it("names only the directory for a bundle saved locally, which has no archive behind it", () => {
+    const doc = buildProvenance({ ...base, api: null, dandisetId: null, user: null });
+    expect(doc.destination).toEqual({
+      api: null,
+      dandiset_id: null,
+      directory: "sourcedata/raw/clip-extractor/2026-08-10T01-23-56Z_snippet",
+    });
+    expect(doc.uploaded_by).toBeNull();
+  });
+
+  it("carries the description written for this selection", () => {
+    expect(buildProvenance({ ...base, description: "The tracker swaps the two mice at frame 130." }).description).toBe(
+      "The tracker swaps the two mice at frame 130.",
+    );
+  });
+
+  it("trims a description, and treats a blank one as none at all", () => {
+    expect(buildProvenance({ ...base, description: "  Lost the tail node here.\n" }).description).toBe("Lost the tail node here.");
+    expect(buildProvenance({ ...base, description: "   \n " }).description).toBeNull();
+    expect(buildProvenance(base).description).toBeNull();
   });
 
   it("derives the selection's frame count and duration from the inclusive bounds", () => {

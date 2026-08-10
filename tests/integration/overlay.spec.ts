@@ -8,7 +8,7 @@ import { stubArchive, stubH5Wasm, loadRecordedVideo } from "./helpers";
 const SLP_FIXTURE = fileURLToPath(new URL("../fixtures/mice_new.tracked.slp", import.meta.url));
 
 test("a loaded .slp adds the annotations file and a rendered overlay to the upload", async ({ page }) => {
-  const registered = await stubArchive(page);
+  const { registered } = await stubArchive(page);
   await stubH5Wasm(page);
 
   await page.goto("/");
@@ -34,7 +34,7 @@ test("a loaded .slp adds the annotations file and a rendered overlay to the uplo
 });
 
 test("the overlay is uploaded even when the original content is excluded", async ({ page }) => {
-  const registered = await stubArchive(page);
+  const { registered } = await stubArchive(page);
   await stubH5Wasm(page);
 
   await page.goto("/");

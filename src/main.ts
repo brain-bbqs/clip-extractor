@@ -14,19 +14,18 @@ import {
   uploadDirectory,
   uploadOriginalPath,
   type DeliveryMode,
-  type SelectionKind,
 } from "./lib/delivery";
 import {
-  clipFileName,
+  bundleFileName,
   extractClip,
   extractFrame,
   extractOverlay,
-  frameFileName,
   provenanceFileName,
   type AssetEntities,
   type ExtractedMedia,
   type ExtractProgress,
 } from "./lib/extract";
+import { tarGzip, type BundleEntry } from "./lib/bundle";
 import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./lib/upload";
 import { buildProvenance, type ProvenanceAnnotationsInput } from "./lib/provenance";
 import { countLabeledFramesInRange } from "./lib/annotations";
@@ -839,10 +838,14 @@ els.dandisetId.addEventListener("change", () => {
 });
 
 // ============================================================
-// Delivery: download the extracted selection, or upload it to EMBER
+// Delivery: save the extracted selection, or upload it to EMBER
 // ============================================================
 // Extraction runs on demand, when either button is pressed, so what leaves the page always matches
 // the selection currently on screen — there is no stale "extracted" artifact to invalidate.
+//
+// Both routes assemble the same set of files (see assembleSelection): Upload registers each one as
+// an asset in the destination dataset, Save packs the same tree into a single `.tar.gz`. So a saved
+// bundle is not a lesser copy of an upload — unpacked, it is the upload.
 
 // Guards both actions while an extraction or upload is in flight.
 let deliveryBusy = false;
@@ -918,7 +921,9 @@ function updateDeliveryGate(): void {
   els.dandisetEmbargoError.hidden = !notEmbargoed;
   els.btnDownload.disabled = deliveryBusy || !hasVideo || !selected;
   els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !cfg.dandisetId || notEmbargoed;
-  els.downloadHint.textContent = frameMode ? "Saves the selected frame to your computer." : "Saves the selected snippet to your computer.";
+  els.downloadHint.textContent = frameMode
+    ? "Saves the selected frame to your computer, packed with everything an upload would have carried."
+    : "Saves the selected snippet to your computer, packed with everything an upload would have carried.";
   // Original content can only ride along when its bytes are already in the browser; a range-streamed
   // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
   const canSendOriginal = state.sourceFile !== null || state.slpFile !== null;
@@ -936,16 +941,21 @@ function updateDeliveryGate(): void {
   setStatus(els.uploadStatus, blocked || (!cfg.dandisetId ? "Pick an upload destination above." : ""));
 }
 
-/** Names the file the Download button is about to produce — the name alone, since it already spells
- * out the frame or the frame range. Refreshed on every seek too, frame mode's output following the
+/** The entities identifying whatever the selector currently points at, shared by every file the next
+ * delivery writes (and by the bundle that holds them). */
+function currentEntities(): AssetEntities {
+  const [lo, hi] = state.mode === "frame" ? [state.cur, state.cur] : selRange();
+  return { sourceName: state.sourceName, mode: state.mode === "frame" ? "frame" : "snippet", inFrame: lo, outFrame: hi };
+}
+
+/** Names the file the Save button is about to produce — the name alone, since it already spells out
+ * the frame or the frame range. Refreshed on every seek too, frame mode's output following the
  * current frame, hence the long-lived child element rather than rebuilt markup. */
 function updateDeliveryPreview(): void {
   const show = state.backend !== null && hasSelection();
   els.downloadPreview.hidden = !show;
   if (!show) return;
-  const [lo, hi] = selRange();
-  els.downloadPreviewName.textContent =
-    state.mode === "frame" ? frameFileName(state.sourceName, state.cur) : clipFileName(state.sourceName, lo, hi);
+  els.downloadPreviewName.textContent = bundleFileName(currentEntities());
 }
 
 function setDeliveryBusy(busy: boolean): void {
@@ -953,49 +963,47 @@ function setDeliveryBusy(busy: boolean): void {
   updateDeliveryGate();
 }
 
-/** Extracts whatever the selector currently points at: an MP4 snippet, or a single PNG frame. */
-async function extractSelection(onProgress: ExtractProgress): Promise<ExtractedMedia> {
-  const backend = state.backend;
-  if (!backend) throw new Error("No video loaded");
-  if (state.mode === "frame") {
-    onProgress(`Encoding frame ${state.cur}…`);
+/** Extracts the selection `entities` names: an MP4 snippet, or a single PNG frame. Driven by the
+ * entities rather than by live state, so scrubbing on while an extraction runs cannot move what is
+ * being extracted out from under the name it is being written as. */
+async function extractSelection(backend: SleapVideoBackend, entities: AssetEntities, onProgress: ExtractProgress): Promise<ExtractedMedia> {
+  if (entities.mode === "frame") {
+    onProgress(`Encoding frame ${entities.inFrame}…`);
     return extractFrame({
       backend,
       frameOrder: state.frameOrder,
-      frame: state.cur,
+      frame: entities.inFrame,
       width: state.width,
       height: state.height,
-      sourceName: state.sourceName,
+      sourceName: entities.sourceName,
     });
   }
-  const [lo, hi] = selRange();
   return extractClip({
     sourceFile: state.sourceFile,
     sourceUrl: state.sourceUrl,
-    sourceName: state.sourceName,
-    lo,
-    hi,
+    sourceName: entities.sourceName,
+    lo: entities.inFrame,
+    hi: entities.outFrame,
     fps: state.fps,
     onProgress,
   });
 }
 
-async function runDownload(): Promise<void> {
-  if (!state.backend) return;
-  setDeliveryBusy(true);
-  try {
-    const media = await extractSelection((message) => setStatus(els.downloadStatus, message));
-    saveBlob(media.blob, media.filename);
-    setDeliveryBusy(false);
-    setStatusNaming(els.downloadStatus, "Saved ", media.filename, ` (${bytes(media.blob.size)})`, "ok");
-    log(`Downloaded ${media.filename} (${bytes(media.blob.size)})`, "ok");
-  } catch (e) {
-    setDeliveryBusy(false);
-    setStatus(els.downloadStatus, friendlyError(e), "err");
-    log(`Download failed: ${friendlyError(e)}`, "err");
-    console.error(e);
-  }
+/** One file of an assembled selection, ready for either route. */
+interface DeliverableFile {
+  blob: Blob;
+  /** Where it lands: its asset path in the destination dataset, and the very same path inside a
+   * saved bundle. */
+  path: string;
+  contentType: string;
+  /** How the progress line names it. */
+  label: string;
 }
+
+/** Takes one assembled file and answers with the digest it was stored under, so the provenance
+ * record quotes the same checksum the archive holds. `digest` is passed when the caller has already
+ * computed it, so nothing is ever hashed twice. */
+type DeliverFile = (file: DeliverableFile, digest?: BlobDigest) => Promise<BlobDigest>;
 
 const PHASE_LABEL: Record<UploadPhase, string> = { checksum: "Checksumming", upload: "Uploading", register: "Registering" };
 
@@ -1028,7 +1036,7 @@ async function uploadOne(
 }
 
 /** What was loaded from a `.slp`, restricted to the selection, or null when there is none. */
-function annotationsSummary(lo: number, hi: number, slp: UploadedSlp | null): ProvenanceAnnotationsInput | null {
+function annotationsSummary(lo: number, hi: number, slp: DeliveredSlp | null): ProvenanceAnnotationsInput | null {
   const pose = els.slpToggle.checked ? state.pose : null;
   if (!pose) return null;
   return {
@@ -1042,31 +1050,32 @@ function annotationsSummary(lo: number, hi: number, slp: UploadedSlp | null): Pr
   };
 }
 
-/** A loaded `.slp` that was checksummed, and uploaded too when `path` is set. */
-interface UploadedSlp {
+/** A loaded `.slp` that was checksummed, and delivered too when `path` is set. */
+interface DeliveredSlp {
   digest: BlobDigest;
   path: string | null;
 }
 
-/** The rendered pose-overlay companion to a selection, once uploaded. */
-interface UploadedOverlay {
+/** The rendered pose-overlay companion to a selection, once delivered. */
+interface DeliveredOverlay {
   media: ExtractedMedia;
   path: string;
   digest: BlobDigest;
 }
 
 /**
- * Renders and uploads the selection with the pose drawn into the pixels, so it can be looked at
- * without a viewer that understands `.slp`. Null when no annotations are loaded, since there would be
- * nothing to draw. Deliberately not tied to the "include the original content" toggle: this is a view
- * of the selection, not a copy of a source.
+ * Renders the selection with the pose drawn into the pixels, so it can be looked at without a viewer
+ * that understands `.slp`. Null when no annotations are loaded, since there would be nothing to draw.
+ * Deliberately not tied to the "include the original content" toggle: this is a view of the
+ * selection, not a copy of a source.
  */
-async function uploadOverlay(
-  cfg: ArchiveConfig,
+async function deliverOverlay(
+  deliver: DeliverFile,
   directory: string,
   entities: AssetEntities,
   backend: SleapVideoBackend,
-): Promise<UploadedOverlay | null> {
+  onProgress: ExtractProgress,
+): Promise<DeliveredOverlay | null> {
   const pose = els.slpToggle.checked ? state.pose : null;
   if (!pose) return null;
   const media = await extractOverlay({
@@ -1080,126 +1089,215 @@ async function uploadOverlay(
     width: state.width,
     height: state.height,
     sourceName: state.sourceName,
-    onProgress: (message, fraction) => {
-      setStatus(els.uploadStatus, message);
-      setUploadProgress(fraction ?? 0);
-    },
+    onProgress,
   });
   const path = uploadAssetPath(directory, media.filename);
-  const digest = await uploadOne(cfg, media.blob, path, media.mime, "the pose overlay");
+  const digest = await deliver({ blob: media.blob, path, contentType: media.mime, label: "the pose overlay" });
   return { media, path, digest };
 }
 
-/** Checksums the source video, and uploads it when the toggle asks for it. The checksum is taken
+/** Checksums the source video, and hands it over when the toggle asks for it. The checksum is taken
  * either way: recording which video a clip came from is only useful if that video can be identified
  * again later. */
-async function uploadOriginalVideo(
-  cfg: ArchiveConfig,
+async function deliverOriginalVideo(
+  deliver: DeliverFile,
   directory: string,
+  onProgress: ExtractProgress,
 ): Promise<{ original: File | null; originalDigest: BlobDigest | null; originalPath: string | null }> {
   const original = state.sourceFile;
   if (!original) return { original: null, originalDigest: null, originalPath: null };
-  const originalDigest = await checksumBlob(original, (f) => reportUploadStep("the original video", PHASE_LABEL.checksum, f));
+  const originalDigest = await checksumBlob(original, (f) => reportChecksum(onProgress, "the original video", f));
   if (!els.uploadOriginal.checked) return { original, originalDigest, originalPath: null };
-  // Uploaded under the name it arrived with, not a derived one: it is the untouched source, and its
+  // Carried under the name it arrived with, not a derived one: it is the untouched source, and its
   // verbatim name is what the provenance record reports.
   const originalPath = uploadOriginalPath(directory, original.name);
-  await uploadOne(cfg, original, originalPath, original.type || "video/mp4", "the original video", originalDigest);
+  await deliver(
+    { blob: original, path: originalPath, contentType: original.type || "video/mp4", label: "the original video" },
+    originalDigest,
+  );
   return { original, originalDigest, originalPath };
 }
 
 /** Same for a loaded `.slp`: it is original content too, so it rides along on the same toggle, and is
  * checksummed either way. */
-async function uploadAnnotationFile(cfg: ArchiveConfig, directory: string): Promise<UploadedSlp | null> {
+async function deliverAnnotationFile(deliver: DeliverFile, directory: string, onProgress: ExtractProgress): Promise<DeliveredSlp | null> {
   const slpFile = state.slpFile;
   if (!slpFile) return null;
-  const digest = await checksumBlob(slpFile, (f) => reportUploadStep("the annotations", PHASE_LABEL.checksum, f));
+  const digest = await checksumBlob(slpFile, (f) => reportChecksum(onProgress, "the annotations", f));
   if (!els.uploadOriginal.checked) return { digest, path: null };
   const path = uploadOriginalPath(directory, slpFile.name);
-  await uploadOne(cfg, slpFile, path, slpFile.type || "application/octet-stream", "the annotations", digest);
+  await deliver({ blob: slpFile, path, contentType: slpFile.type || "application/octet-stream", label: "the annotations" }, digest);
   return { digest, path };
 }
 
+function reportChecksum(onProgress: ExtractProgress, label: string, fraction: number): void {
+  onProgress(`${PHASE_LABEL.checksum} ${label}… ${(fraction * 100).toFixed(0)}%`, fraction);
+}
+
+interface AssembleParams {
+  /** Captured by the caller: `state.backend` is mutable, so a load mid-delivery must not swap what
+   * these steps are reading frames from. */
+  backend: SleapVideoBackend;
+  /** Runs once after extraction, before the first file is handed over — where the upload route
+   * refreshes its token, so a long encode cannot age it out mid-transfer. */
+  onReady?: () => Promise<void>;
+  /** The archive the files are bound for, read after `onReady`; null for a bundle saved locally,
+   * which is not bound for one. */
+  destination: () => { api: string; dandisetId: string; user: ArchiveUser | null } | null;
+  deliver: DeliverFile;
+  onProgress: ExtractProgress;
+}
+
+interface AssembledSelection {
+  entities: AssetEntities;
+  directory: string;
+  createdAt: Date;
+}
+
+/**
+ * Extracts the current selection and hands every file it produces to `deliver`, in the order they
+ * are meant to land: the selection itself, its pose overlay, the original content, then the
+ * provenance record naming them all. Both routes come through here, which is what makes a saved
+ * bundle hold exactly what an upload would have written.
+ */
+async function assembleSelection(params: AssembleParams): Promise<AssembledSelection> {
+  const { backend, deliver, onProgress } = params;
+  const entities = currentEntities();
+  const { mode: kind, inFrame: lo, outFrame: hi } = entities;
+  const media = await extractSelection(backend, entities, onProgress);
+  await params.onReady?.();
+  const destination = params.destination();
+  // One instant for the whole delivery, so the directory's date/time entities and the provenance
+  // record's `created_at` name the same moment.
+  const createdAt = new Date();
+  const directory = uploadDirectory(createdAt, kind);
+
+  // The extracted selection goes first: it is the point of the delivery, and the original — which
+  // can be orders of magnitude larger — is a recommended companion, not a prerequisite for it.
+  const mediaPath = uploadAssetPath(directory, media.filename);
+  const mediaDigest = await deliver({ blob: media.blob, path: mediaPath, contentType: media.mime, label: `the ${kind}` });
+
+  const overlay = await deliverOverlay(deliver, directory, entities, backend, onProgress);
+  const { original, originalDigest, originalPath } = await deliverOriginalVideo(deliver, directory, onProgress);
+  const slp = await deliverAnnotationFile(deliver, directory, onProgress);
+
+  const provenance = buildProvenance({
+    createdAt,
+    pageUrl: location.href.split("?")[0],
+    description: els.selectionDescription.value,
+    user: destination?.user ?? null,
+    api: destination?.api ?? null,
+    dandisetId: destination?.dandisetId ?? null,
+    directory,
+    mode: kind,
+    fps: state.fps,
+    width: state.width,
+    height: state.height,
+    totalFrames: state.totalFrames,
+    inFrame: lo,
+    outFrame: hi,
+    source: {
+      filename: state.sourceName,
+      url: state.sourceUrl,
+      sizeBytes: original?.size ?? null,
+      checksum: originalDigest?.etag ?? null,
+      checksumUnavailable: original ? null : "The source video was streamed from a URL, so its bytes were never held locally to hash.",
+      uploaded: originalPath !== null,
+      assetPath: originalPath,
+    },
+    extracted: {
+      filename: media.filename,
+      assetPath: mediaPath,
+      mediaType: media.mime,
+      sizeBytes: media.blob.size,
+      checksum: mediaDigest.etag,
+      encoding: media.encoding,
+    },
+    overlay: overlay && {
+      filename: overlay.media.filename,
+      assetPath: overlay.path,
+      mediaType: overlay.media.mime,
+      sizeBytes: overlay.media.blob.size,
+      checksum: overlay.digest.etag,
+      encoding: overlay.media.encoding,
+    },
+    annotations: annotationsSummary(lo, hi, slp),
+  });
+  const provenanceBlob = new Blob([JSON.stringify(provenance, null, 2)], { type: "application/json" });
+  const provenancePath = uploadAssetPath(directory, provenanceFileName(entities));
+  await deliver({ blob: provenanceBlob, path: provenancePath, contentType: "application/json", label: "the provenance record" });
+
+  return { entities, directory, createdAt };
+}
+
+/** Saves the selection as a `.tar.gz` holding the same files, at the same paths, an upload would
+ * have written — so what is on disk can be unpacked, read, or handed to someone else without having
+ * to reconstruct what the archive would have seen. */
+async function runDownload(): Promise<void> {
+  const backend = state.backend;
+  if (!backend) return;
+  setDeliveryBusy(true);
+  try {
+    const bundled: BundleEntry[] = [];
+    const { entities, createdAt } = await assembleSelection({
+      backend,
+      destination: () => null,
+      onProgress: (message) => setStatus(els.downloadStatus, message),
+      deliver: async (file, digest) => {
+        // Checksummed even though nothing is being uploaded: the provenance record inside the bundle
+        // quotes the same digests an upload would have registered, so a file saved now and uploaded
+        // later is identifiable as the same bytes.
+        const resolved =
+          digest ?? (await checksumBlob(file.blob, (f) => reportChecksum((m) => setStatus(els.downloadStatus, m), file.label, f)));
+        bundled.push({ path: file.path, blob: file.blob });
+        return resolved;
+      },
+    });
+    setStatus(els.downloadStatus, "Packing the bundle…");
+    const bundle = await tarGzip(bundled, createdAt);
+    const filename = bundleFileName(entities);
+    saveBlob(bundle, filename);
+    setDeliveryBusy(false);
+    setStatusNaming(els.downloadStatus, "Saved ", filename, ` (${bundled.length} files, ${bytes(bundle.size)})`, "ok");
+    log(`Saved ${filename} (${bundled.length} files, ${bytes(bundle.size)})`, "ok");
+  } catch (e) {
+    setDeliveryBusy(false);
+    setStatus(els.downloadStatus, friendlyError(e), "err");
+    log(`Save failed: ${friendlyError(e)}`, "err");
+    console.error(e);
+  }
+}
+
 async function runUpload(): Promise<void> {
-  // Captured once: `state.backend` is mutable, so a load mid-upload must not swap what these steps
-  // are reading frames from.
   const backend = state.backend;
   if (!backend) return;
   setDeliveryBusy(true);
   setUploadProgress(0);
   try {
-    const kind: SelectionKind = state.mode === "frame" ? "frame" : "snippet";
-    const [lo, hi] = state.mode === "frame" ? [state.cur, state.cur] : selRange();
-    // Shared by every file this upload writes, so they all carry the same BIDS-style entities.
-    const entities: AssetEntities = { sourceName: state.sourceName, mode: kind, inFrame: lo, outFrame: hi };
-    const media = await extractSelection((message, fraction) => {
-      setStatus(els.uploadStatus, message);
-      setUploadProgress(fraction ?? 0);
+    const { directory } = await assembleSelection({
+      backend,
+      onReady: async () => {
+        // Refresh the token before the first request rather than mid-transfer, where an expiry would
+        // strand a half-finished multipart upload.
+        await ensureFreshOAuth();
+        const cfg = currentConfig();
+        if (!cfg.dandisetId) throw new Error("Pick an upload destination first.");
+        // The provenance record names the uploader, so resolve the account here if the header's own
+        // lookup has not landed (or was never made) yet.
+        currentUser ??= await fetchArchiveUser(cfg).catch(() => null);
+      },
+      destination: () => {
+        const cfg = currentConfig();
+        return { api: cfg.api, dandisetId: cfg.dandisetId, user: currentUser };
+      },
+      onProgress: (message, fraction) => {
+        setStatus(els.uploadStatus, message);
+        setUploadProgress(fraction ?? 0);
+      },
+      deliver: (file, digest) => uploadOne(currentConfig(), file.blob, file.path, file.contentType, file.label, digest),
     });
-    // Refresh the token before the first request rather than mid-transfer, where an expiry would
-    // strand a half-finished multipart upload.
-    await ensureFreshOAuth();
+
     const cfg = currentConfig();
-    if (!cfg.dandisetId) throw new Error("Pick an upload destination first.");
-    // The provenance record names the uploader, so resolve the account here if the header's own
-    // lookup has not landed (or was never made) yet.
-    currentUser ??= await fetchArchiveUser(cfg).catch(() => null);
-    const directory = uploadDirectory(new Date(), kind);
-
-    // The extracted selection goes first: it is the point of the upload, and the original — which
-    // can be orders of magnitude larger — is a recommended companion, not a prerequisite for it.
-    const mediaPath = uploadAssetPath(directory, media.filename);
-    const mediaDigest = await uploadOne(cfg, media.blob, mediaPath, media.mime, kind);
-
-    const overlay = await uploadOverlay(cfg, directory, entities, backend);
-    const { original, originalDigest, originalPath } = await uploadOriginalVideo(cfg, directory);
-    const slp = await uploadAnnotationFile(cfg, directory);
-
-    const provenance = buildProvenance({
-      createdAt: new Date(),
-      pageUrl: location.href.split("?")[0],
-      user: currentUser,
-      api: cfg.api,
-      dandisetId: cfg.dandisetId,
-      directory,
-      mode: kind,
-      fps: state.fps,
-      width: state.width,
-      height: state.height,
-      totalFrames: state.totalFrames,
-      inFrame: lo,
-      outFrame: hi,
-      source: {
-        filename: state.sourceName,
-        url: state.sourceUrl,
-        sizeBytes: original?.size ?? null,
-        checksum: originalDigest?.etag ?? null,
-        checksumUnavailable: original ? null : "The source video was streamed from a URL, so its bytes were never held locally to hash.",
-        uploaded: originalPath !== null,
-        assetPath: originalPath,
-      },
-      extracted: {
-        filename: media.filename,
-        assetPath: mediaPath,
-        mediaType: media.mime,
-        sizeBytes: media.blob.size,
-        checksum: mediaDigest.etag,
-        encoding: media.encoding,
-      },
-      overlay: overlay && {
-        filename: overlay.media.filename,
-        assetPath: overlay.path,
-        mediaType: overlay.media.mime,
-        sizeBytes: overlay.media.blob.size,
-        checksum: overlay.digest.etag,
-        encoding: overlay.media.encoding,
-      },
-      annotations: annotationsSummary(lo, hi, slp),
-    });
-    const provenanceBlob = new Blob([JSON.stringify(provenance, null, 2)], { type: "application/json" });
-    const provenancePath = uploadAssetPath(directory, provenanceFileName(entities));
-    await uploadOne(cfg, provenanceBlob, provenancePath, "application/json", "the provenance record");
-
     setDeliveryBusy(false);
     setUploadProgress(1, true);
     // Deliberately terse: uploadOne() has already logged every asset path to the console, and the

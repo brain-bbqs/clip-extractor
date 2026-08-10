@@ -299,6 +299,24 @@
           </div>
         </div>
 
+        <!-- Shared by both routes, since both write the same set of files: the note travels in the
+             provenance JSON, and the toggle decides whether the originals travel with it. -->
+        <label class="deliver-description" for="selectionDescription">
+          <span>Description <em>(optional)</em></span>
+          <textarea
+            id="selectionDescription"
+            rows="3"
+            placeholder="What does this selection show? Note anything that went wrong in it, or anything worth knowing when it turns up again later."
+          ></textarea>
+        </label>
+        <label class="hint slp-toggle upload-original" id="uploadOriginalRow">
+          <span>Include the original content <em>(recommended)</em></span>
+          <input type="checkbox" id="uploadOriginal" class="switch" role="switch" checked />
+        </label>
+        <p class="hint upload-original-note" id="uploadOriginalNote" hidden>
+          The original is streamed from a remote URL, so it is not sent back — only the extracted selection is.
+        </p>
+
         <div id="downloadPane">
           <p class="hint deliver-hint" id="downloadHint">Saves the current selection to your computer.</p>
           <p class="hint deliver-preview" id="downloadPreview" hidden><code id="downloadPreviewName"></code></p>
@@ -309,13 +327,6 @@
         </div>
 
         <div id="uploadPane" hidden>
-          <label class="hint slp-toggle upload-original" id="uploadOriginalRow">
-            <span>Include the original content <em>(recommended)</em></span>
-            <input type="checkbox" id="uploadOriginal" class="switch" role="switch" checked />
-          </label>
-          <p class="hint upload-original-note" id="uploadOriginalNote" hidden>
-            The original is streamed from a remote URL, so it is not uploaded again — only the extracted selection is.
-          </p>
           <div class="card-heading">
             <h2>Upload destination</h2>
             <a id="viewDatasetLink" class="view-dataset-link" target="_blank" rel="noopener" hidden

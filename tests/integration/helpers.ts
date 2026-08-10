@@ -8,12 +8,20 @@ import { expect, type Page } from "@playwright/test";
 const API = "**/api-dandi.emberarchive.org/api/**";
 const ADMIN_CHECK = "**/uploader-codycbakerphd.pythonanywhere.com/**";
 
+export interface StubbedArchive {
+  /** Asset paths the app registers, in the order it registers them. */
+  registered: string[];
+  /** The bytes of every part PUT to S3, in the order they are sent — so a spec can read back what
+   * was actually uploaded, not just where it landed. */
+  uploaded: Buffer[];
+}
+
 /**
  * Stubs the archive, its admin-ownership check and S3, and signs the page in with a stored token.
- * Returns the array of asset paths the app registers, in the order it registers them.
  */
-export async function stubArchive(page: Page): Promise<string[]> {
+export async function stubArchive(page: Page): Promise<StubbedArchive> {
   const registered: string[] = [];
+  const uploaded: Buffer[] = [];
 
   await page.route(API, (route) => {
     const url = route.request().url();
@@ -43,8 +51,12 @@ export async function stubArchive(page: Page): Promise<string[]> {
 
   // A real bucket has to expose ETag to the page for a browser upload to work at all (see
   // lib/s3.ts), so the stub does too — along with answering the PUT's cross-origin preflight.
-  await page.route("https://s3.test/**", (route) =>
-    route.fulfill({
+  await page.route("https://s3.test/**", (route) => {
+    if (route.request().method() === "PUT") {
+      const body = route.request().postDataBuffer();
+      if (body) uploaded.push(body);
+    }
+    return route.fulfill({
       status: 200,
       headers: {
         ETag: '"part-etag"',
@@ -54,8 +66,8 @@ export async function stubArchive(page: Page): Promise<string[]> {
         "Access-Control-Expose-Headers": "ETag",
       },
       body: "",
-    }),
-  );
+    });
+  });
 
   await page.addInitScript(() => {
     localStorage.setItem(
@@ -65,7 +77,7 @@ export async function stubArchive(page: Page): Promise<string[]> {
     localStorage.setItem("clip-extractor.analytics-consent", "declined");
   });
 
-  return registered;
+  return { registered, uploaded };
 }
 
 /**
