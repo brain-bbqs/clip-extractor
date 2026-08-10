@@ -96,6 +96,27 @@ main {
   width: 3rem;
 }
 
+/* A fixed corner watermark, diametrically opposed to the CON and Talmo Lab watermarks in the
+   bottom-right corner (see .footer-brands below). */
+.brand-watermark-link {
+  position: fixed;
+  top: 0.15rem;
+  left: 0.35rem;
+  z-index: 1;
+  line-height: 0;
+}
+
+/* The BBQS org logo is a square sitting on its own white field, so the circular crop is what keeps
+   it reading as a mark rather than a pasted-on tile. */
+.brand-watermark-logo {
+  display: block;
+  height: 5rem;
+  width: 5rem;
+  object-fit: cover;
+  border-radius: 50%;
+  opacity: 0.484;
+}
+
 header h1 {
   margin: 0;
   font-size: 1.7rem;
@@ -800,8 +821,9 @@ textarea {
   bottom: 0;
   display: flex;
   align-items: flex-end;
-  justify-content: flex-start;
-  padding: 0 0.75rem 0.35rem 0.5rem;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 0.5rem 0.15rem 0.5rem;
   /* The bar spans the full viewport width but is mostly empty middle; without this, that empty
      stretch swallows clicks aimed at page content behind it. Pointer events are re-enabled on the
      bar's real contents below. */
@@ -829,6 +851,40 @@ textarea {
   font-size: 0.92rem;
   font-weight: 600;
   text-decoration: underline;
+}
+
+/* Muted rather than accent-colored: the version is a provenance marker for bug reports, not a
+   call to action like the two links above it. */
+.version-link {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.footer-brands {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.con-brand-link img {
+  display: block;
+  height: 4rem;
+  width: auto;
+  opacity: 0.312;
+}
+
+/* The Talmo Lab mark is drawn white-on-charcoal, so unlike the CON wordmark it cannot go
+   background-free; the rounded crop keeps that dark field reading as a badge in both themes. Its
+   own contrast is what fades at low opacity (the white flask washes into the charcoal), so it sits
+   higher than CON's 0.312 to stay legible while still reading as a watermark. */
+.talmo-brand-link img {
+  display: block;
+  height: 3.4rem;
+  width: 3.4rem;
+  border-radius: 12px;
+  opacity: 0.5;
 }
 
 .consent-banner {
@@ -863,6 +919,39 @@ textarea {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+}
+
+/* main caps out at a 928px-wide content box (960px max-width minus its own 1rem/16px side padding),
+   so each side gutter is (viewport - 928) / 2. Measured against the built page, the corner
+   watermark and the footer's left column need ~181px of gutter and the CON + Talmo Lab brand pair
+   needs ~211px, so cards stop clearing them at around a 1350px-wide viewport. Below that the fixed
+   corners end up pinned on top of card content as the page scrolls instead of framing it, so take
+   them out of fixed positioning and let them sit in normal document flow (the watermark logo is
+   dropped entirely, since the header already carries the app's own mark). The 1400px threshold
+   leaves a little slack past the measured 1350px for footer-text width drifting with future
+   version strings. */
+@media (max-width: 1400px) {
+  .brand-watermark-link {
+    display: none;
+  }
+
+  /* The bottom padding exists to keep cards clear of the fixed footer bar; once the bar is in the
+     document flow it only adds to the footer's own top padding. */
+  main {
+    padding-bottom: 2rem;
+  }
+
+  .page-footer-bar {
+    position: static;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1rem 1.5rem;
+  }
+
+  .footer-left {
+    align-items: center;
+  }
 }
 
 @media (max-width: 700px) {

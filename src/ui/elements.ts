@@ -84,6 +84,9 @@ export function getElements() {
     uploadStatus: required<HTMLSpanElement>("uploadStatus"),
     uploadProgress: required<HTMLDivElement>("uploadProgress"),
     uploadProgressFill: required<HTMLDivElement>("uploadProgressFill"),
+
+    // Footer
+    versionIndicator: required<HTMLAnchorElement>("version-indicator"),
   };
 }
 

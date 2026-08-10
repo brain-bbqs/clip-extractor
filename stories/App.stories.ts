@@ -2,6 +2,9 @@
 // instead of a hand-maintained copy that can drift out of sync.
 import indexHtml from "../index.html?raw";
 
+// Injected by configs/storybook/main.ts, the same way vite.config.ts injects it for the real app.
+declare const __APP_VERSION__: string;
+
 interface AppStoryOptions {
   withSlp?: boolean;
   signedIn?: boolean;
@@ -61,6 +64,10 @@ function buildApp({ withSlp = false, signedIn = false }: AppStoryOptions = {}): 
   doc.body.querySelectorAll("script").forEach((s) => s.remove());
   const wrapper = document.createElement("div");
   wrapper.innerHTML = doc.body.innerHTML;
+  // Mirrors the one line of main.ts that runs before any video is loaded; without it the footer's
+  // version link would render as an empty (invisible) anchor in the snapshots.
+  const version = wrapper.querySelector("#version-indicator");
+  if (version) version.textContent = `v${__APP_VERSION__}`;
   if (withSlp) {
     // Mirrors what main.ts does when the SLEAP annotations switch is flipped on.
     const toggle = wrapper.querySelector<HTMLInputElement>("#slpToggle");

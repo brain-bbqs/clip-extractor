@@ -29,6 +29,9 @@ jobs:
 
       - name: Run Chromatic
         uses: chromaui/action@latest
+        env:
+          # Pins the footer's version string so a version bump alone does not re-snapshot every story.
+          CHROMATIC_STATIC_VERSION: "true"
         with:
           projectToken: ${{ secrets.CHROMATIC_STORYBOOK_PROJECT_TOKEN }}
           onlyChanged: true

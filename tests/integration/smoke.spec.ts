@@ -11,6 +11,28 @@ test("loads the app shell with the player disabled", async ({ page }) => {
   await expect(page.locator("#btnUpload")).toBeDisabled();
 });
 
+test("brand watermarks and the version link frame the page", async ({ page }) => {
+  // Wide enough that the fixed corner watermarks are in play (see the 1400px breakpoint in
+  // style.css); narrower viewports fold them into the document flow instead.
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto("/");
+
+  const bbqs = page.locator(".brand-watermark-link");
+  await expect(bbqs).toHaveAttribute("href", "https://brain-bbqs.org");
+  await expect(bbqs.locator("img")).toBeVisible();
+  // The BBQS mark is a square on a white field, so it is only a watermark once circularly masked.
+  await expect(bbqs.locator("img")).toHaveCSS("border-radius", "50%");
+
+  await expect(page.locator(".con-brand-link")).toHaveAttribute("href", "https://centerforopenneuroscience.org");
+  await expect(page.locator(".con-brand-link img")).toBeVisible();
+  await expect(page.locator(".talmo-brand-link")).toHaveAttribute("href", "https://talmolab.org/");
+  await expect(page.locator(".talmo-brand-link img")).toBeVisible();
+
+  const version = page.locator("#version-indicator");
+  await expect(version).toHaveText(/^v\d+\.\d+\.\d+$/);
+  await expect(version).toHaveAttribute("href", "https://github.com/brain-bbqs/clip-extractor");
+});
+
 test("source toggle swaps between the local dropzone and the EMBER stream pane", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#dropzone")).toBeVisible();
