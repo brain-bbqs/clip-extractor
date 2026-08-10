@@ -93,8 +93,8 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-DnXv7sFI.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-lOSVKwzp.css">
+    <script type="module" crossorigin src="./assets/index-at0ZMyHX.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CBPJhxBn.css">
   </head>
   <body>
     <main>
@@ -304,14 +304,18 @@
         <!-- Shared by both routes, since both write the same set of files: the note travels in the
              provenance JSON, and the toggle decides whether the originals travel with it. -->
         <label class="deliver-description" for="selectionDescription">
-          <span>Description <em>(required)</em></span>
-          <!-- "snippet" is only the starting wording: main.ts swaps it for "frame" with the
-               selector mode above the player. -->
+          <!-- The asterisk is the visual half of `required` on the field below, which is what a
+               screen reader announces — hence aria-hidden, so it is not read out as "star". -->
+          <span>Description <span class="required" aria-hidden="true">*</span></span>
+          <!-- "snippet" is only the starting wording, and the blank line between the two sentences
+               is real newlines: main.ts rewrites both with the selector mode above the player. -->
           <textarea
             id="selectionDescription"
-            rows="3"
+            rows="4"
             required
-            placeholder="What event does this snippet showcase? Note anything that went wrong in it, or any other details you want to share along with the clip."
+            placeholder="What event does this snippet showcase?
+
+Note anything that went wrong in it, or any other details you want to share along with the clip."
           ></textarea>
         </label>
         <label class="hint slp-toggle upload-original" id="uploadOriginalRow">
