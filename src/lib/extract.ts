@@ -36,16 +36,17 @@ export function sourceBaseName(sourceName: string): string {
 
 /** Reduces a source name to an entity label. Underscores separate entities and hyphens separate a
  * key from its value, so neither can survive inside a value without making the name ambiguous to
- * parse; whitespace becomes `+` so word boundaries stay legible, and everything else
- * non-alphanumeric is dropped. The unabridged original name is preserved in the upload's provenance
+ * parse — but they are word separators in a file name, so they become `+` along with spaces and any
+ * other punctuation, rather than closing the gap. Accents fold into their base letter instead of
+ * reading as a separator. The unabridged original name is preserved in the upload's provenance
  * record, which is what ties the file back to its source. */
 export function bidsLabel(value: string): string {
   return (
     value
       .normalize("NFKD")
-      .replace(/\s+/g, "+")
-      .replace(/[^A-Za-z0-9+]+/g, "")
-      .replace(/\+{2,}/g, "+")
+      // Drop combining marks first, so "café" folds to "cafe" rather than splitting at the accent.
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^A-Za-z0-9]+/g, "+")
       .replace(/^\++|\++$/g, "") || "clip"
   );
 }

@@ -108,9 +108,9 @@ test("an upload registers the extract, the original and a matching provenance si
   expect([...directories][0]).toMatch(/^sourcedata\/raw\/clip-extractor\/date-\d{8}_time-\d{6}_type-frame$/);
   // The extract goes up first, then the original, then the sidecar naming both.
   expect(registered.map((path) => path.split("/").pop())).toEqual([
-    "name-fileexample480+Copy_index-5_type-frame_image.png",
+    "name-file+example+480+Copy_index-5_type-frame_image.png",
     "file_example_480-Copy.webm",
-    "name-fileexample480+Copy_index-5_type-frame_provenance.json",
+    "name-file+example+480+Copy_index-5_type-frame_provenance.json",
   ]);
 
   // The completion link opens the archive's file browser at this upload's own directory.

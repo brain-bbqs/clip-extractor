@@ -24,12 +24,20 @@ describe("bidsLabel", () => {
     expect(bidsLabel("my clip")).toBe("my+clip");
   });
 
-  it("drops the separators BIDS reserves, so the entity stays parseable", () => {
-    expect(bidsLabel("file_example_480 - Copy")).toBe("fileexample480+Copy");
+  it("turns an underscore into + too, rather than closing the gap", () => {
+    expect(bidsLabel("mice_new")).toBe("mice+new");
+  });
+
+  it("marks every kind of separator the same way, since none can survive as itself", () => {
+    expect(bidsLabel("file_example_480 - Copy")).toBe("file+example+480+Copy");
   });
 
   it("collapses a run of separators into a single +", () => {
     expect(bidsLabel("a  -  b")).toBe("a+b");
+  });
+
+  it("folds an accent into its base letter instead of splitting there", () => {
+    expect(bidsLabel("naïve1")).toBe("naive1");
   });
 
   it("strips accents rather than replacing them", () => {
