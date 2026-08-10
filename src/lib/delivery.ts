@@ -8,15 +8,19 @@ export type DeliveryMode = "download" | "upload";
  * convention for un-curated source material. */
 export const UPLOAD_ROOT = "sourcedata/raw/clip-extractor";
 
+/** What a single upload carries: a trimmed range, or one still frame. */
+export type SelectionKind = "snippet" | "frame";
+
 /** The per-upload directory: one UTC timestamp per press of Upload, so a later upload of the same
- * selection never overwrites an earlier one. Colons and fractional seconds are dropped because
- * they are awkward in object keys and on Windows checkouts. */
-export function uploadDirectory(now: Date): string {
+ * selection never overwrites an earlier one, suffixed with what it holds so a listing reads at a
+ * glance. Colons and fractional seconds are dropped because they are awkward in object keys and on
+ * Windows checkouts. */
+export function uploadDirectory(now: Date, kind: SelectionKind): string {
   const stamp = now
     .toISOString()
     .replace(/\.\d+Z$/, "Z")
     .replace(/:/g, "-");
-  return `${UPLOAD_ROOT}/${stamp}`;
+  return `${UPLOAD_ROOT}/${stamp}_${kind}`;
 }
 
 /** Joins an upload directory and a file name into the sanitized asset path to register. */

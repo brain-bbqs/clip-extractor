@@ -70,9 +70,8 @@ test("delivery toggle swaps between the download and upload panes", async ({ pag
   await page.locator('#deliverSeg button[data-deliver="upload"]').click();
   await expect(page.locator("#uploadPane")).toBeVisible();
   await expect(page.locator("#downloadPane")).toBeHidden();
-  // The recommended companion upload is on by default, and the destination path is spelled out.
+  // The recommended companion upload is on by default.
   await expect(page.locator("#uploadOriginal")).toBeChecked();
-  await expect(page.locator("#uploadPathPreview")).toContainText("sourcedata/raw/clip-extractor/");
 
   await page.locator('#deliverSeg button[data-deliver="download"]').click();
   await expect(page.locator("#downloadPane")).toBeVisible();

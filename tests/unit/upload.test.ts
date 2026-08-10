@@ -155,6 +155,20 @@ describe("createOrReplaceAsset", () => {
 });
 
 describe("uploadAsset", () => {
+  it("reuses a digest the caller already computed instead of hashing again", async () => {
+    mockHappyPath();
+    const { computeDandiEtag } = await import("../../src/lib/etag");
+
+    await uploadAsset(cfg, {
+      blob,
+      path: "sourcedata/raw/clip-extractor/stamp_snippet/clip.mp4",
+      digest: { etag, parts },
+    });
+
+    expect(vi.mocked(computeDandiEtag)).not.toHaveBeenCalled();
+    expect(apiFetchMock.mock.calls.some(([, path]) => path === "/uploads/initialize/")).toBe(true);
+  });
+
   it("checksums, transfers, and registers the blob at the requested path", async () => {
     mockHappyPath();
     const phases: string[] = [];

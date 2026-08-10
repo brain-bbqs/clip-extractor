@@ -7,9 +7,12 @@ import { drawPose, labelsToPose } from "./lib/pose";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
-import { defaultDeliveryMode, uploadAssetPath, uploadDirectory, type DeliveryMode } from "./lib/delivery";
+import { defaultDeliveryMode, uploadAssetPath, uploadDirectory, type DeliveryMode, type SelectionKind } from "./lib/delivery";
 import { extractClip, extractFrame, type ExtractedMedia, type ExtractProgress } from "./lib/extract";
-import { uploadAsset, type UploadPhase } from "./lib/upload";
+import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./lib/upload";
+import { buildProvenance, PROVENANCE_FILENAME } from "./lib/provenance";
+import { countLabeledFramesInRange } from "./lib/annotations";
+import { fetchArchiveUser, type ArchiveUser } from "./lib/users";
 import { friendlyError } from "./lib/errors";
 import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
@@ -588,6 +591,9 @@ let storedDandisetId = "";
 // The picker's current option list, kept around so currentConfig() can read the selected
 // dataset's embargo status without a second API round-trip.
 let currentDatasets: IncomingDandiset[] = [];
+// The signed-in account, resolved once for the header avatar and reused to name the uploader in
+// each upload's provenance record.
+let currentUser: ArchiveUser | null = null;
 
 function loadAuthSettings(): void {
   const s = loadStoredSettings();
@@ -700,7 +706,11 @@ async function refreshDandisetOptions(): Promise<void> {
     return;
   }
   await ensureFreshOAuth();
-  void renderIdentity(els, currentConfig());
+  // Deliberately not awaited: the dataset listing below is the slow part visitors are waiting on,
+  // and the header avatar can fill in whenever the identity call lands.
+  void renderIdentity(els, currentConfig()).then((user) => {
+    currentUser = user;
+  });
   setDandisetPlaceholder("Loading your incoming datasets…");
   try {
     const { datasets, unverified } = await listIncomingDandisets(currentConfig());
@@ -732,6 +742,7 @@ els.oauthSigninBtn.addEventListener("click", () => void startLogin());
 els.oauthSignoutBtn.addEventListener("click", () => {
   const tokens = oauthTokens;
   oauthTokens = null;
+  currentUser = null;
   saveAuthSettings();
   renderAuthUI();
   if (tokens) void revokeToken(tokens);
@@ -797,9 +808,7 @@ function updateDeliveryGate(): void {
   els.dandisetEmbargoError.hidden = !notEmbargoed;
   els.btnDownload.disabled = deliveryBusy || !hasVideo;
   els.btnUpload.disabled = deliveryBusy || !hasVideo || !cfg.dandisetId || notEmbargoed;
-  els.downloadHint.textContent = frameMode
-    ? "Saves the selected frame to your computer as a PNG."
-    : "Saves the selected snippet to your computer as a frame-exact MP4 (re-encoded by ffmpeg.wasm).";
+  els.downloadHint.textContent = frameMode ? "Saves the selected frame to your computer." : "Saves the selected snippet to your computer.";
   // The original can only ride along when its bytes are already in the browser; a range-streamed
   // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
   const canSendOriginal = state.sourceFile !== null;
@@ -870,18 +879,43 @@ async function runDownload(): Promise<void> {
 
 const PHASE_LABEL: Record<UploadPhase, string> = { checksum: "Checksumming", upload: "Uploading", register: "Registering" };
 
-async function uploadOne(cfg: ArchiveConfig, blob: Blob, path: string, contentType: string, label: string): Promise<void> {
+function reportUploadStep(label: string, step: string, fraction: number): void {
+  setStatus(els.uploadStatus, `${step} ${label}… ${(fraction * 100).toFixed(0)}%`);
+  setUploadProgress(fraction);
+}
+
+/** Uploads one file and returns the digest it was stored under, so the provenance record can quote
+ * the same checksum the archive holds. Reuses `digest` when the caller already computed it. */
+async function uploadOne(
+  cfg: ArchiveConfig,
+  blob: Blob,
+  path: string,
+  contentType: string,
+  label: string,
+  digest?: BlobDigest,
+): Promise<BlobDigest> {
+  const resolved = digest ?? (await checksumBlob(blob, (f) => reportUploadStep(label, PHASE_LABEL.checksum, f)));
   log(`Uploading ${label} to ${path} (${bytes(blob.size)})…`);
   await uploadAsset(cfg, {
     blob,
     path,
     contentType,
-    onPhase: (phase, fraction) => {
-      setStatus(els.uploadStatus, `${PHASE_LABEL[phase]} ${label}… ${(fraction * 100).toFixed(0)}%`);
-      setUploadProgress(fraction);
-    },
+    digest: resolved,
+    onPhase: (phase, fraction) => reportUploadStep(label, PHASE_LABEL[phase], fraction),
   });
   log(`Uploaded ${path}`, "ok");
+  return resolved;
+}
+
+/** What was loaded from a `.slp`, restricted to the selection, or null when there is none. */
+function annotationsSummary(lo: number, hi: number) {
+  const pose = els.slpToggle.checked ? state.pose : null;
+  if (!pose) return null;
+  return {
+    skeleton_node_count: pose.skeleton.nodes.length,
+    track_count: pose.tracks.length,
+    labeled_frames_in_selection: countLabeledFramesInRange(pose, lo, hi),
+  };
 }
 
 async function runUpload(): Promise<void> {
@@ -889,6 +923,8 @@ async function runUpload(): Promise<void> {
   setDeliveryBusy(true);
   setUploadProgress(0);
   try {
+    const kind: SelectionKind = state.mode === "frame" ? "frame" : "snippet";
+    const [lo, hi] = state.mode === "frame" ? [state.cur, state.cur] : selRange();
     const media = await extractSelection((message, fraction) => {
       setStatus(els.uploadStatus, message);
       setUploadProgress(fraction ?? 0);
@@ -898,21 +934,71 @@ async function runUpload(): Promise<void> {
     await ensureFreshOAuth();
     const cfg = currentConfig();
     if (!cfg.dandisetId) throw new Error("Pick an upload destination first.");
-    const directory = uploadDirectory(new Date());
-    els.uploadPathPreview.textContent = `${directory}/`;
-    const uploaded: string[] = [];
+    // The provenance record names the uploader, so resolve the account here if the header's own
+    // lookup has not landed (or was never made) yet.
+    currentUser ??= await fetchArchiveUser(cfg).catch(() => null);
+    const directory = uploadDirectory(new Date(), kind);
+
     // The extracted selection goes first: it is the point of the upload, and the original — which
     // can be orders of magnitude larger — is a recommended companion, not a prerequisite for it.
-    await uploadOne(cfg, media.blob, uploadAssetPath(directory, media.filename), media.mime, state.mode === "frame" ? "frame" : "snippet");
-    uploaded.push(media.filename);
-    const original = els.uploadOriginal.checked ? state.sourceFile : null;
+    const mediaPath = uploadAssetPath(directory, media.filename);
+    const mediaDigest = await uploadOne(cfg, media.blob, mediaPath, media.mime, kind);
+    const uploaded = [media.filename];
+
+    // The original is checksummed even when it is not being uploaded: recording which video a clip
+    // came from is only useful if the video can be identified again later.
+    const original = state.sourceFile;
+    let originalDigest: BlobDigest | null = null;
     if (original) {
-      await uploadOne(cfg, original, uploadAssetPath(directory, original.name), original.type || "video/mp4", "original video");
+      originalDigest = await checksumBlob(original, (f) => reportUploadStep("the original video", PHASE_LABEL.checksum, f));
+    }
+    let originalPath: string | null = null;
+    if (original && originalDigest && els.uploadOriginal.checked) {
+      originalPath = uploadAssetPath(directory, original.name);
+      await uploadOne(cfg, original, originalPath, original.type || "video/mp4", "the original video", originalDigest);
       uploaded.push(original.name);
     }
+
+    const provenance = buildProvenance({
+      createdAt: new Date(),
+      pageUrl: location.href.split("?")[0],
+      user: currentUser,
+      api: cfg.api,
+      dandisetId: cfg.dandisetId,
+      directory,
+      mode: kind,
+      fps: state.fps,
+      width: state.width,
+      height: state.height,
+      totalFrames: state.totalFrames,
+      inFrame: lo,
+      outFrame: hi,
+      source: {
+        filename: state.sourceName,
+        url: state.sourceUrl,
+        sizeBytes: original?.size ?? null,
+        checksum: originalDigest?.etag ?? null,
+        checksumUnavailable: original ? null : "The source video was streamed from a URL, so its bytes were never held locally to hash.",
+        uploaded: originalPath !== null,
+        assetPath: originalPath,
+      },
+      extracted: {
+        filename: media.filename,
+        assetPath: mediaPath,
+        mediaType: media.mime,
+        sizeBytes: media.blob.size,
+        checksum: mediaDigest.etag,
+        encoding: media.encoding,
+      },
+      annotations: annotationsSummary(lo, hi),
+    });
+    const provenanceBlob = new Blob([JSON.stringify(provenance, null, 2)], { type: "application/json" });
+    await uploadOne(cfg, provenanceBlob, uploadAssetPath(directory, PROVENANCE_FILENAME), "application/json", "the provenance record");
+    uploaded.push(PROVENANCE_FILENAME);
+
     setDeliveryBusy(false);
     setUploadProgress(1, true);
-    setStatus(els.uploadStatus, `Uploaded ${uploaded.join(" and ")} to ${directory}/`, "ok");
+    setStatus(els.uploadStatus, `Uploaded ${uploaded.join(", ")} to ${directory}/`, "ok");
   } catch (e) {
     setDeliveryBusy(false);
     setUploadProgress(null);

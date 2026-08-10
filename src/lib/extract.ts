@@ -10,6 +10,9 @@ export interface ExtractedMedia {
   blob: Blob;
   filename: string;
   mime: string;
+  /** How this file was produced, recorded in the upload's provenance sidecar: the literal ffmpeg
+   * command for a snippet, or the encoder used for a frame. */
+  encoding: string;
 }
 
 /** Reports what extraction is doing, plus 0..1 progress when the step can measure it. */
@@ -77,14 +80,15 @@ export async function extractClip(params: ExtractClipParams): Promise<ExtractedM
 
   await ff.writeFile(inName, inputBytes);
   const args = ffmpegArgs(inName, outName, lo, hi, fps, trim);
-  console.info(`$ ffmpeg ${args.join(" ")}`);
+  const command = `ffmpeg ${args.join(" ")}`;
+  console.info(`$ ${command}`);
   onProgress?.("Encoding snippet…", 0);
   try {
     await ff.exec(args);
     const data = await ff.readFile(outName);
     const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
     if (!blob.size) throw new Error("ffmpeg produced an empty clip — try a different selection");
-    return { blob, filename: clipFileName(sourceName, lo, hi), mime: "video/mp4" };
+    return { blob, filename: clipFileName(sourceName, lo, hi), mime: "video/mp4", encoding: command };
   } finally {
     try {
       await ff.deleteFile(inName);
@@ -117,5 +121,10 @@ export async function extractFrame(params: ExtractFrameParams): Promise<Extracte
   drawVideoFrame(decoded, ctx, width, height);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("The browser could not encode the frame as a PNG");
-  return { blob, filename: frameFileName(sourceName, frame), mime: "image/png" };
+  return {
+    blob,
+    filename: frameFileName(sourceName, frame),
+    mime: "image/png",
+    encoding: "canvas.toBlob(image/png), decoded frame without pose overlay",
+  };
 }

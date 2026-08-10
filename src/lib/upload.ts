@@ -136,11 +136,26 @@ export async function createOrReplaceAsset(
 
 export type UploadPhase = "checksum" | "upload" | "register";
 
+/** A blob's dandi-etag together with the part layout it was computed over. Worth keeping around:
+ * the same digest identifies the blob to the archive and is what the provenance record reports, so
+ * a file is never hashed twice. */
+export interface BlobDigest {
+  etag: string;
+  parts: FilePart[];
+}
+
+export async function checksumBlob(blob: Blob, onProgress?: (fraction: number) => void): Promise<BlobDigest> {
+  const parts = planParts(blob.size);
+  return { etag: await computeDandiEtag(blob, parts, onProgress), parts };
+}
+
 export interface UploadAssetParams {
   blob: Blob;
   /** Full asset path within the dandiset's draft version. */
   path: string;
   contentType?: string;
+  /** A digest from an earlier {@link checksumBlob} call; computed here when omitted. */
+  digest?: BlobDigest;
   /** Called with the current phase and its own 0..1 progress. */
   onPhase?: (phase: UploadPhase, fraction: number) => void;
   signal?: AbortSignal;
@@ -149,8 +164,7 @@ export interface UploadAssetParams {
 /** Checksums, uploads, and registers one blob as an asset at `path`. */
 export async function uploadAsset(cfg: ArchiveConfig, params: UploadAssetParams): Promise<Asset> {
   const { blob, path, contentType, onPhase, signal } = params;
-  const parts = planParts(blob.size);
-  const etag = await computeDandiEtag(blob, parts, (f) => onPhase?.("checksum", f));
+  const { etag, parts } = params.digest ?? (await checksumBlob(blob, (f) => onPhase?.("checksum", f)));
   // A path match says nothing about content, so it never skips the upload; it only decides whether
   // asset registration replaces or creates. Content dedup stays server-side (uploadBlob's 409).
   const existing = await findExistingAsset(cfg, path);

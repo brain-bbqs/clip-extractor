@@ -705,10 +705,7 @@ input[type="checkbox"] {
   font-size: 0.9rem;
 }
 
-/* Destination path readout + the "also upload the original" recommendation */
-.upload-path {
-  margin: 0.75rem 0 0;
-}
+/* The "also upload the original" recommendation */
 .upload-original {
   margin-top: 0.75rem;
 }

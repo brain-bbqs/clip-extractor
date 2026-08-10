@@ -74,7 +74,6 @@ export function getElements() {
     dandisetSingleText: required<HTMLSpanElement>("dandisetSingleText"),
     dandisetEmbargoError: required<HTMLParagraphElement>("dandisetEmbargoError"),
     viewDatasetLink: required<HTMLAnchorElement>("viewDatasetLink"),
-    uploadPathPreview: required<HTMLElement>("uploadPathPreview"),
     uploadOriginalRow: required<HTMLLabelElement>("uploadOriginalRow"),
     uploadOriginal: required<HTMLInputElement>("uploadOriginal"),
     uploadOriginalNote: required<HTMLParagraphElement>("uploadOriginalNote"),
