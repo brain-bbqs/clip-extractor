@@ -24,7 +24,13 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
 - **Download / Upload toggle** centered on the bottom card, which starts on whichever route is actually usable: **Upload** when you are signed in with at least one incoming dataset, otherwise **Download**.
   - **Download** — saves the selection to your computer: the snippet as a frame-exact MP4 (trimmed by ffmpeg.wasm), or the selected frame as a PNG.
   - **Upload** — sends the same file to the EMBER dataset picked below the toggle, into its own directory under `sourcedata/raw/clip-extractor/<datetime>_snippet/` (or `_frame`, so a listing reads at a glance), following the same `sourcedata/raw/` convention as [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader). Uploading the **original video** alongside it is recommended and pre-selected, but optional; the extracted selection always goes first. Transfers use DANDI's own multipart flow: dandi-etag checksum, presigned part PUTs straight to S3, then asset registration.
-- **Provenance sidecar** — every upload also writes a `provenance.json` into the same directory: who uploaded it, the destination dataset, the source video's name and dandi-etag checksum (recorded **even when the original is not uploaded**, so the clip can always be traced back to it), the video's fps/dimensions/frame count, the exact frame range, the extracted file's own size and checksum, the literal ffmpeg command that produced it, and a summary of any loaded SLEAP annotations.
+- **BIDS-style names** — every file this app writes is named in entity style, `key-value` pairs joined by underscores and closed by a `type-` entity, so one glance says what a file is:
+  - `name-mice_range-120+300_type-snippet.mp4` — the extracted snippet, with its inclusive frame range
+  - `name-mice_index-42_type-frame.png` — a single extracted frame
+  - `name-mice_range-120+300_type-provenance.json` — the sidecar, repeating the extract's entities so the pair is obvious
+  - `name-mice_type-original.mp4` — the original video, carrying no selection entity
+  - The `name-` label is reduced to alphanumerics (spaces become `+`) so the entities stay unambiguous to parse; the unabridged original file name is preserved in the provenance record.
+- **Provenance sidecar** — every upload also writes a provenance JSON into the same directory: who uploaded it, the destination dataset, the source video's name and `dandi:dandi-etag` checksum (recorded **even when the original is not uploaded**, so the clip can always be traced back to it), the video's fps/dimensions/frame count, the exact frame range, the extracted file's own size and checksum, the literal ffmpeg command that produced it, and a summary of any loaded SLEAP annotations.
 - **Upload destination** — the upload pane lists the signed-in user's `Incoming: ` datasets (the BBQS staging convention), narrowed by the same server-side check that a BBQS/EMBER admin co-owns the dataset, and blocks a destination that is not embargoed.
 
 ## Usage
@@ -34,7 +40,7 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
 3. Scrub to your selection: in Snippet mode press **[ Set In** / **Set Out ]** (or `I` / `O`); in Frame mode just seek to the frame.
 4. Optionally flip the **SLEAP annotations (.slp)** switch on the load card and drop a `.slp` into the card that appears.
 5. In the bottom card, pick **Download** to save the selection locally, or **Upload** to send it to EMBER.
-6. For an upload, **Sign in with EMBER** in the header first; only `Incoming: ` datasets you own that a BBQS/EMBER admin also owns are offered. Leave **Also upload the original video** on unless you know the original is already archived — either way, its name and checksum are recorded in the `provenance.json` written alongside the clip.
+6. For an upload, **Sign in with EMBER** in the header first; only `Incoming: ` datasets you own that a BBQS/EMBER admin also owns are offered. Leave **Also upload the original video** on unless you know the original is already archived — either way, its name and checksum are recorded in the provenance JSON written alongside the clip.
 
 URL params: `?url=<video>&slp=<labels>` auto-load on open.
 

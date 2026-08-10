@@ -5,13 +5,19 @@ import type { ArchiveUser } from "./users";
 // back to who made it, which video it came from, and exactly which frames it covers — even when
 // the original video itself was not uploaded alongside it.
 
-export const PROVENANCE_FILENAME = "provenance.json";
 export const PROVENANCE_FORMAT = "clip-extractor-provenance/v1";
 
-/** DANDI's own blob digest, so a recorded checksum can be compared against archive metadata
- * directly (it is a multipart-aware ETag, not a plain MD5 of the file). */
+/**
+ * DANDI's own blob digest, recorded under the exact identifier the archive uses for it so a value
+ * here can be compared against archive metadata (and the `digest` this app sends to
+ * `/uploads/initialize/`) without translation.
+ *
+ * Deliberately *not* labelled `md5`: a dandi-etag is the S3 multipart ETag — MD5 of the
+ * concatenated per-part MD5s, suffixed with the part count — so it does not equal `md5(file)` even
+ * for a single-part file. The `-<n>` suffix is the giveaway. See lib/etag.ts.
+ */
 export interface ProvenanceChecksum {
-  algorithm: "dandi-etag";
+  algorithm: "dandi:dandi-etag";
   value: string;
 }
 
@@ -115,7 +121,7 @@ export interface ProvenanceInput {
 }
 
 function checksum(value: string | null): ProvenanceChecksum | null {
-  return value ? { algorithm: "dandi-etag", value } : null;
+  return value ? { algorithm: "dandi:dandi-etag", value } : null;
 }
 
 export function buildProvenance(input: ProvenanceInput): ProvenanceDocument {

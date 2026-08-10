@@ -1,5 +1,6 @@
 import { ensureFfmpeg, ffmpegArgs } from "./ffmpeg";
 import { decodeIndex, drawVideoFrame } from "./video";
+import type { SelectionKind } from "./delivery";
 import type { SleapVideoBackend, TrimMode } from "./types";
 
 // Turns the current selection into a single file, ready for either delivery route (download or
@@ -18,17 +19,76 @@ export interface ExtractedMedia {
 /** Reports what extraction is doing, plus 0..1 progress when the step can measure it. */
 export type ExtractProgress = (message: string, fraction?: number) => void;
 
+// Every file this app produces is named in BIDS entity style — `key-value` pairs joined by
+// underscores, closing with a `type-` entity that says what the file is:
+//   name-<source>_index-<frame>_type-frame.png
+//   name-<source>_range-<in>+<out>_type-snippet.mp4
+//   name-<source>_range-<in>+<out>_type-provenance.json
+//   name-<source>_type-original.mp4
+// The provenance sidecar repeats the extract's selection entities so the pair is obvious in a
+// listing; the original video carries none, since it is the whole video rather than a selection.
+
 /** The source file name minus its extension, for naming derived files. */
 export function sourceBaseName(sourceName: string): string {
   return sourceName.replace(/\.[^./]+$/, "") || "clip";
 }
 
+/** Reduces a source name to an entity label. Underscores separate entities and hyphens separate a
+ * key from its value, so neither can survive inside a value without making the name ambiguous to
+ * parse; whitespace becomes `+` so word boundaries stay legible, and everything else
+ * non-alphanumeric is dropped. The unabridged original name is preserved in the upload's provenance
+ * record, which is what ties the file back to its source. */
+export function bidsLabel(value: string): string {
+  return (
+    value
+      .normalize("NFKD")
+      .replace(/\s+/g, "+")
+      .replace(/[^A-Za-z0-9+]+/g, "")
+      .replace(/\+{2,}/g, "+")
+      .replace(/^\++|\++$/g, "") || "clip"
+  );
+}
+
+/** The entities identifying one extraction, shared by every file it produces. */
+export interface AssetEntities {
+  sourceName: string;
+  mode: SelectionKind;
+  /** Inclusive source-frame bounds; equal to each other in frame mode. */
+  inFrame: number;
+  outFrame: number;
+}
+
+function nameEntity(sourceName: string): string {
+  return `name-${bidsLabel(sourceBaseName(sourceName))}`;
+}
+
+function selectionEntity(entities: AssetEntities): string {
+  return entities.mode === "frame" ? `index-${entities.inFrame}` : `range-${entities.inFrame}+${entities.outFrame}`;
+}
+
+/** `name-…_<selection>_type-<type>.<extension>` for one file of an extraction. */
+export function assetFileName(entities: AssetEntities, type: string, extension: string): string {
+  return `${nameEntity(entities.sourceName)}_${selectionEntity(entities)}_type-${type}.${extension}`;
+}
+
 export function clipFileName(sourceName: string, lo: number, hi: number): string {
-  return `${sourceBaseName(sourceName)}_clip_${lo}-${hi}.mp4`;
+  return assetFileName({ sourceName, mode: "snippet", inFrame: lo, outFrame: hi }, "snippet", "mp4");
 }
 
 export function frameFileName(sourceName: string, frame: number): string {
-  return `${sourceBaseName(sourceName)}_frame_${String(frame).padStart(6, "0")}.png`;
+  return assetFileName({ sourceName, mode: "frame", inFrame: frame, outFrame: frame }, "frame", "png");
+}
+
+export function provenanceFileName(entities: AssetEntities): string {
+  return assetFileName(entities, "provenance", "json");
+}
+
+/** The original video keeps its own extension (it is not re-encoded) and takes no selection entity.
+ * Extensionless sources stay extensionless rather than being labelled with a guess. */
+export function originalFileName(sourceName: string): string {
+  const base = `${nameEntity(sourceName)}_type-original`;
+  const ext = /\.([A-Za-z0-9]+)$/.exec(sourceName);
+  return ext ? `${base}.${ext[1].toLowerCase()}` : base;
 }
 
 export interface ExtractClipParams {

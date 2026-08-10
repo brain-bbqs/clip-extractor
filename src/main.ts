@@ -8,9 +8,19 @@ import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } fro
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
 import { defaultDeliveryMode, uploadAssetPath, uploadDirectory, type DeliveryMode, type SelectionKind } from "./lib/delivery";
-import { clipFileName, extractClip, extractFrame, frameFileName, type ExtractedMedia, type ExtractProgress } from "./lib/extract";
+import {
+  clipFileName,
+  extractClip,
+  extractFrame,
+  frameFileName,
+  originalFileName,
+  provenanceFileName,
+  type AssetEntities,
+  type ExtractedMedia,
+  type ExtractProgress,
+} from "./lib/extract";
 import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./lib/upload";
-import { buildProvenance, PROVENANCE_FILENAME } from "./lib/provenance";
+import { buildProvenance } from "./lib/provenance";
 import { countLabeledFramesInRange } from "./lib/annotations";
 import { fetchArchiveUser, type ArchiveUser } from "./lib/users";
 import { friendlyError } from "./lib/errors";
@@ -963,6 +973,8 @@ async function runUpload(): Promise<void> {
   try {
     const kind: SelectionKind = state.mode === "frame" ? "frame" : "snippet";
     const [lo, hi] = state.mode === "frame" ? [state.cur, state.cur] : selRange();
+    // Shared by every file this upload writes, so they all carry the same BIDS-style entities.
+    const entities: AssetEntities = { sourceName: state.sourceName, mode: kind, inFrame: lo, outFrame: hi };
     const media = await extractSelection((message, fraction) => {
       setStatus(els.uploadStatus, message);
       setUploadProgress(fraction ?? 0);
@@ -991,7 +1003,7 @@ async function runUpload(): Promise<void> {
     }
     let originalPath: string | null = null;
     if (original && originalDigest && els.uploadOriginal.checked) {
-      originalPath = uploadAssetPath(directory, original.name);
+      originalPath = uploadAssetPath(directory, originalFileName(state.sourceName));
       await uploadOne(cfg, original, originalPath, original.type || "video/mp4", "the original video", originalDigest);
     }
 
@@ -1029,7 +1041,8 @@ async function runUpload(): Promise<void> {
       annotations: annotationsSummary(lo, hi),
     });
     const provenanceBlob = new Blob([JSON.stringify(provenance, null, 2)], { type: "application/json" });
-    await uploadOne(cfg, provenanceBlob, uploadAssetPath(directory, PROVENANCE_FILENAME), "application/json", "the provenance record");
+    const provenancePath = uploadAssetPath(directory, provenanceFileName(entities));
+    await uploadOne(cfg, provenanceBlob, provenancePath, "application/json", "the provenance record");
 
     setDeliveryBusy(false);
     setUploadProgress(1, true);
