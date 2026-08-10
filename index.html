@@ -302,11 +302,14 @@
         <!-- Shared by both routes, since both write the same set of files: the note travels in the
              provenance JSON, and the toggle decides whether the originals travel with it. -->
         <label class="deliver-description" for="selectionDescription">
-          <span>Description <em>(optional)</em></span>
+          <span>Description <em>(required)</em></span>
+          <!-- "snippet" is only the starting wording: main.ts swaps it for "frame" with the
+               selector mode above the player. -->
           <textarea
             id="selectionDescription"
             rows="3"
-            placeholder="What does this selection show? Note anything that went wrong in it, or anything worth knowing when it turns up again later."
+            required
+            placeholder="What event does this snippet showcase? Note anything that went wrong in it, or any other details you want to share along with the clip."
           ></textarea>
         </label>
         <label class="hint slp-toggle upload-original" id="uploadOriginalRow">

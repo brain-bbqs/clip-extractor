@@ -113,8 +113,9 @@ export interface ProvenanceDocument {
   format: string;
   created_at: string;
   tool: { name: string; version: string; page_url: string | null };
-  /** Whatever the person extracting wrote about this selection — what went wrong in it, what it
-   * shows, anything worth knowing when it turns up again later. Null when they left it blank. */
+  /** What the person extracting wrote about this selection — the event it shows, what went wrong in
+   * it, anything else worth passing on with it. The interface will not send a selection without
+   * one, so this is null only for a record written some other way. */
   description: string | null;
   /** Null for a saved bundle, which nobody uploaded, and when the archive could not name the
    * signed-in account. */

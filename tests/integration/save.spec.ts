@@ -42,7 +42,11 @@ test("a save writes a bundle holding the extract, the original and their provena
   await loadRecordedVideo(page, "file_example_480 - Copy.webm");
   await page.locator('#modeSeg button[data-mode="frame"]').click();
   await page.locator("#frameSlider").fill("5");
+  // Nothing is saved until the selection has been described.
+  await expect(page.locator("#btnDownload")).toBeDisabled();
+  await expect(page.locator("#downloadStatus")).toContainText("Describe the frame");
   await page.locator("#selectionDescription").fill("The mouse leaves frame here — the tracker keeps a stale track.");
+  await expect(page.locator("#btnDownload")).toBeEnabled();
 
   // The button names the bundle before it is written.
   await expect(page.locator("#downloadPreviewName")).toHaveText("name-file+example+480+Copy_index-5_type-frame_bundle.tar.gz");
@@ -84,6 +88,7 @@ test("leaving the original out saves the extract and its provenance alone", asyn
 
   await loadRecordedVideo(page, "mice.webm");
   await page.locator('#modeSeg button[data-mode="frame"]').click();
+  await page.locator("#selectionDescription").fill("A clean frame, kept as a reference.");
   await page.locator("#uploadOriginal").uncheck();
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
@@ -100,6 +105,5 @@ test("leaving the original out saves the extract and its provenance alone", asyn
   expect(source.asset_path).toBeNull();
   expect(source.filename).toBe("mice.webm");
   expect((source.checksum as { value: string }).value).toMatch(/^[0-9a-f]{32}-\d+$/);
-  // An empty description field is recorded as none at all, rather than an empty string.
-  expect(provenance.description).toBeNull();
+  expect(provenance.description).toBe("A clean frame, kept as a reference.");
 });

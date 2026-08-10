@@ -21,6 +21,7 @@ test("a loaded .slp adds the annotations file and a rendered overlay to the uplo
 
   await page.locator('#modeSeg button[data-mode="frame"]').click();
   await page.locator("#frameSlider").fill("5");
+  await page.locator("#selectionDescription").fill("Both mice are tracked cleanly through this frame.");
   await page.locator("#btnUpload").click();
   await expect(page.locator("#uploadStatus")).toContainText("Upload complete", { timeout: 120_000 });
 
@@ -45,6 +46,7 @@ test("the overlay is uploaded even when the original content is excluded", async
 
   await page.locator('#modeSeg button[data-mode="frame"]').click();
   await page.locator("#frameSlider").fill("5");
+  await page.locator("#selectionDescription").fill("The skeleton drifts off the second mouse here.");
   await page.locator("#uploadOriginal").uncheck();
   await page.locator("#btnUpload").click();
   await expect(page.locator("#uploadStatus")).toContainText("Upload complete", { timeout: 120_000 });

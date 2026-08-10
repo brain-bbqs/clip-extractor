@@ -872,6 +872,9 @@ wireSeg(els.deliverSeg, (v) => {
   saveSettings();
 });
 
+// Both buttons wait on a description, so the gate is re-read as it is typed rather than on blur.
+els.selectionDescription.addEventListener("input", updateDeliveryGate);
+
 function setStatus(el: HTMLElement, message: string, cls: "" | "ok" | "err" = ""): void {
   el.textContent = message;
   el.className = cls ? `hint ${cls}` : "hint";
@@ -918,12 +921,19 @@ function updateDeliveryGate(): void {
   const notEmbargoed = cfg.embargoed === false;
   const frameMode = state.mode === "frame";
   const selected = hasSelection();
+  // Required on both routes: a clip nobody described is one nobody can act on once it is in the
+  // archive, and the description is the one thing only the person making it can supply.
+  const described = els.selectionDescription.value.trim() !== "";
   els.dandisetEmbargoError.hidden = !notEmbargoed;
-  els.btnDownload.disabled = deliveryBusy || !hasVideo || !selected;
-  els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !cfg.dandisetId || notEmbargoed;
+  els.btnDownload.disabled = deliveryBusy || !hasVideo || !selected || !described;
+  els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !described || !cfg.dandisetId || notEmbargoed;
   els.downloadHint.textContent = frameMode
     ? "Saves the selected frame to your computer, packed with everything an upload would have carried."
     : "Saves the selected snippet to your computer, packed with everything an upload would have carried.";
+  // The description prompt names whichever kind of selection is being described.
+  els.selectionDescription.placeholder = frameMode
+    ? "What event does this frame showcase? Note anything that went wrong in it, or any other details you want to share along with the clip."
+    : "What event does this snippet showcase? Note anything that went wrong in it, or any other details you want to share along with the clip.";
   // Original content can only ride along when its bytes are already in the browser; a range-streamed
   // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
   const canSendOriginal = state.sourceFile !== null || state.slpFile !== null;
@@ -936,7 +946,9 @@ function updateDeliveryGate(): void {
     ? "Load a video to extract a selection."
     : !selected
       ? "Mark an in or out point on the player to select a snippet."
-      : "";
+      : !described
+        ? `Describe the ${frameMode ? "frame" : "snippet"} above before sending it on.`
+        : "";
   setStatus(els.downloadStatus, blocked);
   setStatus(els.uploadStatus, blocked || (!cfg.dandisetId ? "Pick an upload destination above." : ""));
 }
