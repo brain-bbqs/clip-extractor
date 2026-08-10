@@ -59,14 +59,30 @@ export function getElements() {
     slpBadge: required<HTMLSpanElement>("slpBadge"),
     showPose: required<HTMLInputElement>("showPose"),
 
+    // Delivery card (Download / Upload)
+    deliverSeg: required<HTMLDivElement>("deliverSeg"),
+    downloadPane: required<HTMLDivElement>("downloadPane"),
+    downloadHint: required<HTMLParagraphElement>("downloadHint"),
+    downloadPreview: required<HTMLParagraphElement>("downloadPreview"),
+    downloadPreviewName: required<HTMLElement>("downloadPreviewName"),
+    btnDownload: required<HTMLButtonElement>("btnDownload"),
+    downloadStatus: required<HTMLSpanElement>("downloadStatus"),
+
     // Upload destination
+    uploadPane: required<HTMLDivElement>("uploadPane"),
     dandisetId: required<HTMLSelectElement>("dandisetId"),
     dandisetMessage: required<HTMLParagraphElement>("dandisetMessage"),
     dandisetSingle: required<HTMLParagraphElement>("dandisetSingle"),
     dandisetSingleText: required<HTMLSpanElement>("dandisetSingleText"),
     dandisetEmbargoError: required<HTMLParagraphElement>("dandisetEmbargoError"),
     viewDatasetLink: required<HTMLAnchorElement>("viewDatasetLink"),
+    uploadOriginalRow: required<HTMLLabelElement>("uploadOriginalRow"),
+    uploadOriginal: required<HTMLInputElement>("uploadOriginal"),
+    uploadOriginalNote: required<HTMLParagraphElement>("uploadOriginalNote"),
     btnUpload: required<HTMLButtonElement>("btnUpload"),
+    uploadStatus: required<HTMLSpanElement>("uploadStatus"),
+    uploadProgress: required<HTMLDivElement>("uploadProgress"),
+    uploadProgressFill: required<HTMLDivElement>("uploadProgressFill"),
   };
 }
 

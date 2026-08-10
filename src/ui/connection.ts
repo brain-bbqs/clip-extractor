@@ -1,21 +1,24 @@
 import type { ClipExtractorElements } from "./elements";
 import type { ArchiveConfig } from "../lib/types";
-import { apiFetch } from "../lib/api";
+import { fetchArchiveUser, type ArchiveUser } from "../lib/users";
 import { initialsFrom } from "../lib/format";
 
 /**
  * Renders the header's "who's signed in" avatar/username as soon as there's an access token,
- * independent of whether an upload destination has been selected yet.
+ * independent of whether an upload destination has been selected yet. Returns the account it
+ * rendered, so the caller can reuse it (the provenance record names the uploader) instead of
+ * asking the archive a second time.
  */
-export async function renderIdentity(els: ClipExtractorElements, cfg: ArchiveConfig): Promise<void> {
-  if (!cfg.accessToken) return;
+export async function renderIdentity(els: ClipExtractorElements, cfg: ArchiveConfig): Promise<ArchiveUser | null> {
   try {
-    const me = await apiFetch<{ username?: string; name?: string }>(cfg, "/users/me/");
-    if (me?.username) {
-      els.oauthUsername.textContent = me.username;
-      els.oauthAvatar.textContent = initialsFrom(me.name ?? "");
+    const user = await fetchArchiveUser(cfg);
+    if (user) {
+      els.oauthUsername.textContent = user.username;
+      els.oauthAvatar.textContent = initialsFrom(user.name ?? "");
     }
+    return user;
   } catch {
     /* leave the header as-is; the next refresh retries */
+    return null;
   }
 }

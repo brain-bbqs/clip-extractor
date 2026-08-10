@@ -1,13 +1,39 @@
 import "./style.css";
 import * as sio from "@talmolab/sleap-io.js";
 import { getElements } from "./ui/elements";
-import { fmtTime } from "./lib/format";
+import { bytes, fmtTime } from "./lib/format";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { drawPose, labelsToPose } from "./lib/pose";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
+import {
+  defaultDeliveryMode,
+  fileBrowserUrl,
+  uploadAssetPath,
+  uploadDirectory,
+  uploadOriginalPath,
+  type DeliveryMode,
+  type SelectionKind,
+} from "./lib/delivery";
+import {
+  clipFileName,
+  extractClip,
+  extractFrame,
+  extractOverlay,
+  frameFileName,
+  provenanceFileName,
+  type AssetEntities,
+  type ExtractedMedia,
+  type ExtractProgress,
+} from "./lib/extract";
+import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./lib/upload";
+import { buildProvenance, type ProvenanceAnnotationsInput } from "./lib/provenance";
+import { countLabeledFramesInRange } from "./lib/annotations";
+import { fetchArchiveUser, type ArchiveUser } from "./lib/users";
+import { friendlyError } from "./lib/errors";
 import { renderIdentity } from "./ui/connection";
+import { saveBlob } from "./ui/download";
 import type { ArchiveConfig, OAuthTokenSet, PoseModel, SleapLabels, SleapVideoBackend } from "./lib/types";
 
 const els = getElements();
@@ -66,6 +92,9 @@ interface AppState {
   playing: boolean;
   speed: number;
   pose: PoseModel | null;
+  /** The `.slp` behind `pose`, when it came from a local file — kept so it can ride along with an
+   * upload. Null for a `.slp` fetched from a URL, whose bytes were never held locally. */
+  slpFile: File | null;
   mode: SelectorMode;
   curBitmap: ImageBitmap | ImageData | ArrayBuffer | { buffer: ArrayBufferLike } | null;
 }
@@ -86,6 +115,7 @@ const state: AppState = {
   playing: false,
   speed: 1,
   pose: null,
+  slpFile: null,
   mode: "video",
   curBitmap: null,
 };
@@ -93,29 +123,40 @@ const state: AppState = {
 // ============================================================
 // Video loading (remote URL + local file)
 // ============================================================
-async function openVideoBackend(source: File | string, name: string): Promise<SleapVideoBackend> {
+/** An opened source plus the local bytes behind it, if any: `file` is null only for a URL that is
+ * genuinely being range-streamed, so extraction and the "upload the original too" option can tell
+ * "bytes in hand" from "would have to be fetched". */
+interface OpenedSource {
+  backend: SleapVideoBackend;
+  file: File | null;
+}
+
+// Decoded frames the backend keeps as ImageBitmaps. Each one costs width*height*4 bytes of
+// (non-JS-heap) memory, so at 1080p a 96-frame cache is ~800MB — enough that a large .slp on the
+// heap alongside it pushes the tab into thrashing. 32 still covers the read-ahead window below.
+const FRAME_CACHE_SIZE = 32;
+
+async function openVideoBackend(source: File | string, name: string): Promise<OpenedSource> {
   if (typeof source === "string") {
     try {
-      return await sio.MediaBunnyVideoBackend.fromUrl(source, { cacheSize: 96 });
+      return { backend: await sio.MediaBunnyVideoBackend.fromUrl(source, { cacheSize: FRAME_CACHE_SIZE }), file: null };
     } catch (e) {
       log(`Range/stream open failed (${(e as Error).message}); downloading full file…`, "warn");
       const resp = await fetch(source);
       if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching video`);
       const blob = await resp.blob();
-      state.sourceFile = new File([blob], name, { type: blob.type || "video/mp4" });
-      return await sio.MediaBunnyVideoBackend.fromBlob(state.sourceFile, name, {
-        cacheSize: 96,
-      });
+      const file = new File([blob], name, { type: blob.type || "video/mp4" });
+      return { backend: await sio.MediaBunnyVideoBackend.fromBlob(file, name, { cacheSize: FRAME_CACHE_SIZE }), file };
     }
   }
   try {
-    return await sio.MediaBunnyVideoBackend.fromBlob(source, name, { cacheSize: 96 });
+    return { backend: await sio.MediaBunnyVideoBackend.fromBlob(source, name, { cacheSize: FRAME_CACHE_SIZE }), file: source };
   } catch (e) {
     log(`MediaBunny failed (${(e as Error).message}); trying mp4box…`, "warn");
     const vb = await sio.createVideoBackend(source, { backend: "mp4box" });
     const maybeReady = (vb as { ready?: Promise<unknown> }).ready;
     if (maybeReady) await maybeReady;
-    return vb;
+    return { backend: vb, file: source };
   }
 }
 
@@ -123,7 +164,7 @@ async function loadVideo(source: File | string, name: string, url: string | null
   stopPlay();
   log(`Loading video: ${name}…`);
   try {
-    const backend = await openVideoBackend(source, name);
+    const { backend, file } = await openVideoBackend(source, name);
     state.backend = backend;
     state.frameOrder = await buildFrameOrder(backend);
     const shape = backend.shape ?? [];
@@ -133,11 +174,14 @@ async function loadVideo(source: File | string, name: string, url: string | null
     state.fps = backend.fps || 30;
     state.sourceName = name;
     state.sourceUrl = url;
-    // loadVideo fully owns source state: clear any prior local File on a URL load.
-    state.sourceFile = source instanceof File ? source : null;
+    // loadVideo fully owns source state: this is either the dropped File, the one the stream
+    // fallback materialized, or null for a live-streamed URL — never a previous load's leftover.
+    state.sourceFile = file;
     state.cur = 0;
     state.inF = null;
     state.outF = null;
+    prefetched = null;
+    prefetchInFlight = false;
     els.view.width = state.width;
     els.view.height = state.height;
     els.emptyStage.style.display = "none";
@@ -164,6 +208,9 @@ async function loadSlp(source: File | string, name: string): Promise<void> {
   try {
     const labels = (await sio.loadSlp(source, { openVideos: false })) as unknown as SleapLabels;
     state.pose = labelsToPose(labels);
+    // Only after a successful parse: a file this app could not read is not one to hand to the
+    // archive.
+    state.slpFile = source instanceof File ? source : null;
     const nFrames = state.pose.byFrame.size;
     log(`SLP loaded: ${state.pose.skeleton.nodes.length} nodes, ${state.pose.tracks.length} tracks, ${nFrames} labeled frames`, "ok");
     els.slpBadge.textContent = `${nFrames} frames`;
@@ -193,6 +240,42 @@ function renderFrame(): void {
 // ============================================================
 let seeking = false;
 let pendingSeek: number | null = null;
+
+// Read-ahead bookkeeping. sleap-io.js's getFrame() awaits any in-flight decodeRange before it will
+// serve even an already-cached frame, so asking for a fresh window on every seek made each rendered
+// frame wait on a whole range decode — playback crawled and stalled for seconds at a time while the
+// playhead kept advancing. Ask once per window instead, and never while a request is outstanding.
+//
+// Measured on a 1920x1080 clip (software decode), distinct frames rendered per second and the worst
+// stall: a window per seek 1.8fps/1900ms, one per window 5.6fps/1000ms, and skipping it during
+// playback (below) 5.4fps/350ms. A smaller window is worse, not better — 8 frames re-arms so often
+// that a decode is almost always in flight, back down to 2.2fps. Playback is sequential, which is
+// the access pattern the backend's own decoder already handles well; scrubbing is what benefits from
+// reading ahead.
+const PREFETCH_AHEAD = 30;
+// Re-arm this far before the window's end, so the next range is in flight before it is needed.
+const PREFETCH_MARGIN = 10;
+let prefetched: { lo: number; hi: number } | null = null;
+let prefetchInFlight = false;
+
+function schedulePrefetch(target: number): void {
+  const backend = state.backend;
+  if (!backend || typeof backend.prefetch !== "function" || prefetchInFlight) return;
+  if (prefetched && target >= prefetched.lo && target + PREFETCH_MARGIN <= prefetched.hi) return;
+  const hi = Math.min(state.totalFrames - 1, target + PREFETCH_AHEAD);
+  if (hi <= target) return;
+  // Decode order may be locally reordered (B-frames), so bound the range by min/max.
+  const a = decodeIndex(state.frameOrder, target);
+  const b = decodeIndex(state.frameOrder, hi);
+  prefetched = { lo: target, hi };
+  prefetchInFlight = true;
+  backend
+    .prefetch(Math.min(a, b), Math.max(a, b))
+    .catch(() => {})
+    .finally(() => {
+      prefetchInFlight = false;
+    });
+}
 // Shift-held seeking extends the selection to cover the frames scrubbed over (video mode only).
 let shiftHeld = false;
 let shiftAnchor: number | null = null;
@@ -219,12 +302,7 @@ async function seek(frame: number, force = false): Promise<void> {
         state.cur = target;
         renderFrame();
       }
-      if (typeof state.backend.prefetch === "function") {
-        // Decode order may be locally reordered (B-frames), so bound the range by min/max.
-        const a = decodeIndex(state.frameOrder, target);
-        const b = decodeIndex(state.frameOrder, Math.min(state.totalFrames - 1, target + 30));
-        state.backend.prefetch(Math.min(a, b), Math.max(a, b)).catch(() => {});
-      }
+      if (!state.playing) schedulePrefetch(target);
     } catch (e) {
       log(`Seek error: ${(e as Error).message}`, "err");
     }
@@ -301,7 +379,14 @@ function growSelection(target: number): void {
   if (lo === state.inF && hi === state.outF) return;
   state.inF = lo;
   state.outF = hi;
+  selectionChanged();
+}
+
+/** Every in/out mutation funnels through here. Kept separate from updateSelUI(), which also runs on
+ * every seek during playback, so the delivery card is only recomputed when the range really moves. */
+function selectionChanged(): void {
   updateSelUI();
+  updateDeliveryGate();
 }
 
 function updateSelUI(): void {
@@ -321,6 +406,8 @@ function updateSelUI(): void {
   }
   els.selplay.style.display = state.backend ? "block" : "none";
   els.selplay.style.left = `${(state.cur / den) * 100}%`;
+  // Frame mode's output name tracks the current frame, so the preview follows every seek.
+  if (!deliveryBusy) updateDeliveryPreview();
   // Frame mode has no range summary — the current frame is already shown in the stage overlay.
   if (state.mode === "frame") return;
   const n = hi - lo + 1;
@@ -342,6 +429,8 @@ function setMode(mode: SelectorMode): void {
     state.outF = null;
   }
   updateSelUI();
+  // The delivery card names what it will produce (MP4 vs PNG), so it follows the selector mode.
+  updateDeliveryGate();
 }
 
 // ============================================================
@@ -353,6 +442,7 @@ function enablePlayer(on: boolean): void {
   }
   els.frameSlider.disabled = !on;
   els.frameSlider.max = String(Math.max(0, state.totalFrames - 1));
+  updateDeliveryGate();
 }
 
 // Segmented controls
@@ -367,9 +457,14 @@ function wireSeg(segEl: HTMLElement, apply: (value: string) => void): void {
 }
 
 // Marks the button carrying `value` active — used by wireSeg and by programmatic switches
-// (e.g. a ?url= param selecting the EMBER pane).
+// (e.g. a ?url= param selecting the EMBER pane). aria-pressed carries the same state to screen
+// readers, which otherwise hear an unremarkable row of buttons.
 function selectSeg(segEl: HTMLElement, value: string | undefined): void {
-  segEl.querySelectorAll("button").forEach((b) => b.classList.toggle("active", Object.values(b.dataset)[0] === value));
+  segEl.querySelectorAll("button").forEach((b) => {
+    const active = Object.values(b.dataset)[0] === value;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-pressed", String(active));
+  });
 }
 
 wireSeg(els.modeSeg, (v) => setMode(v as SelectorMode));
@@ -432,17 +527,17 @@ els.frameSlider.addEventListener("input", () => {
 els.btnSetIn.addEventListener("click", () => {
   state.inF = state.cur;
   if (state.outF != null && state.outF < state.inF) state.outF = null;
-  updateSelUI();
+  selectionChanged();
 });
 els.btnSetOut.addEventListener("click", () => {
   state.outF = state.cur;
   if (state.inF != null && state.inF > state.outF) state.inF = null;
-  updateSelUI();
+  selectionChanged();
 });
 els.btnClearSel.addEventListener("click", () => {
   state.inF = null;
   state.outF = null;
-  updateSelUI();
+  selectionChanged();
 });
 els.showPose.addEventListener("change", renderFrame);
 
@@ -568,16 +663,31 @@ let storedDandisetId = "";
 // The picker's current option list, kept around so currentConfig() can read the selected
 // dataset's embargo status without a second API round-trip.
 let currentDatasets: IncomingDandiset[] = [];
+// The signed-in account, resolved once for the header avatar and reused to name the uploader in
+// each upload's provenance record.
+let currentUser: ArchiveUser | null = null;
+// The Download/Upload side the visitor picked themselves, in this session or a previous one. Null
+// means they have never chosen, and the sign-in state decides (see applyDeliveryMode).
+let storedDeliveryMode: DeliveryMode | null = null;
 
-function loadAuthSettings(): void {
+function loadSettings(): void {
   const s = loadStoredSettings();
   if (!s) return;
   if (s.dandisetId) storedDandisetId = s.dandisetId;
   if (s.oauth) oauthTokens = s.oauth;
+  if (s.deliveryMode) storedDeliveryMode = s.deliveryMode;
 }
 
-function saveAuthSettings(): void {
-  saveStoredSettings({ dandisetId: els.dandisetId.value.trim(), oauth: oauthTokens ?? undefined });
+function saveSettings(): void {
+  // The picker is empty whenever it has no options yet (signed out, or still loading), which is not
+  // the same as "no dataset chosen" — keep the last known id instead of blanking it.
+  const selected = els.dandisetId.value.trim();
+  if (selected) storedDandisetId = selected;
+  saveStoredSettings({
+    dandisetId: storedDandisetId,
+    oauth: oauthTokens ?? undefined,
+    deliveryMode: storedDeliveryMode ?? undefined,
+  });
 }
 
 function currentConfig(): ArchiveConfig {
@@ -606,7 +716,7 @@ async function ensureFreshOAuth(): Promise<void> {
   const fresh = await ensureFreshToken(current).catch(() => current);
   if (fresh !== current) {
     oauthTokens = fresh;
-    saveAuthSettings();
+    saveSettings();
   }
 }
 
@@ -617,7 +727,7 @@ function showDandisetView(view: "message" | "single" | "dropdown"): void {
   els.dandisetMessage.hidden = view !== "message";
   els.dandisetSingle.hidden = view !== "single";
   els.dandisetId.hidden = view !== "dropdown";
-  updateUploadGate();
+  updateDeliveryGate();
 }
 
 function setDandisetPlaceholder(text: string): void {
@@ -671,31 +781,32 @@ function updateViewDatasetLink(): void {
   if (cfg.dandisetId) els.viewDatasetLink.href = `${cfg.web}/dandiset/${cfg.dandisetId}/draft`;
 }
 
-// Surfaces the one condition that would block an upload to the selected dataset. The Upload
-// button itself stays disabled until the upload path is actually built.
-function updateUploadGate(): void {
-  els.dandisetEmbargoError.hidden = currentConfig().embargoed !== false;
-}
-
 async function refreshDandisetOptions(): Promise<void> {
   if (!oauthTokens) {
     currentDatasets = [];
     setDandisetPlaceholder("Please sign in to see your incoming datasets.");
     updateViewDatasetLink();
+    applyDeliveryMode();
     return;
   }
   await ensureFreshOAuth();
-  void renderIdentity(els, currentConfig());
+  // Deliberately not awaited: the dataset listing below is the slow part visitors are waiting on,
+  // and the header avatar can fill in whenever the identity call lands.
+  void renderIdentity(els, currentConfig()).then((user) => {
+    currentUser = user;
+  });
   setDandisetPlaceholder("Loading your incoming datasets…");
   try {
     const { datasets, unverified } = await listIncomingDandisets(currentConfig());
     applyDatasetList(datasets, unverified);
   } catch (e) {
     log(`Could not load your datasets: ${(e as Error).message}`, "err");
+    currentDatasets = [];
     setDandisetPlaceholder("Could not load your datasets");
   }
-  saveAuthSettings();
+  saveSettings();
   updateViewDatasetLink();
+  applyDeliveryMode();
 }
 
 async function initEmberAuth(): Promise<void> {
@@ -705,7 +816,7 @@ async function initEmberAuth(): Promise<void> {
   });
   if (callbackTokens) {
     oauthTokens = callbackTokens;
-    saveAuthSettings();
+    saveSettings();
     renderAuthUI();
   }
   await refreshDandisetOptions();
@@ -715,19 +826,409 @@ els.oauthSigninBtn.addEventListener("click", () => void startLogin());
 els.oauthSignoutBtn.addEventListener("click", () => {
   const tokens = oauthTokens;
   oauthTokens = null;
-  saveAuthSettings();
+  currentUser = null;
+  saveSettings();
   renderAuthUI();
   if (tokens) void revokeToken(tokens);
   void refreshDandisetOptions();
 });
 els.dandisetId.addEventListener("change", () => {
-  updateUploadGate();
+  updateDeliveryGate();
   updateViewDatasetLink();
-  saveAuthSettings();
+  saveSettings();
 });
 
-loadAuthSettings();
+// ============================================================
+// Delivery: download the extracted selection, or upload it to EMBER
+// ============================================================
+// Extraction runs on demand, when either button is pressed, so what leaves the page always matches
+// the selection currently on screen — there is no stale "extracted" artifact to invalidate.
+
+// Guards both actions while an extraction or upload is in flight.
+let deliveryBusy = false;
+
+function setDeliveryMode(mode: DeliveryMode): void {
+  els.downloadPane.hidden = mode !== "download";
+  els.uploadPane.hidden = mode !== "upload";
+  updateDeliveryGate();
+}
+
+/** Shows the side the visitor last picked — including across a refresh, which is why the choice is
+ * persisted rather than kept in memory. With no choice on record, Upload leads whenever it is
+ * actually usable (signed in, with at least one incoming dataset) and Download leads otherwise,
+ * since there would be nowhere to upload to. */
+function applyDeliveryMode(): void {
+  const mode = storedDeliveryMode ?? defaultDeliveryMode(currentDatasets.length);
+  selectSeg(els.deliverSeg, mode);
+  setDeliveryMode(mode);
+}
+
+wireSeg(els.deliverSeg, (v) => {
+  storedDeliveryMode = v as DeliveryMode;
+  setDeliveryMode(storedDeliveryMode);
+  saveSettings();
+});
+
+function setStatus(el: HTMLElement, message: string, cls: "" | "ok" | "err" = ""): void {
+  el.textContent = message;
+  el.className = cls ? `hint ${cls}` : "hint";
+}
+
+/** Same, followed by a link — so an outcome can hand over somewhere to go next. */
+function setStatusLink(el: HTMLElement, message: string, href: string, linkText: string, cls: "" | "ok" | "err" = ""): void {
+  const link = document.createElement("a");
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.textContent = linkText;
+  el.replaceChildren(message, link);
+  el.className = cls ? `hint ${cls}` : "hint";
+}
+
+/** Same, with a file name set in the monospace `code` style so it stands out from the prose. */
+function setStatusNaming(el: HTMLElement, before: string, filename: string, after: string, cls: "" | "ok" | "err" = ""): void {
+  const code = document.createElement("code");
+  code.textContent = filename;
+  el.replaceChildren(before, code, after);
+  el.className = cls ? `hint ${cls}` : "hint";
+}
+
+/** Drives the single progress bar in the upload pane; null hides it. */
+function setUploadProgress(fraction: number | null, done = false): void {
+  els.uploadProgress.hidden = fraction === null;
+  els.uploadProgressFill.style.width = `${Math.min(100, Math.max(0, (fraction ?? 0) * 100)).toFixed(1)}%`;
+  els.uploadProgressFill.className = done ? "progress-fill ok" : "progress-fill";
+}
+
+/** In frame mode the current frame is always a valid selection; a snippet needs at least one of the
+ * in/out points marked, since with neither the range silently means "the entire video" — which is
+ * not something to hand off under the name of a clip. */
+function hasSelection(): boolean {
+  return state.mode === "frame" || state.inF !== null || state.outF !== null;
+}
+
+// Enablement, the embargo warning, and both panes' copy, all derived from the current video,
+// selection, selector mode, and destination.
+function updateDeliveryGate(): void {
+  const cfg = currentConfig();
+  const hasVideo = state.backend !== null;
+  const notEmbargoed = cfg.embargoed === false;
+  const frameMode = state.mode === "frame";
+  const selected = hasSelection();
+  els.dandisetEmbargoError.hidden = !notEmbargoed;
+  els.btnDownload.disabled = deliveryBusy || !hasVideo || !selected;
+  els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !cfg.dandisetId || notEmbargoed;
+  els.downloadHint.textContent = frameMode ? "Saves the selected frame to your computer." : "Saves the selected snippet to your computer.";
+  // Original content can only ride along when its bytes are already in the browser; a range-streamed
+  // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
+  const canSendOriginal = state.sourceFile !== null || state.slpFile !== null;
+  els.uploadOriginalRow.hidden = !canSendOriginal;
+  els.uploadOriginalNote.hidden = canSendOriginal || !hasVideo;
+  if (deliveryBusy) return;
+  updateDeliveryPreview();
+  // Only ever says why the button is unavailable; a ready button needs no caption.
+  const blocked = !hasVideo
+    ? "Load a video to extract a selection."
+    : !selected
+      ? "Mark an in or out point on the player to select a snippet."
+      : "";
+  setStatus(els.downloadStatus, blocked);
+  setStatus(els.uploadStatus, blocked || (!cfg.dandisetId ? "Pick an upload destination above." : ""));
+}
+
+/** Names the file the Download button is about to produce — the name alone, since it already spells
+ * out the frame or the frame range. Refreshed on every seek too, frame mode's output following the
+ * current frame, hence the long-lived child element rather than rebuilt markup. */
+function updateDeliveryPreview(): void {
+  const show = state.backend !== null && hasSelection();
+  els.downloadPreview.hidden = !show;
+  if (!show) return;
+  const [lo, hi] = selRange();
+  els.downloadPreviewName.textContent =
+    state.mode === "frame" ? frameFileName(state.sourceName, state.cur) : clipFileName(state.sourceName, lo, hi);
+}
+
+function setDeliveryBusy(busy: boolean): void {
+  deliveryBusy = busy;
+  updateDeliveryGate();
+}
+
+/** Extracts whatever the selector currently points at: an MP4 snippet, or a single PNG frame. */
+async function extractSelection(onProgress: ExtractProgress): Promise<ExtractedMedia> {
+  const backend = state.backend;
+  if (!backend) throw new Error("No video loaded");
+  if (state.mode === "frame") {
+    onProgress(`Encoding frame ${state.cur}…`);
+    return extractFrame({
+      backend,
+      frameOrder: state.frameOrder,
+      frame: state.cur,
+      width: state.width,
+      height: state.height,
+      sourceName: state.sourceName,
+    });
+  }
+  const [lo, hi] = selRange();
+  return extractClip({
+    sourceFile: state.sourceFile,
+    sourceUrl: state.sourceUrl,
+    sourceName: state.sourceName,
+    lo,
+    hi,
+    fps: state.fps,
+    onProgress,
+  });
+}
+
+async function runDownload(): Promise<void> {
+  if (!state.backend) return;
+  setDeliveryBusy(true);
+  try {
+    const media = await extractSelection((message) => setStatus(els.downloadStatus, message));
+    saveBlob(media.blob, media.filename);
+    setDeliveryBusy(false);
+    setStatusNaming(els.downloadStatus, "Saved ", media.filename, ` (${bytes(media.blob.size)})`, "ok");
+    log(`Downloaded ${media.filename} (${bytes(media.blob.size)})`, "ok");
+  } catch (e) {
+    setDeliveryBusy(false);
+    setStatus(els.downloadStatus, friendlyError(e), "err");
+    log(`Download failed: ${friendlyError(e)}`, "err");
+    console.error(e);
+  }
+}
+
+const PHASE_LABEL: Record<UploadPhase, string> = { checksum: "Checksumming", upload: "Uploading", register: "Registering" };
+
+function reportUploadStep(label: string, step: string, fraction: number): void {
+  setStatus(els.uploadStatus, `${step} ${label}… ${(fraction * 100).toFixed(0)}%`);
+  setUploadProgress(fraction);
+}
+
+/** Uploads one file and returns the digest it was stored under, so the provenance record can quote
+ * the same checksum the archive holds. Reuses `digest` when the caller already computed it. */
+async function uploadOne(
+  cfg: ArchiveConfig,
+  blob: Blob,
+  path: string,
+  contentType: string,
+  label: string,
+  digest?: BlobDigest,
+): Promise<BlobDigest> {
+  const resolved = digest ?? (await checksumBlob(blob, (f) => reportUploadStep(label, PHASE_LABEL.checksum, f)));
+  log(`Uploading ${label} to ${path} (${bytes(blob.size)})…`);
+  await uploadAsset(cfg, {
+    blob,
+    path,
+    contentType,
+    digest: resolved,
+    onPhase: (phase, fraction) => reportUploadStep(label, PHASE_LABEL[phase], fraction),
+  });
+  log(`Uploaded ${path}`, "ok");
+  return resolved;
+}
+
+/** What was loaded from a `.slp`, restricted to the selection, or null when there is none. */
+function annotationsSummary(lo: number, hi: number, slp: UploadedSlp | null): ProvenanceAnnotationsInput | null {
+  const pose = els.slpToggle.checked ? state.pose : null;
+  if (!pose) return null;
+  return {
+    filename: state.slpFile?.name ?? null,
+    checksum: slp?.digest.etag ?? null,
+    uploaded: slp?.path != null,
+    assetPath: slp?.path ?? null,
+    skeletonNodeCount: pose.skeleton.nodes.length,
+    trackCount: pose.tracks.length,
+    labeledFramesInSelection: countLabeledFramesInRange(pose, lo, hi),
+  };
+}
+
+/** A loaded `.slp` that was checksummed, and uploaded too when `path` is set. */
+interface UploadedSlp {
+  digest: BlobDigest;
+  path: string | null;
+}
+
+/** The rendered pose-overlay companion to a selection, once uploaded. */
+interface UploadedOverlay {
+  media: ExtractedMedia;
+  path: string;
+  digest: BlobDigest;
+}
+
+/**
+ * Renders and uploads the selection with the pose drawn into the pixels, so it can be looked at
+ * without a viewer that understands `.slp`. Null when no annotations are loaded, since there would be
+ * nothing to draw. Deliberately not tied to the "include the original content" toggle: this is a view
+ * of the selection, not a copy of a source.
+ */
+async function uploadOverlay(
+  cfg: ArchiveConfig,
+  directory: string,
+  entities: AssetEntities,
+  backend: SleapVideoBackend,
+): Promise<UploadedOverlay | null> {
+  const pose = els.slpToggle.checked ? state.pose : null;
+  if (!pose) return null;
+  const media = await extractOverlay({
+    backend,
+    frameOrder: state.frameOrder,
+    pose,
+    mode: entities.mode,
+    inFrame: entities.inFrame,
+    outFrame: entities.outFrame,
+    fps: state.fps,
+    width: state.width,
+    height: state.height,
+    sourceName: state.sourceName,
+    onProgress: (message, fraction) => {
+      setStatus(els.uploadStatus, message);
+      setUploadProgress(fraction ?? 0);
+    },
+  });
+  const path = uploadAssetPath(directory, media.filename);
+  const digest = await uploadOne(cfg, media.blob, path, media.mime, "the pose overlay");
+  return { media, path, digest };
+}
+
+/** Checksums the source video, and uploads it when the toggle asks for it. The checksum is taken
+ * either way: recording which video a clip came from is only useful if that video can be identified
+ * again later. */
+async function uploadOriginalVideo(
+  cfg: ArchiveConfig,
+  directory: string,
+): Promise<{ original: File | null; originalDigest: BlobDigest | null; originalPath: string | null }> {
+  const original = state.sourceFile;
+  if (!original) return { original: null, originalDigest: null, originalPath: null };
+  const originalDigest = await checksumBlob(original, (f) => reportUploadStep("the original video", PHASE_LABEL.checksum, f));
+  if (!els.uploadOriginal.checked) return { original, originalDigest, originalPath: null };
+  // Uploaded under the name it arrived with, not a derived one: it is the untouched source, and its
+  // verbatim name is what the provenance record reports.
+  const originalPath = uploadOriginalPath(directory, original.name);
+  await uploadOne(cfg, original, originalPath, original.type || "video/mp4", "the original video", originalDigest);
+  return { original, originalDigest, originalPath };
+}
+
+/** Same for a loaded `.slp`: it is original content too, so it rides along on the same toggle, and is
+ * checksummed either way. */
+async function uploadAnnotationFile(cfg: ArchiveConfig, directory: string): Promise<UploadedSlp | null> {
+  const slpFile = state.slpFile;
+  if (!slpFile) return null;
+  const digest = await checksumBlob(slpFile, (f) => reportUploadStep("the annotations", PHASE_LABEL.checksum, f));
+  if (!els.uploadOriginal.checked) return { digest, path: null };
+  const path = uploadOriginalPath(directory, slpFile.name);
+  await uploadOne(cfg, slpFile, path, slpFile.type || "application/octet-stream", "the annotations", digest);
+  return { digest, path };
+}
+
+async function runUpload(): Promise<void> {
+  // Captured once: `state.backend` is mutable, so a load mid-upload must not swap what these steps
+  // are reading frames from.
+  const backend = state.backend;
+  if (!backend) return;
+  setDeliveryBusy(true);
+  setUploadProgress(0);
+  try {
+    const kind: SelectionKind = state.mode === "frame" ? "frame" : "snippet";
+    const [lo, hi] = state.mode === "frame" ? [state.cur, state.cur] : selRange();
+    // Shared by every file this upload writes, so they all carry the same BIDS-style entities.
+    const entities: AssetEntities = { sourceName: state.sourceName, mode: kind, inFrame: lo, outFrame: hi };
+    const media = await extractSelection((message, fraction) => {
+      setStatus(els.uploadStatus, message);
+      setUploadProgress(fraction ?? 0);
+    });
+    // Refresh the token before the first request rather than mid-transfer, where an expiry would
+    // strand a half-finished multipart upload.
+    await ensureFreshOAuth();
+    const cfg = currentConfig();
+    if (!cfg.dandisetId) throw new Error("Pick an upload destination first.");
+    // The provenance record names the uploader, so resolve the account here if the header's own
+    // lookup has not landed (or was never made) yet.
+    currentUser ??= await fetchArchiveUser(cfg).catch(() => null);
+    const directory = uploadDirectory(new Date(), kind);
+
+    // The extracted selection goes first: it is the point of the upload, and the original — which
+    // can be orders of magnitude larger — is a recommended companion, not a prerequisite for it.
+    const mediaPath = uploadAssetPath(directory, media.filename);
+    const mediaDigest = await uploadOne(cfg, media.blob, mediaPath, media.mime, kind);
+
+    const overlay = await uploadOverlay(cfg, directory, entities, backend);
+    const { original, originalDigest, originalPath } = await uploadOriginalVideo(cfg, directory);
+    const slp = await uploadAnnotationFile(cfg, directory);
+
+    const provenance = buildProvenance({
+      createdAt: new Date(),
+      pageUrl: location.href.split("?")[0],
+      user: currentUser,
+      api: cfg.api,
+      dandisetId: cfg.dandisetId,
+      directory,
+      mode: kind,
+      fps: state.fps,
+      width: state.width,
+      height: state.height,
+      totalFrames: state.totalFrames,
+      inFrame: lo,
+      outFrame: hi,
+      source: {
+        filename: state.sourceName,
+        url: state.sourceUrl,
+        sizeBytes: original?.size ?? null,
+        checksum: originalDigest?.etag ?? null,
+        checksumUnavailable: original ? null : "The source video was streamed from a URL, so its bytes were never held locally to hash.",
+        uploaded: originalPath !== null,
+        assetPath: originalPath,
+      },
+      extracted: {
+        filename: media.filename,
+        assetPath: mediaPath,
+        mediaType: media.mime,
+        sizeBytes: media.blob.size,
+        checksum: mediaDigest.etag,
+        encoding: media.encoding,
+      },
+      overlay: overlay && {
+        filename: overlay.media.filename,
+        assetPath: overlay.path,
+        mediaType: overlay.media.mime,
+        sizeBytes: overlay.media.blob.size,
+        checksum: overlay.digest.etag,
+        encoding: overlay.media.encoding,
+      },
+      annotations: annotationsSummary(lo, hi, slp),
+    });
+    const provenanceBlob = new Blob([JSON.stringify(provenance, null, 2)], { type: "application/json" });
+    const provenancePath = uploadAssetPath(directory, provenanceFileName(entities));
+    await uploadOne(cfg, provenanceBlob, provenancePath, "application/json", "the provenance record");
+
+    setDeliveryBusy(false);
+    setUploadProgress(1, true);
+    // Deliberately terse: uploadOne() has already logged every asset path to the console, and the
+    // link goes straight to this upload's own directory in the archive's file browser.
+    setStatusLink(
+      els.uploadStatus,
+      "Upload complete - ",
+      fileBrowserUrl(cfg.web, cfg.dandisetId, directory),
+      "click here to view and share",
+      "ok",
+    );
+    log(`Upload complete: ${directory}/`, "ok");
+  } catch (e) {
+    setDeliveryBusy(false);
+    setUploadProgress(null);
+    setStatus(els.uploadStatus, `Upload failed: ${friendlyError(e)}`, "err");
+    log(`Upload failed: ${friendlyError(e)}`, "err");
+    console.error(e);
+  }
+}
+
+els.btnDownload.addEventListener("click", () => void runDownload());
+els.btnUpload.addEventListener("click", () => void runUpload());
+
+loadSettings();
 renderAuthUI();
+// Applied before the archive is consulted so a restored choice is the first thing painted, rather
+// than the default briefly winning and being corrected once the dataset listing lands.
+applyDeliveryMode();
 void initEmberAuth();
 
 // URL params: ?url=<video>&slp=<slp>

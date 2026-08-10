@@ -27,9 +27,49 @@ export interface OAuthTokenSet {
   expiresAt: number;
 }
 
+// Type-only, so this stays a leaf module at runtime: the stored-settings shape needs the delivery
+// mode's union without pulling lib/delivery.ts into the bundle graph here.
+import type { DeliveryMode } from "./delivery";
+
 export interface StoredSettings {
   dandisetId?: string;
   oauth?: OAuthTokenSet;
+  /** The Download/Upload side the visitor last picked themselves, so a refresh does not hand them
+   * back to whichever side the sign-in state would have defaulted to. */
+  deliveryMode?: DeliveryMode;
+}
+
+// ------------------------------------------------------------------
+// Archive upload (see lib/etag.ts, lib/upload.ts)
+// ------------------------------------------------------------------
+
+/** One slice of a blob in the S3 multipart layout: `number` is 1-based, like S3's part numbers. */
+export interface FilePart {
+  number: number;
+  offset: number;
+  size: number;
+}
+
+export interface ServerPart {
+  part_number: number;
+  size: number;
+  upload_url: string;
+}
+
+export interface UploadInitResponse {
+  upload_id: string;
+  parts: ServerPart[];
+}
+
+export interface CompletedPart {
+  part_number: number;
+  size: number;
+  etag: string;
+}
+
+export interface Asset {
+  asset_id: string;
+  path: string;
 }
 
 /** Minimal duck-typed surface of sleap-io.js's video backend that this app actually calls. The
