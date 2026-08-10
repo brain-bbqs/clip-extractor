@@ -126,21 +126,26 @@ interface OpenedSource {
   file: File | null;
 }
 
+// Decoded frames the backend keeps as ImageBitmaps. Each one costs width*height*4 bytes of
+// (non-JS-heap) memory, so at 1080p a 96-frame cache is ~800MB — enough that a large .slp on the
+// heap alongside it pushes the tab into thrashing. 32 still covers the read-ahead window below.
+const FRAME_CACHE_SIZE = 32;
+
 async function openVideoBackend(source: File | string, name: string): Promise<OpenedSource> {
   if (typeof source === "string") {
     try {
-      return { backend: await sio.MediaBunnyVideoBackend.fromUrl(source, { cacheSize: 96 }), file: null };
+      return { backend: await sio.MediaBunnyVideoBackend.fromUrl(source, { cacheSize: FRAME_CACHE_SIZE }), file: null };
     } catch (e) {
       log(`Range/stream open failed (${(e as Error).message}); downloading full file…`, "warn");
       const resp = await fetch(source);
       if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching video`);
       const blob = await resp.blob();
       const file = new File([blob], name, { type: blob.type || "video/mp4" });
-      return { backend: await sio.MediaBunnyVideoBackend.fromBlob(file, name, { cacheSize: 96 }), file };
+      return { backend: await sio.MediaBunnyVideoBackend.fromBlob(file, name, { cacheSize: FRAME_CACHE_SIZE }), file };
     }
   }
   try {
-    return { backend: await sio.MediaBunnyVideoBackend.fromBlob(source, name, { cacheSize: 96 }), file: source };
+    return { backend: await sio.MediaBunnyVideoBackend.fromBlob(source, name, { cacheSize: FRAME_CACHE_SIZE }), file: source };
   } catch (e) {
     log(`MediaBunny failed (${(e as Error).message}); trying mp4box…`, "warn");
     const vb = await sio.createVideoBackend(source, { backend: "mp4box" });
@@ -170,6 +175,8 @@ async function loadVideo(source: File | string, name: string, url: string | null
     state.cur = 0;
     state.inF = null;
     state.outF = null;
+    prefetched = null;
+    prefetchInFlight = false;
     els.view.width = state.width;
     els.view.height = state.height;
     els.emptyStage.style.display = "none";
@@ -225,6 +232,42 @@ function renderFrame(): void {
 // ============================================================
 let seeking = false;
 let pendingSeek: number | null = null;
+
+// Read-ahead bookkeeping. sleap-io.js's getFrame() awaits any in-flight decodeRange before it will
+// serve even an already-cached frame, so asking for a fresh window on every seek made each rendered
+// frame wait on a whole range decode — playback crawled and stalled for seconds at a time while the
+// playhead kept advancing. Ask once per window instead, and never while a request is outstanding.
+//
+// Measured on a 1920x1080 clip (software decode), distinct frames rendered per second and the worst
+// stall: a window per seek 1.8fps/1900ms, one per window 5.6fps/1000ms, and skipping it during
+// playback (below) 5.4fps/350ms. A smaller window is worse, not better — 8 frames re-arms so often
+// that a decode is almost always in flight, back down to 2.2fps. Playback is sequential, which is
+// the access pattern the backend's own decoder already handles well; scrubbing is what benefits from
+// reading ahead.
+const PREFETCH_AHEAD = 30;
+// Re-arm this far before the window's end, so the next range is in flight before it is needed.
+const PREFETCH_MARGIN = 10;
+let prefetched: { lo: number; hi: number } | null = null;
+let prefetchInFlight = false;
+
+function schedulePrefetch(target: number): void {
+  const backend = state.backend;
+  if (!backend || typeof backend.prefetch !== "function" || prefetchInFlight) return;
+  if (prefetched && target >= prefetched.lo && target + PREFETCH_MARGIN <= prefetched.hi) return;
+  const hi = Math.min(state.totalFrames - 1, target + PREFETCH_AHEAD);
+  if (hi <= target) return;
+  // Decode order may be locally reordered (B-frames), so bound the range by min/max.
+  const a = decodeIndex(state.frameOrder, target);
+  const b = decodeIndex(state.frameOrder, hi);
+  prefetched = { lo: target, hi };
+  prefetchInFlight = true;
+  backend
+    .prefetch(Math.min(a, b), Math.max(a, b))
+    .catch(() => {})
+    .finally(() => {
+      prefetchInFlight = false;
+    });
+}
 // Shift-held seeking extends the selection to cover the frames scrubbed over (video mode only).
 let shiftHeld = false;
 let shiftAnchor: number | null = null;
@@ -251,12 +294,7 @@ async function seek(frame: number, force = false): Promise<void> {
         state.cur = target;
         renderFrame();
       }
-      if (typeof state.backend.prefetch === "function") {
-        // Decode order may be locally reordered (B-frames), so bound the range by min/max.
-        const a = decodeIndex(state.frameOrder, target);
-        const b = decodeIndex(state.frameOrder, Math.min(state.totalFrames - 1, target + 30));
-        state.backend.prefetch(Math.min(a, b), Math.max(a, b)).catch(() => {});
-      }
+      if (!state.playing) schedulePrefetch(target);
     } catch (e) {
       log(`Seek error: ${(e as Error).message}`, "err");
     }
