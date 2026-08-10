@@ -6,7 +6,7 @@
 
 **Live:** https://clip-extractor.brain-bbqs.org
 
-A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmolab/sleap-io) for **selecting a clip range or a single frame from a video** and then **downloading it or uploading it to EMBER**. Drop a video (and optionally a SLEAP `.slp` for a pose overlay) into the top file picker, choose **Snippet** or **Frame** selector mode, scrub to the range or frame you want, and pick **Download** or **Upload** in the bottom card. Playback streams directly from the source with no re-encoding; only the extracted snippet is re-encoded, frame-exactly, on the way out.
+A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmolab/sleap-io) for **selecting a clip range or a single frame from a video** and then **downloading it or uploading it to EMBER**. Drop a video (and optionally a SLEAP `.slp` for a pose overlay) into the top file picker, choose **Snippet** or **Frame** selector mode, scrub to the range or frame you want, and pick **Save** or **Upload** in the bottom card. Playback streams directly from the source with no re-encoding; only the extracted snippet is re-encoded, frame-exactly, on the way out.
 
 ## Features
 
@@ -21,8 +21,8 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
 - **Pose overlay** — skeleton edges + nodes drawn per track when a `.slp` is loaded.
 - **Light/dark theme** with an OS-preference default and a header toggle, styled after [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader).
 - **Sign in with EMBER** — the same browser-side OAuth2 (Authorization Code + PKCE) flow as [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader), with the signed-in account behind the header avatar.
-- **Download / Upload toggle** centered on the bottom card, which starts on whichever route is actually usable: **Upload** when you are signed in with at least one incoming dataset, otherwise **Download**.
-  - **Download** — saves the selection to your computer: the snippet as a frame-exact MP4 (trimmed by ffmpeg.wasm), or the selected frame as a PNG.
+- **Save / Upload toggle** centered on the bottom card, which starts on whichever route is actually usable: **Upload** when you are signed in with at least one incoming dataset, otherwise **Save**. Whichever side you pick is remembered across refreshes.
+  - **Save** — writes the selection to your computer: the snippet as a frame-exact MP4 (trimmed by ffmpeg.wasm), or the selected frame as a PNG.
   - **Upload** — sends the same file to the EMBER dataset picked below the toggle, into its own directory under `sourcedata/raw/clip-extractor/<datetime>_snippet/` (or `_frame`, so a listing reads at a glance), following the same `sourcedata/raw/` convention as [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader). Uploading the **original video** alongside it is recommended and pre-selected, but optional; the extracted selection always goes first. Transfers use DANDI's own multipart flow: dandi-etag checksum, presigned part PUTs straight to S3, then asset registration.
 - **BIDS-style names** — every file this app writes is named in entity style, `key-value` pairs joined by underscores and closed by a `type-` entity, so one glance says what a file is:
   - `name-mice_range-120+300_type-snippet.mp4` — the extracted snippet, with its inclusive frame range
@@ -39,7 +39,7 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
 2. Pick **Snippet** or **Frame** mode above the player.
 3. Scrub to your selection: in Snippet mode press **[ Set In** / **Set Out ]** (or `I` / `O`); in Frame mode just seek to the frame.
 4. Optionally flip the **SLEAP annotations (.slp)** switch on the load card and drop a `.slp` into the card that appears.
-5. In the bottom card, pick **Download** to save the selection locally, or **Upload** to send it to EMBER.
+5. In the bottom card, pick **Save** to write the selection to your computer, or **Upload** to send it to EMBER.
 6. For an upload, **Sign in with EMBER** in the header first; only `Incoming: ` datasets you own that a BBQS/EMBER admin also owns are offered. Leave **Also upload the original video** on unless you know the original is already archived — either way, its name and checksum are recorded in the provenance JSON written alongside the clip.
 
 URL params: `?url=<video>&slp=<labels>` auto-load on open.
@@ -60,4 +60,4 @@ A standard TypeScript + Vite app (structure and CI mirror [bbqs-uploader](https:
 
 > let's start a /new-vibe in a new PR. use sleap-io.js extensively (look at the other open PR and other vibes that have video players -- though careful, some of them are out of date). make a video player that supports both remote web endpoints + local file system access api reading (this is all handled by sleap-io.js) and is optimized for selecting a clip that we will extract with ffmpeg wasm (see PR 67 and related issue) to transmit to a ember backend (details on the handoff TBD). right now it should just be able to pull up a video, optionally with an SLP file (also sleap-io.js) and pull out the frames (+ annotations, encoded out as json for payload transmission, no SLP dependency), and get it ready for transmission to a POST request to a REST API backend (again, protocol TBD) for upload
 
-Follow-ups locked the name (`clip-extractor`) and redesigned the interface: top-loading drag-and-drop file picker, a Video/Frame selector toggle (direct streaming, no re-encoding), an optional `.slp` loader above the player, and a bottom Download/Upload card, with layout and styling based on [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader).
+Follow-ups locked the name (`clip-extractor`) and redesigned the interface: top-loading drag-and-drop file picker, a Video/Frame selector toggle (direct streaming, no re-encoding), an optional `.slp` loader above the player, and a bottom Save/Upload card, with layout and styling based on [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader).

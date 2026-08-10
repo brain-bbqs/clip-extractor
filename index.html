@@ -292,7 +292,9 @@
       <section class="card" id="deliverCard">
         <div class="toggle-row">
           <div class="seg" id="deliverSeg" role="group" aria-label="Delivery">
-            <button type="button" data-deliver="download" class="active" aria-pressed="true">Download</button>
+            <!-- The data-deliver values are the persisted setting (see StoredSettings.deliveryMode),
+                 so they stay "download"/"upload" even though this side now reads "Save". -->
+            <button type="button" data-deliver="download" class="active" aria-pressed="true">Save</button>
             <button type="button" data-deliver="upload" aria-pressed="false">Upload</button>
           </div>
         </div>

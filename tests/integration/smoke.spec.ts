@@ -55,16 +55,19 @@ test("SLEAP annotations card is revealed by its toggle (default off)", async ({ 
   await expect(page.locator("#slpCard")).toBeHidden();
 });
 
-test("delivery card defaults to Download while signed out", async ({ page }) => {
+test("delivery card defaults to Save while signed out", async ({ page }) => {
   await page.goto("/");
+  // The stored setting is still "download"; only the label reads "Save".
+  await expect(page.locator('#deliverSeg button[data-deliver="download"]')).toHaveText("Save");
   await expect(page.locator('#deliverSeg button[data-deliver="download"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#btnDownload")).toHaveText("Save");
   await expect(page.locator("#downloadPane")).toBeVisible();
   await expect(page.locator("#uploadPane")).toBeHidden();
   await expect(page.locator("#btnDownload")).toBeDisabled();
   await expect(page.locator("#downloadStatus")).toContainText("Load a video");
 });
 
-test("delivery toggle swaps between the download and upload panes", async ({ page }) => {
+test("delivery toggle swaps between the save and upload panes", async ({ page }) => {
   await page.goto("/");
 
   await page.locator('#deliverSeg button[data-deliver="upload"]').click();
