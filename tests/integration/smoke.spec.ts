@@ -54,24 +54,41 @@ test("source toggle swaps between the local dropzone and the EMBER stream pane",
 
 test("mode toggle switches the selector between range and single frame", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("#btnSetIn")).toBeVisible();
-  await expect(page.locator("#btnSetOut")).toBeVisible();
   await expect(page.locator("#selbar")).toBeVisible();
+  await expect(page.locator("#inVal")).toBeVisible();
+  await expect(page.locator("#outVal")).toBeVisible();
 
   // The description prompt in the delivery card names whichever kind of selection is being made.
   await expect(page.locator("#selectionDescription")).toHaveAttribute("placeholder", /What event does this snippet showcase\?/);
 
   await page.locator('#modeSeg button[data-mode="frame"]').click();
-  await expect(page.locator("#btnSetIn")).toBeHidden();
-  await expect(page.locator("#btnSetOut")).toBeHidden();
   await expect(page.locator("#selbar")).toBeHidden();
+  await expect(page.locator("#inVal")).toBeHidden();
+  await expect(page.locator("#outVal")).toBeHidden();
+  // The current frame is the frame-mode selection, so its field stays — and stays typeable.
+  await expect(page.locator("#curVal")).toBeVisible();
   await expect(page.locator("#selectionDescription")).toHaveAttribute("placeholder", /What event does this frame showcase\?/);
 
   await page.locator('#modeSeg button[data-mode="video"]').click();
-  await expect(page.locator("#btnSetIn")).toBeVisible();
-  await expect(page.locator("#btnSetOut")).toBeVisible();
   await expect(page.locator("#selbar")).toBeVisible();
+  await expect(page.locator("#inVal")).toBeVisible();
+  await expect(page.locator("#outVal")).toBeVisible();
   await expect(page.locator("#selectionDescription")).toHaveAttribute("placeholder", /What event does this snippet showcase\?/);
+});
+
+test("the transport carries no first/last frame buttons", async ({ page }) => {
+  await page.goto("/");
+  // Removed in favour of the timeline itself: dragging to either end is the same gesture as any
+  // other seek, and the two buttons only ever crowded the row.
+  await expect(page.locator("#btnFirst")).toHaveCount(0);
+  await expect(page.locator("#btnLast")).toHaveCount(0);
+  // Set In / Set Out went with them — the trim handles below the playhead replace them (the
+  // `[ ] I O` shortcuts still mark either end at the playhead).
+  await expect(page.locator("#btnSetIn")).toHaveCount(0);
+  await expect(page.locator("#btnSetOut")).toHaveCount(0);
+  await expect(page.locator("#btnPrev")).toBeVisible();
+  await expect(page.locator("#btnPlay")).toBeVisible();
+  await expect(page.locator("#btnNext")).toBeVisible();
 });
 
 test("SLEAP annotations card is revealed by its toggle (default off)", async ({ page }) => {

@@ -15,8 +15,11 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
   - **Stream from EMBER** — paste an EMBER/DANDI asset URL and stream it directly (`MediaBunnyVideoBackend.fromUrl`, with a full-download fallback); also reachable via the `?url=` param.
 - **Optional SLEAP annotations step** — an on/off switch at the top right of the load card (default off) reveals a second card for loading a `.slp` (`loadSlp({ openVideos: false })`); dropping a `.slp` anywhere enables it automatically.
 - **Snippet / Frame selector toggle** centered above the player:
-  - **Snippet** — mark an in/out range with **[ Set In** / **Set Out ]** (or `I` / `O`); the clip streams directly, no re-encoding.
+  - **Snippet** — bound the range with the two **In** / **Out** handles on the trim track under the playhead; the clip streams directly, no re-encoding.
   - **Frame** — scrub to select a single frame.
+  - Switching between the two keeps whatever was marked, so a look at a single frame does not cost you a snippet range you had already trimmed.
+- **Two-handle trim track** — a second track under the playhead slider carrying the **In** and **Out** handles and the band between them, so scrubbing and trimming never compete for the same drag. Drag either handle to trim, drag the band to slide the whole range at its current length, or press anywhere on the track to bring the nearer handle to it. Handles are keyboard-operable (`←/→` by one frame, `Shift` by ten, `Home`/`End` to the bounds), and `[` / `]` (or `I` / `O`) still mark either end at the playhead.
+- **Typed frame indices** — the **In**, **Current** and **Out** readouts under the transport are entry fields: type an exact frame and press `Enter` instead of hunting for it. Out-of-range entries are clamped rather than rejected.
 - **Frame-accurate player** — play/pause, step, scrub, speed control, and a B-frame decode→display reorder (from `getFrameTimes`) so playback never jumps backwards. Keyboard: `Space` play/pause, `←/→` step, `Shift`+scrub extends the range.
 - **Pose overlay** — skeleton edges + nodes drawn per track when a `.slp` is loaded.
 - **Light/dark theme** with an OS-preference default and a header toggle, styled after [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader).
@@ -42,7 +45,7 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
 
 1. Pick a source at the top: drop a local video into the picker (or click to browse; **Load the sample (mice)** works too), or switch to **Stream from EMBER** and paste an asset URL.
 2. Pick **Snippet** or **Frame** mode above the player.
-3. Scrub to your selection: in Snippet mode press **[ Set In** / **Set Out ]** (or `I` / `O`); in Frame mode just seek to the frame.
+3. Pick your selection: in Snippet mode drag the **In** and **Out** handles on the trim track (or type frame indices into the **In** / **Out** boxes, or press `I` / `O` to mark either end at the playhead); in Frame mode seek to the frame, or type its index into the **Current** box.
 4. Optionally flip the **SLEAP annotations (.slp)** switch on the load card and drop a `.slp` into the card that appears.
 5. In the bottom card, describe the selection — what event it showcases, or what went wrong in it — then pick **Save** to write it to your computer as a `.tar.gz`, or **Upload** to send it to EMBER. Both carry the same files and the same description, and neither is available until the description is filled in.
 6. For an upload, **Sign in with EMBER** in the header first; only `Incoming: ` datasets you own that a BBQS/EMBER admin also owns are offered. Leave **Include the original content** on unless you know the source is already archived — either way, its name and checksum are recorded in the provenance JSON written alongside the clip.
