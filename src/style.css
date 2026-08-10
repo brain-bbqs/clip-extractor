@@ -862,9 +862,11 @@ textarea {
   text-decoration: underline;
 }
 
+/* Bottom-aligned so the Talmo Lab name below its flask lands on the same line as the wordmark
+   baked into the bottom of the CON logo. */
 .footer-brands {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 0.9rem;
 }
 
@@ -875,16 +877,52 @@ textarea {
   opacity: 0.312;
 }
 
-/* The Talmo Lab mark is drawn white-on-charcoal, so unlike the CON wordmark it cannot go
-   background-free; the rounded crop keeps that dark field reading as a badge in both themes. Its
-   own contrast is what fades at low opacity (the white flask washes into the charcoal), so it sits
-   higher than CON's 0.312 to stay legible while still reading as a watermark. */
-.talmo-brand-link img {
+/* Badge over name, so the lockup stands the same height as the CON logo's own mark-over-wordmark. */
+.talmo-brand-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  text-decoration: none;
+}
+
+.talmo-brand-logo {
   display: block;
-  height: 3.4rem;
-  width: 3.4rem;
-  border-radius: 12px;
-  opacity: 0.5;
+  height: 2.7rem;
+  width: 2.7rem;
+  opacity: 0.312;
+}
+
+/* The Talmo Lab flask is drawn with a near-black outline in the lab's default logo and a white one
+   in the variant they use on dark backgrounds, so each theme loads the variant it can actually
+   see. The dark blocks below must stay in sync with the two dark palette blocks at the top of this
+   file. */
+.talmo-brand-logo.on-dark {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .talmo-brand-logo.on-light {
+    display: none;
+  }
+  :root:not([data-theme="light"]) .talmo-brand-logo.on-dark {
+    display: block;
+  }
+}
+:root[data-theme="dark"] .talmo-brand-logo.on-light {
+  display: none;
+}
+:root[data-theme="dark"] .talmo-brand-logo.on-dark {
+  display: block;
+}
+
+/* Faded to about the logos' own weight, so the name reads as part of the watermark rather than as
+   the loudest thing in the corner. */
+.talmo-brand-link span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.45;
 }
 
 .consent-banner {
@@ -923,12 +961,12 @@ textarea {
 
 /* main caps out at a 928px-wide content box (960px max-width minus its own 1rem/16px side padding),
    so each side gutter is (viewport - 928) / 2. Measured against the built page, the corner
-   watermark and the footer's left column need ~181px of gutter and the CON + Talmo Lab brand pair
-   needs ~211px, so cards stop clearing them at around a 1350px-wide viewport. Below that the fixed
+   watermark and the footer's left column need ~181px of gutter and the Talmo Lab + CON brand pair
+   needs ~222px, so cards stop clearing them at around a 1372px-wide viewport. Below that the fixed
    corners end up pinned on top of card content as the page scrolls instead of framing it, so take
    them out of fixed positioning and let them sit in normal document flow (the watermark logo is
    dropped entirely, since the header already carries the app's own mark). The 1400px threshold
-   leaves a little slack past the measured 1350px for footer-text width drifting with future
+   leaves a little slack past the measured 1372px for footer-text width drifting with future
    version strings. */
 @media (max-width: 1400px) {
   .brand-watermark-link {

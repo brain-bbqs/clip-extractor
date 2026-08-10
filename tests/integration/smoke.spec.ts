@@ -25,8 +25,13 @@ test("brand watermarks and the version link frame the page", async ({ page }) =>
 
   await expect(page.locator(".con-brand-link")).toHaveAttribute("href", "https://centerforopenneuroscience.org");
   await expect(page.locator(".con-brand-link img")).toBeVisible();
-  await expect(page.locator(".talmo-brand-link")).toHaveAttribute("href", "https://talmolab.org/");
-  await expect(page.locator(".talmo-brand-link img")).toBeVisible();
+  const talmo = page.locator(".talmo-brand-link");
+  await expect(talmo).toHaveAttribute("href", "https://talmolab.org/");
+  // Only the variant matching the active theme is shown; this run is in the default light theme.
+  await expect(talmo.locator(".talmo-brand-logo.on-light")).toBeVisible();
+  await expect(talmo.locator(".talmo-brand-logo.on-dark")).toBeHidden();
+  // The mark carries no wordmark of its own, so the name is spelled out under it.
+  await expect(talmo).toHaveText("Talmo Lab");
 
   const version = page.locator("#version-indicator");
   await expect(version).toHaveText(/^v\d+\.\d+\.\d+$/);

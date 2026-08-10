@@ -405,6 +405,15 @@ Note anything that went wrong in it, or any other details you want to share alon
         </div>
       </div>
       <div class="footer-brands">
+        <!-- The Talmo Lab mark is a wordless flask, so the name is spelled out beneath it the way
+             the CON logo carries its own wordmark. Two logo files rather than one, because the
+             lab's default flask is dark-stroked and disappears against the dark theme; CSS shows
+             whichever matches the active theme, and the span below names the link for both. -->
+        <a class="talmo-brand-link" href="https://talmolab.org/" target="_blank" rel="noopener" title="Talmo Lab">
+          <img class="talmo-brand-logo on-light" src="/src/assets/talmolab-logo.svg" alt="" />
+          <img class="talmo-brand-logo on-dark" src="/src/assets/talmolab-logo-on-dark.svg" alt="" />
+          <span>Talmo Lab</span>
+        </a>
         <a
           class="con-brand-link"
           href="https://centerforopenneuroscience.org"
@@ -414,9 +423,6 @@ Note anything that went wrong in it, or any other details you want to share alon
           title="Center for Open Neuroscience"
         >
           <img src="/src/assets/con-logo.png" alt="Center for Open Neuroscience" />
-        </a>
-        <a class="talmo-brand-link" href="https://talmolab.org/" target="_blank" rel="noopener" aria-label="Talmo Lab" title="Talmo Lab">
-          <img src="/src/assets/talmolab-logo.png" alt="Talmo Lab" />
         </a>
       </div>
     </div>
