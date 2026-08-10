@@ -64,7 +64,7 @@ test("a save writes a bundle holding the extract, the original and their provena
   expect(directory).toMatch(/^date-\d{8}_time-\d{6}_type-frame$/);
   expect(entries.map((e) => e.path.slice(directory.length + 1))).toEqual([
     "name-file+example+480+Copy_index-5_type-frame_image.png",
-    "file_example_480-Copy.webm",
+    "original/file_example_480-Copy.webm",
     "name-file+example+480+Copy_index-5_type-frame_provenance.json",
   ]);
   expect(entries.every((e) => e.path.startsWith(`${directory}/`))).toBe(true);
@@ -79,7 +79,7 @@ test("a save writes a bundle holding the extract, the original and their provena
   // The original rode along, checksummed exactly as an upload would have registered it.
   const source = provenance.source_video as Record<string, unknown>;
   expect(source.uploaded).toBe(true);
-  expect(source.asset_path).toBe(`${directory}/file_example_480-Copy.webm`);
+  expect(source.asset_path).toBe(`${directory}/original/file_example_480-Copy.webm`);
   expect((source.checksum as { value: string }).value).toMatch(/^[0-9a-f]{32}-\d+$/);
 });
 

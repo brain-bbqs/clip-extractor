@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ORIGINAL_SUBDIRECTORY,
   UPLOAD_ROOT,
   defaultDeliveryMode,
   fileBrowserUrl,
@@ -71,9 +72,17 @@ describe("uploadAssetPath", () => {
 });
 
 describe("uploadOriginalPath", () => {
-  it("keeps the original's own name, minus spaces", () => {
+  it("keeps the original's own name, minus spaces, in its own subdirectory", () => {
     expect(uploadOriginalPath("sourcedata/raw/clip-extractor/stamp", "file_example_480 - Copy.webm")).toBe(
-      "sourcedata/raw/clip-extractor/stamp/file_example_480-Copy.webm",
+      "sourcedata/raw/clip-extractor/stamp/original/file_example_480-Copy.webm",
+    );
+  });
+
+  it("separates what was handed to the app from what the app produced", () => {
+    const directory = "date-20260810_time-031053_type-snippet";
+    expect(uploadOriginalPath(directory, "mice.mp4")).toBe(`${directory}/${ORIGINAL_SUBDIRECTORY}/mice.mp4`);
+    expect(uploadAssetPath(directory, "name-mice_range-0+30_type-snippet_video.mp4")).toBe(
+      `${directory}/name-mice_range-0+30_type-snippet_video.mp4`,
     );
   });
 });

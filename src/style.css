@@ -669,8 +669,10 @@ input[type="checkbox"] {
   font-size: 0.9rem;
   color: var(--muted);
 }
-.deliver-description em {
-  font-style: normal;
+/* Marks the field as required, in the same red the app uses for anything that needs attention. */
+.deliver-description .required {
+  color: var(--err);
+  font-weight: 700;
 }
 textarea {
   display: block;

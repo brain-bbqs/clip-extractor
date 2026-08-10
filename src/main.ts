@@ -963,7 +963,9 @@ function hasSelection(): boolean {
 /** The copy in the delivery card that names whichever kind of selection the selector is on. */
 function updateDeliveryCopy(kind: SelectionKind): void {
   els.downloadHint.textContent = `Saves the selected ${kind} to your computer, packed with everything an upload would have carried.`;
-  els.selectionDescription.placeholder = `What event does this ${kind} showcase? Note anything that went wrong in it, or any other details you want to share along with the clip.`;
+  // A textarea honours line breaks in its placeholder, so the two sentences get a line each, with a
+  // blank one between them.
+  els.selectionDescription.placeholder = `What event does this ${kind} showcase?\n\nNote anything that went wrong in it, or any other details you want to share along with the clip.`;
 }
 
 // Enablement, the embargo warning, and both panes' copy, all derived from the current video,

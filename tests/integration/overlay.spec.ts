@@ -25,11 +25,14 @@ test("a loaded .slp adds the annotations file and a rendered overlay to the uplo
   await page.locator("#btnUpload").click();
   await expect(page.locator("#uploadStatus")).toContainText("Upload complete", { timeout: 120_000 });
 
-  expect(registered.map((path) => path.split("/").pop())).toEqual([
+  // The video and the .slp are the content this app was handed, so they sit together under
+  // `original/`; the extract, its overlay and the sidecar are what it produced.
+  const directory = registered[0].slice(0, registered[0].lastIndexOf("/"));
+  expect(registered.map((path) => path.slice(directory.length + 1))).toEqual([
     "name-mice+new_index-5_type-frame_image.png",
     "name-mice+new_index-5_type-frame_overlay.png",
-    "mice_new.webm",
-    "mice_new.tracked.slp",
+    "original/mice_new.webm",
+    "original/mice_new.tracked.slp",
     "name-mice+new_index-5_type-frame_provenance.json",
   ]);
 });

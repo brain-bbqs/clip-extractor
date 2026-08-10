@@ -6,6 +6,12 @@ import { stubArchive, loadRecordedVideo } from "./helpers";
 // mirrors them, and the original video's untouched name. A single frame is used as the selection
 // because that path needs no ffmpeg.wasm (and so no CDN) to produce a real file.
 
+/** The delivery directory an asset sits in, seen past the `original/` subdirectory. */
+function directoryOf(path: string): string {
+  const directory = path.slice(0, path.lastIndexOf("/"));
+  return directory.endsWith("/original") ? directory.slice(0, -"/original".length) : directory;
+}
+
 test("an upload registers the extract, the original and a matching provenance sidecar", async ({ page }) => {
   const { registered, uploaded } = await stubArchive(page);
 
@@ -25,13 +31,14 @@ test("an upload registers the extract, the original and a matching provenance si
 
   expect(registered).toHaveLength(3);
   // One timestamped directory for the whole upload, tagged with what it holds.
-  const directories = new Set(registered.map((path) => path.slice(0, path.lastIndexOf("/"))));
+  const directories = new Set(registered.map(directoryOf));
   expect(directories.size).toBe(1);
   expect([...directories][0]).toMatch(/^sourcedata\/raw\/clip-extractor\/date-\d{8}_time-\d{6}_type-frame$/);
-  // The extract goes up first, then the original, then the sidecar naming both.
-  expect(registered.map((path) => path.split("/").pop())).toEqual([
+  // The extract goes up first, then the original, then the sidecar naming both — with original
+  // content in its own subdirectory, and what the app produced at the top.
+  expect(registered.map((path) => path.slice(directoryOf(path).length + 1))).toEqual([
     "name-file+example+480+Copy_index-5_type-frame_image.png",
-    "file_example_480-Copy.webm",
+    "original/file_example_480-Copy.webm",
     "name-file+example+480+Copy_index-5_type-frame_provenance.json",
   ]);
 

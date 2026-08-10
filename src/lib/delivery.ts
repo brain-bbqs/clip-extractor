@@ -39,10 +39,14 @@ export function uploadAssetPath(directory: string, filename: string): string {
   return sanitizePath(directory, sanitizeFilename(filename));
 }
 
-/** Same, but leaving the file name exactly as it arrived — for the original video, which is
- * uploaded untouched rather than renamed. */
+/** Where original content sits: its own subdirectory of a delivery, so the files this app produced
+ * and the files it was handed do not read as one undifferentiated listing. */
+export const ORIGINAL_SUBDIRECTORY = "original";
+
+/** Same as uploadAssetPath, but under `original/` and leaving the file name exactly as it arrived —
+ * the source video and any `.slp` travel untouched rather than renamed. */
 export function uploadOriginalPath(directory: string, filename: string): string {
-  return sanitizePath(directory, verbatimFilename(filename));
+  return sanitizePath(`${directory}/${ORIGINAL_SUBDIRECTORY}`, verbatimFilename(filename));
 }
 
 /** A deep link into the archive's file browser, opened straight at an upload's own directory rather
