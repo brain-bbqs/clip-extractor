@@ -32,6 +32,7 @@ const base: ProvenanceInput = {
     checksum: `${"b".repeat(32)}-1`,
     encoding: "ffmpeg -i in.mp4 -vf trim=start_frame=120:end_frame=150 out.mp4",
   },
+  overlay: null,
   annotations: null,
 };
 
@@ -115,6 +116,32 @@ describe("buildProvenance", () => {
 
   it("records no annotations block when no .slp was loaded", () => {
     expect(buildProvenance(base).annotations).toBeNull();
+  });
+
+  it("records no overlay when there was nothing to draw", () => {
+    expect(buildProvenance(base).overlay).toBeNull();
+  });
+
+  it("records the rendered overlay as its own file", () => {
+    const doc = buildProvenance({
+      ...base,
+      overlay: {
+        filename: "name-mice_range-120+149_type-snippet_desc-overlay_video.mp4",
+        assetPath: "sourcedata/raw/clip-extractor/stamp/name-mice_range-120+149_type-snippet_desc-overlay_video.mp4",
+        mediaType: "video/mp4",
+        sizeBytes: 4096,
+        checksum: `${"d".repeat(32)}-1`,
+        encoding: "ffmpeg -framerate 30.0000 -i ov%06d.png -c:v libx264 overlay.mp4",
+      },
+    });
+    expect(doc.overlay).toEqual({
+      filename: "name-mice_range-120+149_type-snippet_desc-overlay_video.mp4",
+      asset_path: "sourcedata/raw/clip-extractor/stamp/name-mice_range-120+149_type-snippet_desc-overlay_video.mp4",
+      media_type: "video/mp4",
+      size_bytes: 4096,
+      checksum: { algorithm: "dandi:dandi-etag", value: `${"d".repeat(32)}-1` },
+      encoding: "ffmpeg -framerate 30.0000 -i ov%06d.png -c:v libx264 overlay.mp4",
+    });
   });
 
   it("names, checksums and locates an uploaded .slp alongside its counts", () => {

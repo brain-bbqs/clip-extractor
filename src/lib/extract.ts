@@ -1,7 +1,8 @@
 import { ensureFfmpeg, ffmpegArgs } from "./ffmpeg";
 import { decodeIndex, drawVideoFrame } from "./video";
+import { drawPose } from "./pose";
 import type { SelectionKind } from "./delivery";
-import type { SleapVideoBackend, TrimMode } from "./types";
+import type { PoseModel, SleapVideoBackend, TrimMode } from "./types";
 
 // Turns the current selection into a single file, ready for either delivery route (download or
 // upload). Snippets go through ffmpeg.wasm; a single frame is re-decoded onto an offscreen canvas
@@ -26,8 +27,11 @@ export type ExtractProgress = (message: string, fraction?: number) => void;
 //   name-<source>_range-<in>+<out>_type-snippet_video.mp4
 //   name-<source>_range-<in>+<out>_type-snippet_provenance.json
 // A sidecar shares every entity with the file it describes and differs only in that suffix, so the
-// pair sits side by side in a listing. The original video is not renamed at all — it keeps the name
-// it arrived with (see runUpload in main.ts).
+// pair sits side by side in a listing. A rendered variant of the same selection takes a `desc-`
+// entity, BIDS's marker for a derived version:
+//   name-<source>_range-<in>+<out>_type-snippet_desc-overlay_video.mp4
+// The original video is not renamed at all — it keeps the name it arrived with (see runUpload in
+// main.ts).
 
 /** The source file name minus its extension, for naming derived files. */
 export function sourceBaseName(sourceName: string): string {
@@ -68,24 +72,48 @@ function selectionEntity(entities: AssetEntities): string {
   return entities.mode === "frame" ? `index-${entities.inFrame}` : `range-${entities.inFrame}+${entities.outFrame}`;
 }
 
-/** `name-…_<selection>_type-<type>[_<suffix>].<extension>` for one file of an extraction. */
-export function assetFileName(entities: AssetEntities, type: string, extension: string, suffix?: string): string {
-  const tail = suffix ? `_${suffix}` : "";
-  return `${nameEntity(entities.sourceName)}_${selectionEntity(entities)}_type-${type}${tail}.${extension}`;
+/** One file of an extraction: `name-…_<selection>_type-<type>[_desc-…][_<suffix>].<extension>`. */
+export interface AssetNameParts {
+  type: string;
+  /** Marks a derived variant of the same selection, e.g. `overlay`. */
+  desc?: string;
+  /** Names what the file holds: `video`, `image`, `provenance`. */
+  suffix?: string;
+  extension: string;
+}
+
+export function assetFileName(entities: AssetEntities, parts: AssetNameParts): string {
+  const desc = parts.desc ? `_desc-${parts.desc}` : "";
+  const suffix = parts.suffix ? `_${parts.suffix}` : "";
+  return `${nameEntity(entities.sourceName)}_${selectionEntity(entities)}_type-${parts.type}${desc}${suffix}.${parts.extension}`;
 }
 
 export function clipFileName(sourceName: string, lo: number, hi: number): string {
-  return assetFileName({ sourceName, mode: "snippet", inFrame: lo, outFrame: hi }, "snippet", "mp4", "video");
+  return assetFileName({ sourceName, mode: "snippet", inFrame: lo, outFrame: hi }, { type: "snippet", suffix: "video", extension: "mp4" });
 }
 
 export function frameFileName(sourceName: string, frame: number): string {
-  return assetFileName({ sourceName, mode: "frame", inFrame: frame, outFrame: frame }, "frame", "png", "image");
+  return assetFileName(
+    { sourceName, mode: "frame", inFrame: frame, outFrame: frame },
+    { type: "frame", suffix: "image", extension: "png" },
+  );
 }
 
 /** The sidecar shares every entity with the file it describes — including its `type-` — and differs
  * only in its suffix, so the pair sits side by side in a listing. */
 export function provenanceFileName(entities: AssetEntities): string {
-  return assetFileName(entities, entities.mode, "json", "provenance");
+  return assetFileName(entities, { type: entities.mode, suffix: "provenance", extension: "json" });
+}
+
+/** The same selection with the pose drawn into the pixels — a derived variant, so `desc-overlay`. */
+export function overlayFileName(entities: AssetEntities): string {
+  const frameMode = entities.mode === "frame";
+  return assetFileName(entities, {
+    type: entities.mode,
+    desc: "overlay",
+    suffix: frameMode ? "image" : "video",
+    extension: frameMode ? "png" : "mp4",
+  });
 }
 
 export interface ExtractClipParams {
@@ -184,4 +212,108 @@ export async function extractFrame(params: ExtractFrameParams): Promise<Extracte
     mime: "image/png",
     encoding: "canvas.toBlob(image/png), decoded frame without pose overlay",
   };
+}
+
+export interface ExtractOverlayParams {
+  backend: SleapVideoBackend;
+  frameOrder: number[] | null;
+  pose: PoseModel;
+  mode: SelectionKind;
+  /** Inclusive source-frame bounds; equal to each other in frame mode. */
+  inFrame: number;
+  outFrame: number;
+  fps: number;
+  width: number;
+  height: number;
+  sourceName: string;
+  onProgress?: ExtractProgress;
+}
+
+/**
+ * Renders the same selection with the pose drawn into the pixels, for looking at without needing a
+ * viewer that understands `.slp`. A frame comes out as a PNG; a snippet is drawn frame by frame and
+ * encoded by the same ffmpeg.wasm that trims the plain snippet, so both are frame-exact H.264 and
+ * neither depends on which codecs the browser itself can encode.
+ */
+export async function extractOverlay(params: ExtractOverlayParams): Promise<ExtractedMedia> {
+  const { backend, frameOrder, pose, mode, inFrame, outFrame, fps, width, height, sourceName, onProgress } = params;
+  const entities: AssetEntities = { sourceName, mode, inFrame, outFrame };
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas 2D context unavailable");
+
+  async function renderOverlayFrame(frame: number): Promise<Blob> {
+    const decoded = await backend.getFrame(decodeIndex(frameOrder, frame));
+    if (!decoded) throw new Error(`Frame ${frame} could not be decoded`);
+    ctx!.clearRect(0, 0, width, height);
+    drawVideoFrame(decoded, ctx!, width, height);
+    drawPose(ctx!, pose.byFrame.get(frame), pose.skeleton, width);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("The browser could not encode the overlay frame as a PNG");
+    return blob;
+  }
+
+  if (mode === "frame") {
+    onProgress?.(`Drawing the overlay on frame ${inFrame}…`);
+    return {
+      blob: await renderOverlayFrame(inFrame),
+      filename: overlayFileName(entities),
+      mime: "image/png",
+      encoding: "canvas.toBlob(image/png), decoded frame with the pose overlay drawn in",
+    };
+  }
+
+  const total = outFrame - inFrame + 1;
+  const outName = "overlay.mp4";
+  const written: string[] = [];
+  onProgress?.("Loading ffmpeg.wasm…");
+  const ff = await ensureFfmpeg({ onLog: (m) => console.debug("[ffmpeg]", m) });
+  try {
+    for (let i = 0; i < total; i++) {
+      const png = await renderOverlayFrame(inFrame + i);
+      const name = `ov${String(i).padStart(6, "0")}.png`;
+      await ff.writeFile(name, new Uint8Array(await png.arrayBuffer()));
+      written.push(name);
+      onProgress?.(`Drawing the overlay… frame ${i + 1}/${total}`, (i + 1) / total);
+    }
+    // A PNG sequence rather than a filter over the source: the overlay only exists on these canvases,
+    // and image2 input keeps the cut frame-exact without re-deriving the range.
+    const args = [
+      "-framerate",
+      fps.toFixed(4),
+      "-start_number",
+      "0",
+      "-i",
+      "ov%06d.png",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "23",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+      outName,
+    ];
+    const command = `ffmpeg ${args.join(" ")}`;
+    console.info(`$ ${command}`);
+    onProgress?.("Encoding the overlay snippet…", 0);
+    await ff.exec(args);
+    const data = await ff.readFile(outName);
+    const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
+    if (!blob.size) throw new Error("ffmpeg produced an empty overlay clip");
+    return { blob, filename: overlayFileName(entities), mime: "video/mp4", encoding: command };
+  } finally {
+    for (const name of [...written, outName]) {
+      try {
+        await ff.deleteFile(name);
+      } catch {
+        // Best-effort cleanup of ffmpeg's virtual filesystem; a leftover temp file is harmless.
+      }
+    }
+  }
 }

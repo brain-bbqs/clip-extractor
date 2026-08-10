@@ -64,6 +64,16 @@ export interface ProvenanceExtracted {
   encoding: string;
 }
 
+/** A rendered variant of the selection — currently the pose-overlay version. */
+export interface ProvenanceRendered {
+  filename: string;
+  asset_path: string;
+  media_type: string;
+  size_bytes: number;
+  checksum: ProvenanceChecksum;
+  encoding: string;
+}
+
 export interface ProvenanceAnnotations {
   /** The `.slp` the annotations were read from, or null when it came from a URL rather than a local
    * file (in which case there are no local bytes to name, checksum or upload). */
@@ -98,6 +108,9 @@ export interface ProvenanceDocument {
   source_video: ProvenanceSource;
   selection: ProvenanceSelection;
   extracted: ProvenanceExtracted;
+  /** The same selection with the pose drawn into the pixels; null when no annotations were loaded,
+   * since there would be nothing to draw. */
+  overlay: ProvenanceRendered | null;
   /** Null when no SLEAP annotations were loaded for this selection. */
   annotations: ProvenanceAnnotations | null;
 }
@@ -135,6 +148,14 @@ export interface ProvenanceInput {
     checksum: string;
     encoding: string;
   };
+  overlay: {
+    filename: string;
+    assetPath: string;
+    mediaType: string;
+    sizeBytes: number;
+    checksum: string;
+    encoding: string;
+  } | null;
   annotations: ProvenanceAnnotationsInput | null;
 }
 
@@ -178,6 +199,15 @@ export function buildProvenance(input: ProvenanceInput): ProvenanceDocument {
       // Non-null by construction: the extracted file is always checksummed on its way up.
       checksum: checksum(input.extracted.checksum)!,
       encoding: input.extracted.encoding,
+    },
+    overlay: input.overlay && {
+      filename: input.overlay.filename,
+      asset_path: input.overlay.assetPath,
+      media_type: input.overlay.mediaType,
+      size_bytes: input.overlay.sizeBytes,
+      // Non-null by construction: an overlay is always checksummed on its way up.
+      checksum: checksum(input.overlay.checksum)!,
+      encoding: input.overlay.encoding,
     },
     annotations: input.annotations && {
       filename: input.annotations.filename,

@@ -20,6 +20,7 @@ import {
   clipFileName,
   extractClip,
   extractFrame,
+  extractOverlay,
   frameFileName,
   provenanceFileName,
   type AssetEntities,
@@ -1047,8 +1048,83 @@ interface UploadedSlp {
   path: string | null;
 }
 
+/** The rendered pose-overlay companion to a selection, once uploaded. */
+interface UploadedOverlay {
+  media: ExtractedMedia;
+  path: string;
+  digest: BlobDigest;
+}
+
+/**
+ * Renders and uploads the selection with the pose drawn into the pixels, so it can be looked at
+ * without a viewer that understands `.slp`. Null when no annotations are loaded, since there would be
+ * nothing to draw. Deliberately not tied to the "include the original content" toggle: this is a view
+ * of the selection, not a copy of a source.
+ */
+async function uploadOverlay(
+  cfg: ArchiveConfig,
+  directory: string,
+  entities: AssetEntities,
+  backend: SleapVideoBackend,
+): Promise<UploadedOverlay | null> {
+  const pose = els.slpToggle.checked ? state.pose : null;
+  if (!pose) return null;
+  const media = await extractOverlay({
+    backend,
+    frameOrder: state.frameOrder,
+    pose,
+    mode: entities.mode,
+    inFrame: entities.inFrame,
+    outFrame: entities.outFrame,
+    fps: state.fps,
+    width: state.width,
+    height: state.height,
+    sourceName: state.sourceName,
+    onProgress: (message, fraction) => {
+      setStatus(els.uploadStatus, message);
+      setUploadProgress(fraction ?? 0);
+    },
+  });
+  const path = uploadAssetPath(directory, media.filename);
+  const digest = await uploadOne(cfg, media.blob, path, media.mime, "the pose overlay");
+  return { media, path, digest };
+}
+
+/** Checksums the source video, and uploads it when the toggle asks for it. The checksum is taken
+ * either way: recording which video a clip came from is only useful if that video can be identified
+ * again later. */
+async function uploadOriginalVideo(
+  cfg: ArchiveConfig,
+  directory: string,
+): Promise<{ original: File | null; originalDigest: BlobDigest | null; originalPath: string | null }> {
+  const original = state.sourceFile;
+  if (!original) return { original: null, originalDigest: null, originalPath: null };
+  const originalDigest = await checksumBlob(original, (f) => reportUploadStep("the original video", PHASE_LABEL.checksum, f));
+  if (!els.uploadOriginal.checked) return { original, originalDigest, originalPath: null };
+  // Uploaded under the name it arrived with, not a derived one: it is the untouched source, and its
+  // verbatim name is what the provenance record reports.
+  const originalPath = uploadOriginalPath(directory, original.name);
+  await uploadOne(cfg, original, originalPath, original.type || "video/mp4", "the original video", originalDigest);
+  return { original, originalDigest, originalPath };
+}
+
+/** Same for a loaded `.slp`: it is original content too, so it rides along on the same toggle, and is
+ * checksummed either way. */
+async function uploadAnnotationFile(cfg: ArchiveConfig, directory: string): Promise<UploadedSlp | null> {
+  const slpFile = state.slpFile;
+  if (!slpFile) return null;
+  const digest = await checksumBlob(slpFile, (f) => reportUploadStep("the annotations", PHASE_LABEL.checksum, f));
+  if (!els.uploadOriginal.checked) return { digest, path: null };
+  const path = uploadOriginalPath(directory, slpFile.name);
+  await uploadOne(cfg, slpFile, path, slpFile.type || "application/octet-stream", "the annotations", digest);
+  return { digest, path };
+}
+
 async function runUpload(): Promise<void> {
-  if (!state.backend) return;
+  // Captured once: `state.backend` is mutable, so a load mid-upload must not swap what these steps
+  // are reading frames from.
+  const backend = state.backend;
+  if (!backend) return;
   setDeliveryBusy(true);
   setUploadProgress(0);
   try {
@@ -1075,33 +1151,9 @@ async function runUpload(): Promise<void> {
     const mediaPath = uploadAssetPath(directory, media.filename);
     const mediaDigest = await uploadOne(cfg, media.blob, mediaPath, media.mime, kind);
 
-    // The original is checksummed even when it is not being uploaded: recording which video a clip
-    // came from is only useful if the video can be identified again later.
-    const original = state.sourceFile;
-    let originalDigest: BlobDigest | null = null;
-    if (original) {
-      originalDigest = await checksumBlob(original, (f) => reportUploadStep("the original video", PHASE_LABEL.checksum, f));
-    }
-    let originalPath: string | null = null;
-    if (original && originalDigest && els.uploadOriginal.checked) {
-      // The original is uploaded under the name it arrived with, not a derived one: it is the
-      // untouched source, and its verbatim name is what the provenance record reports.
-      originalPath = uploadOriginalPath(directory, original.name);
-      await uploadOne(cfg, original, originalPath, original.type || "video/mp4", "the original video", originalDigest);
-    }
-
-    // A loaded .slp is original content too, so it rides along on the same toggle — and is
-    // checksummed either way, for the same reason the video is.
-    let slp: UploadedSlp | null = null;
-    if (state.slpFile) {
-      const slpFile = state.slpFile;
-      const digest = await checksumBlob(slpFile, (f) => reportUploadStep("the annotations", PHASE_LABEL.checksum, f));
-      slp = { digest, path: null };
-      if (els.uploadOriginal.checked) {
-        slp.path = uploadOriginalPath(directory, slpFile.name);
-        await uploadOne(cfg, slpFile, slp.path, slpFile.type || "application/octet-stream", "the annotations", digest);
-      }
-    }
+    const overlay = await uploadOverlay(cfg, directory, entities, backend);
+    const { original, originalDigest, originalPath } = await uploadOriginalVideo(cfg, directory);
+    const slp = await uploadAnnotationFile(cfg, directory);
 
     const provenance = buildProvenance({
       createdAt: new Date(),
@@ -1133,6 +1185,14 @@ async function runUpload(): Promise<void> {
         sizeBytes: media.blob.size,
         checksum: mediaDigest.etag,
         encoding: media.encoding,
+      },
+      overlay: overlay && {
+        filename: overlay.media.filename,
+        assetPath: overlay.path,
+        mediaType: overlay.media.mime,
+        sizeBytes: overlay.media.blob.size,
+        checksum: overlay.digest.etag,
+        encoding: overlay.media.encoding,
       },
       annotations: annotationsSummary(lo, hi, slp),
     });

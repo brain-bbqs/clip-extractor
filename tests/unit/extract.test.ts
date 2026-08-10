@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bidsLabel, clipFileName, frameFileName, provenanceFileName, sourceBaseName } from "../../src/lib/extract";
+import { bidsLabel, clipFileName, frameFileName, overlayFileName, provenanceFileName, sourceBaseName } from "../../src/lib/extract";
 
 describe("sourceBaseName", () => {
   it("drops the extension", () => {
@@ -76,5 +76,26 @@ describe("provenanceFileName", () => {
     expect(provenanceFileName({ sourceName: "mice.mp4", mode: "frame", inFrame: 42, outFrame: 42 })).toBe(
       "name-mice_index-42_type-frame_provenance.json",
     );
+  });
+});
+
+describe("overlayFileName", () => {
+  it("marks the rendered snippet as a derived variant with desc-overlay", () => {
+    expect(overlayFileName({ sourceName: "mice.mp4", mode: "snippet", inFrame: 120, outFrame: 300 })).toBe(
+      "name-mice_range-120+300_type-snippet_desc-overlay_video.mp4",
+    );
+  });
+
+  it("renders a single frame as a PNG variant of the same index", () => {
+    expect(overlayFileName({ sourceName: "mice.mp4", mode: "frame", inFrame: 42, outFrame: 42 })).toBe(
+      "name-mice_index-42_type-frame_desc-overlay_image.png",
+    );
+  });
+
+  it("sorts next to the plain extract it renders, sharing every entity before desc-", () => {
+    const entities = { sourceName: "mice.mp4", mode: "frame" as const, inFrame: 42, outFrame: 42 };
+    const plain = frameFileName(entities.sourceName, entities.inFrame);
+    const overlay = overlayFileName(entities);
+    expect(overlay.startsWith(plain.replace(/_type-frame_image\.png$/, "_type-frame"))).toBe(true);
   });
 });
