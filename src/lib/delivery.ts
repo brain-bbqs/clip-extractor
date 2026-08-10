@@ -1,4 +1,4 @@
-import { sanitizeFilename, sanitizePath } from "./sanitize";
+import { sanitizeFilename, sanitizePath, verbatimFilename } from "./sanitize";
 
 // Where an extracted selection goes: saved to the visitor's own computer, or uploaded into the
 // EMBER dandiset picked in the bottom card.
@@ -11,21 +11,30 @@ export const UPLOAD_ROOT = "sourcedata/raw/clip-extractor";
 /** What a single upload carries: a trimmed range, or one still frame. */
 export type SelectionKind = "snippet" | "frame";
 
-/** The per-upload directory: one UTC timestamp per press of Upload, so a later upload of the same
- * selection never overwrites an earlier one, suffixed with what it holds so a listing reads at a
- * glance. Colons and fractional seconds are dropped because they are awkward in object keys and on
- * Windows checkouts. */
+/** The per-upload directory, named in the same BIDS entity style as the files inside it:
+ * `date-YYYYMMDD_time-HHMMSS_type-<snippet|frame>`. One timestamp per press of Upload, so a later
+ * upload of the same selection never overwrites an earlier one, and the `type-` entity lets a
+ * listing be read at a glance.
+ *
+ * Both stamps are digits only — no separators, and no `Z`, even though the clock is UTC. The exact
+ * instant, timezone designator and all, is recorded as `created_at` in the provenance sidecar. */
 export function uploadDirectory(now: Date, kind: SelectionKind): string {
-  const stamp = now
-    .toISOString()
-    .replace(/\.\d+Z$/, "Z")
-    .replace(/:/g, "-");
-  return `${UPLOAD_ROOT}/${stamp}_${kind}`;
+  // toISOString is fixed-width (YYYY-MM-DDTHH:MM:SS.sssZ), so these slices are stable.
+  const iso = now.toISOString();
+  const date = iso.slice(0, 10).replace(/-/g, "");
+  const time = iso.slice(11, 19).replace(/:/g, "");
+  return `${UPLOAD_ROOT}/date-${date}_time-${time}_type-${kind}`;
 }
 
 /** Joins an upload directory and a file name into the sanitized asset path to register. */
 export function uploadAssetPath(directory: string, filename: string): string {
   return sanitizePath(directory, sanitizeFilename(filename));
+}
+
+/** Same, but leaving the file name exactly as it arrived — for the original video, which is
+ * uploaded untouched rather than renamed. */
+export function uploadOriginalPath(directory: string, filename: string): string {
+  return sanitizePath(directory, verbatimFilename(filename));
 }
 
 /** Upload is the default whenever it is actually usable — signed in with at least one incoming

@@ -26,6 +26,24 @@ export function sanitizeFilename(originalName: string): string {
   return `${sanitizeSegment(base, "file")}${ext}`;
 }
 
+/**
+ * Keeps a file name as it arrived — punctuation, parentheses and case all intact — removing only
+ * spaces, plus whatever could escape the directory or break the path (separators, control
+ * characters, leading dots). Used for the original video, which is uploaded untouched otherwise.
+ *
+ * Note spaces are dropped here rather than turned into `+` the way lib/extract.ts's generated names
+ * do it: this name is not an entity list, so there are no word boundaries worth marking.
+ */
+export function verbatimFilename(originalName: string, fallback = "original"): string {
+  const flattened = originalName
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]+/g, "")
+    .replace(/\s+/g, "")
+    .replace(/[/\\]+/g, "_")
+    .replace(/^\.+/, "");
+  return flattened || fallback;
+}
+
 /** Joins a (sanitized) directory prefix and an already-sanitized filename into an asset path. */
 export function sanitizePath(prefix: string, filename: string): string {
   const segments = prefix

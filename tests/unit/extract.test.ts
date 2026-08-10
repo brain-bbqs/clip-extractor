@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bidsLabel, clipFileName, frameFileName, originalFileName, provenanceFileName, sourceBaseName } from "../../src/lib/extract";
+import { bidsLabel, clipFileName, frameFileName, provenanceFileName, sourceBaseName } from "../../src/lib/extract";
 
 describe("sourceBaseName", () => {
   it("drops the extension", () => {
@@ -58,29 +58,15 @@ describe("frameFileName", () => {
 });
 
 describe("provenanceFileName", () => {
-  it("repeats a snippet's selection entities, so the sidecar pairs with it visibly", () => {
+  it("mirrors the snippet it describes, down to its type entity, plus a provenance suffix", () => {
     expect(provenanceFileName({ sourceName: "mice.mp4", mode: "snippet", inFrame: 120, outFrame: 300 })).toBe(
-      "name-mice_range-120+300_type-provenance.json",
+      "name-mice_range-120+300_type-snippet_provenance.json",
     );
   });
 
-  it("repeats a frame's index", () => {
+  it("mirrors a single frame the same way", () => {
     expect(provenanceFileName({ sourceName: "mice.mp4", mode: "frame", inFrame: 42, outFrame: 42 })).toBe(
-      "name-mice_index-42_type-provenance.json",
+      "name-mice_index-42_type-frame_provenance.json",
     );
-  });
-});
-
-describe("originalFileName", () => {
-  it("takes no selection entity, since the original is the whole video", () => {
-    expect(originalFileName("mice.mp4")).toBe("name-mice_type-original.mp4");
-  });
-
-  it("keeps the source extension, lower-cased, rather than assuming mp4", () => {
-    expect(originalFileName("mice - Copy.AVI")).toBe("name-mice+Copy_type-original.avi");
-  });
-
-  it("stays extensionless when the source is", () => {
-    expect(originalFileName("mice")).toBe("name-mice_type-original");
   });
 });

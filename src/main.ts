@@ -7,13 +7,19 @@ import { drawPose, labelsToPose } from "./lib/pose";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
-import { defaultDeliveryMode, uploadAssetPath, uploadDirectory, type DeliveryMode, type SelectionKind } from "./lib/delivery";
+import {
+  defaultDeliveryMode,
+  uploadAssetPath,
+  uploadDirectory,
+  uploadOriginalPath,
+  type DeliveryMode,
+  type SelectionKind,
+} from "./lib/delivery";
 import {
   clipFileName,
   extractClip,
   extractFrame,
   frameFileName,
-  originalFileName,
   provenanceFileName,
   type AssetEntities,
   type ExtractedMedia,
@@ -1003,7 +1009,9 @@ async function runUpload(): Promise<void> {
     }
     let originalPath: string | null = null;
     if (original && originalDigest && els.uploadOriginal.checked) {
-      originalPath = uploadAssetPath(directory, originalFileName(state.sourceName));
+      // The original is uploaded under the name it arrived with, not a derived one: it is the
+      // untouched source, and its verbatim name is what the provenance record reports.
+      originalPath = uploadOriginalPath(directory, original.name);
       await uploadOne(cfg, original, originalPath, original.type || "video/mp4", "the original video", originalDigest);
     }
 

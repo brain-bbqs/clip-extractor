@@ -22,11 +22,12 @@ export type ExtractProgress = (message: string, fraction?: number) => void;
 // Every file this app produces is named in BIDS entity style — `key-value` pairs joined by
 // underscores, closing with a `type-` entity that says what the file is:
 //   name-<source>_index-<frame>_type-frame.png
+//   name-<source>_index-<frame>_type-frame_provenance.json
 //   name-<source>_range-<in>+<out>_type-snippet.mp4
-//   name-<source>_range-<in>+<out>_type-provenance.json
-//   name-<source>_type-original.mp4
-// The provenance sidecar repeats the extract's selection entities so the pair is obvious in a
-// listing; the original video carries none, since it is the whole video rather than a selection.
+//   name-<source>_range-<in>+<out>_type-snippet_provenance.json
+// The sidecar carries the same entities as the file it describes, plus a `provenance` suffix, so the
+// pair sits side by side in a listing. The original video is not renamed at all — it keeps the name
+// it arrived with (see runUpload in main.ts).
 
 /** The source file name minus its extension, for naming derived files. */
 export function sourceBaseName(sourceName: string): string {
@@ -66,9 +67,10 @@ function selectionEntity(entities: AssetEntities): string {
   return entities.mode === "frame" ? `index-${entities.inFrame}` : `range-${entities.inFrame}+${entities.outFrame}`;
 }
 
-/** `name-…_<selection>_type-<type>.<extension>` for one file of an extraction. */
-export function assetFileName(entities: AssetEntities, type: string, extension: string): string {
-  return `${nameEntity(entities.sourceName)}_${selectionEntity(entities)}_type-${type}.${extension}`;
+/** `name-…_<selection>_type-<type>[_<suffix>].<extension>` for one file of an extraction. */
+export function assetFileName(entities: AssetEntities, type: string, extension: string, suffix?: string): string {
+  const tail = suffix ? `_${suffix}` : "";
+  return `${nameEntity(entities.sourceName)}_${selectionEntity(entities)}_type-${type}${tail}.${extension}`;
 }
 
 export function clipFileName(sourceName: string, lo: number, hi: number): string {
@@ -79,16 +81,10 @@ export function frameFileName(sourceName: string, frame: number): string {
   return assetFileName({ sourceName, mode: "frame", inFrame: frame, outFrame: frame }, "frame", "png");
 }
 
+/** The sidecar carries every entity of the file it describes — including its `type-` — and adds a
+ * `provenance` suffix, so the pair sits side by side in a listing. */
 export function provenanceFileName(entities: AssetEntities): string {
-  return assetFileName(entities, "provenance", "json");
-}
-
-/** The original video keeps its own extension (it is not re-encoded) and takes no selection entity.
- * Extensionless sources stay extensionless rather than being labelled with a guess. */
-export function originalFileName(sourceName: string): string {
-  const base = `${nameEntity(sourceName)}_type-original`;
-  const ext = /\.([A-Za-z0-9]+)$/.exec(sourceName);
-  return ext ? `${base}.${ext[1].toLowerCase()}` : base;
+  return assetFileName(entities, entities.mode, "json", "provenance");
 }
 
 export interface ExtractClipParams {
