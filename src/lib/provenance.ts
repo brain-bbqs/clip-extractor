@@ -16,8 +16,15 @@ export interface ProvenanceChecksum {
 }
 
 export interface ProvenanceSource {
+  /**
+   * Base name only, never a path: a browser exposes `File.name` and nothing else for a picked or
+   * dropped file (`input.value` is deliberately fabricated as `C:\fakepath\…`, and
+   * `webkitRelativePath` is populated only for directory pickers, which this app does not use). So
+   * the checksum below — not the name — is what identifies the source video again later.
+   */
   filename: string;
-  /** The URL a streamed source came from, or null for a local file. */
+  /** The URL a streamed source came from, or null for a local file. This is the one case where the
+   * full location is knowable, since it came from the page rather than the filesystem. */
   url: string | null;
   size_bytes: number | null;
   checksum: ProvenanceChecksum | null;
