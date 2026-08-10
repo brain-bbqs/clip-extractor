@@ -1,4 +1,5 @@
 import type { StorybookConfig } from "@storybook/html-vite";
+import { resolveAppVersion } from "../appVersion.ts";
 
 const config: StorybookConfig = {
   stories: ["../../stories/**/*.stories.@(ts|js)"],
@@ -11,6 +12,13 @@ const config: StorybookConfig = {
   // /src/assets/... img URLs bypass Vite's asset pipeline; serve the assets at that same path so
   // the images resolve in both the dev server and the built Storybook.
   staticDirs: [{ from: "../../src/assets", to: "/src/assets" }],
+  viteFinal(config) {
+    config.define = {
+      ...config.define,
+      __APP_VERSION__: JSON.stringify(resolveAppVersion()),
+    };
+    return config;
+  },
 };
 
 export default config;

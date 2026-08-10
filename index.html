@@ -95,6 +95,10 @@
     </script>
   </head>
   <body>
+    <a class="brand-watermark-link" href="https://brain-bbqs.org" target="_blank" rel="noopener" aria-label="BBQS" title="BBQS">
+      <img class="brand-watermark-logo" src="/src/assets/bbqs-logo.png" alt="BBQS" />
+    </a>
+
     <main>
       <header class="site-header">
         <img class="brand-logo" src="/src/assets/clip-extractor-icon.svg" alt="" width="48" height="48" />
@@ -387,6 +391,39 @@ Note anything that went wrong in it, or any other details you want to share alon
             💡 Request a feature
           </a>
         </div>
+        <div class="footer-row">
+          <!-- Text filled in by main.ts from the build-time __APP_VERSION__ define, so the running
+               page always names the package.json version it was built from. -->
+          <a
+            id="version-indicator"
+            class="version-link"
+            href="https://github.com/brain-bbqs/clip-extractor"
+            target="_blank"
+            rel="noopener"
+            title="View source on GitHub"
+          ></a>
+        </div>
+      </div>
+      <div class="footer-brands">
+        <!-- The Talmo Lab mark is a wordless flask, so the name is spelled out beneath it the way
+             the CON logo carries its own wordmark. Two logo files rather than one, because the
+             lab's default flask is dark-stroked and disappears against the dark theme; CSS shows
+             whichever matches the active theme, and the span below names the link for both. -->
+        <a class="talmo-brand-link" href="https://talmolab.org/" target="_blank" rel="noopener" title="Talmo Lab">
+          <img class="talmo-brand-logo on-light" src="/src/assets/talmolab-logo.svg" alt="" />
+          <img class="talmo-brand-logo on-dark" src="/src/assets/talmolab-logo-on-dark.svg" alt="" />
+          <span>Talmo Lab</span>
+        </a>
+        <a
+          class="con-brand-link"
+          href="https://centerforopenneuroscience.org"
+          target="_blank"
+          rel="noopener"
+          aria-label="Center for Open Neuroscience"
+          title="Center for Open Neuroscience"
+        >
+          <img src="/src/assets/con-logo.png" alt="Center for Open Neuroscience" />
+        </a>
       </div>
     </div>
 

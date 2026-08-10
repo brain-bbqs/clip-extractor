@@ -1,10 +1,14 @@
 import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
+import { resolveAppVersion } from "./appVersion.ts";
 
 const rootDir = fileURLToPath(new URL("..", import.meta.url));
 
 export default defineConfig({
   root: rootDir,
+  define: {
+    __APP_VERSION__: JSON.stringify(resolveAppVersion()),
+  },
   // Relative base: the built app is served from a subpath (vibes.tlab.sh/clip-extractor/), not
   // domain root, so asset URLs must resolve relative to wherever the gh-pages branch is mounted.
   base: "./",

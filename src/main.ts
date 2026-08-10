@@ -38,7 +38,12 @@ import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
 import type { ArchiveConfig, OAuthTokenSet, PoseModel, SleapLabels, SleapVideoBackend } from "./lib/types";
 
+// Injected at build time from package.json's version (see configs/appVersion.ts).
+declare const __APP_VERSION__: string;
+
 const els = getElements();
+
+els.versionIndicator.textContent = `v${__APP_VERSION__}`;
 
 // Load/seek diagnostics go to the browser console — the interface deliberately has no on-page
 // log panel.

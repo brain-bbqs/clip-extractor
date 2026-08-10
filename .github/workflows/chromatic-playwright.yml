@@ -32,6 +32,9 @@ jobs:
 
       - name: Run Playwright tests
         run: npm run test:chromatic
+        env:
+          # Pins the footer's version string so a version bump alone does not re-snapshot the page.
+          CHROMATIC_STATIC_VERSION: "true"
 
       - name: Run Chromatic
         uses: chromaui/action@latest
