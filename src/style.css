@@ -313,6 +313,7 @@ button.ghost {
 
 input:focus,
 select:focus,
+textarea:focus,
 button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -654,6 +655,37 @@ input[type="checkbox"] {
 .deliver-preview {
   margin: 0.5rem 0 0;
   text-align: center;
+}
+
+/* Free-text note travelling with the selection, shared by both delivery routes (it is written into
+   the provenance JSON either way), so it sits above the panes rather than inside one. */
+.deliver-description {
+  display: block;
+  margin-bottom: 1.25rem;
+}
+.deliver-description > span {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+/* Marks the field as required, in the same red the app uses for anything that needs attention. */
+.deliver-description .required {
+  color: var(--err);
+  font-weight: 700;
+}
+textarea {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  resize: vertical;
 }
 
 /* Action button with its status caption underneath, centred as one block */

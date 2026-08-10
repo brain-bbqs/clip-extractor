@@ -31,15 +31,20 @@ test("mode toggle switches the selector between range and single frame", async (
   await expect(page.locator("#btnSetOut")).toBeVisible();
   await expect(page.locator("#selbar")).toBeVisible();
 
+  // The description prompt in the delivery card names whichever kind of selection is being made.
+  await expect(page.locator("#selectionDescription")).toHaveAttribute("placeholder", /What event does this snippet showcase\?/);
+
   await page.locator('#modeSeg button[data-mode="frame"]').click();
   await expect(page.locator("#btnSetIn")).toBeHidden();
   await expect(page.locator("#btnSetOut")).toBeHidden();
   await expect(page.locator("#selbar")).toBeHidden();
+  await expect(page.locator("#selectionDescription")).toHaveAttribute("placeholder", /What event does this frame showcase\?/);
 
   await page.locator('#modeSeg button[data-mode="video"]').click();
   await expect(page.locator("#btnSetIn")).toBeVisible();
   await expect(page.locator("#btnSetOut")).toBeVisible();
   await expect(page.locator("#selbar")).toBeVisible();
+  await expect(page.locator("#selectionDescription")).toHaveAttribute("placeholder", /What event does this snippet showcase\?/);
 });
 
 test("SLEAP annotations card is revealed by its toggle (default off)", async ({ page }) => {

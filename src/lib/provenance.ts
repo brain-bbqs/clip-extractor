@@ -36,8 +36,10 @@ export interface ProvenanceSource {
   checksum: ProvenanceChecksum | null;
   /** Why no checksum is recorded; null whenever `checksum` is present. */
   checksum_unavailable: string | null;
+  /** Whether the original travelled with the extract — registered as an asset by an upload, or
+   * packed into the saved bundle. */
   uploaded: boolean;
-  /** Where the original landed, or null when it was not uploaded. */
+  /** Where the original landed, or null when it did not travel along. */
   asset_path: string | null;
   fps: number;
   width: number;
@@ -79,8 +81,9 @@ export interface ProvenanceAnnotations {
    * file (in which case there are no local bytes to name, checksum or upload). */
   filename: string | null;
   checksum: ProvenanceChecksum | null;
+  /** As on the source video: registered as an asset, or packed into the saved bundle. */
   uploaded: boolean;
-  /** Where the `.slp` landed, or null when it was not uploaded. */
+  /** Where the `.slp` landed, or null when it did not travel along. */
   asset_path: string | null;
   skeleton_node_count: number;
   track_count: number;
@@ -98,13 +101,26 @@ export interface ProvenanceAnnotationsInput {
   labeledFramesInSelection: number;
 }
 
+/** Where the files went. A saved bundle has no archive behind it, so it names only the directory —
+ * the same tree an upload would have written, one level inside the `.tar.gz`. */
+export interface ProvenanceDestination {
+  api: string | null;
+  dandiset_id: string | null;
+  directory: string;
+}
+
 export interface ProvenanceDocument {
   format: string;
   created_at: string;
   tool: { name: string; version: string; page_url: string | null };
-  /** Null only when the archive could not name the signed-in account. */
+  /** What the person extracting wrote about this selection — the event it shows, what went wrong in
+   * it, anything else worth passing on with it. The interface will not send a selection without
+   * one, so this is null only for a record written some other way. */
+  description: string | null;
+  /** Null for a saved bundle, which nobody uploaded, and when the archive could not name the
+   * signed-in account. */
   uploaded_by: ArchiveUser | null;
-  destination: { api: string; dandiset_id: string; directory: string };
+  destination: ProvenanceDestination;
   source_video: ProvenanceSource;
   selection: ProvenanceSelection;
   extracted: ProvenanceExtracted;
@@ -118,9 +134,12 @@ export interface ProvenanceDocument {
 export interface ProvenanceInput {
   createdAt: Date;
   pageUrl: string | null;
+  /** Free text from the description field; trimmed here, and blank counts as none. */
+  description: string | null;
   user: ArchiveUser | null;
-  api: string;
-  dandisetId: string;
+  /** Both null for a saved bundle, which is not bound for an archive. */
+  api: string | null;
+  dandisetId: string | null;
   directory: string;
   mode: "snippet" | "frame";
   fps: number;
@@ -169,6 +188,7 @@ export function buildProvenance(input: ProvenanceInput): ProvenanceDocument {
     format: PROVENANCE_FORMAT,
     created_at: input.createdAt.toISOString(),
     tool: { name: "clip-extractor", version: TOOL_VERSION, page_url: input.pageUrl },
+    description: input.description?.trim() || null,
     uploaded_by: input.user,
     destination: { api: input.api, dandiset_id: input.dandisetId, directory: input.directory },
     source_video: {

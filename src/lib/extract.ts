@@ -27,6 +27,7 @@ export type ExtractProgress = (message: string, fraction?: number) => void;
 //   name-<source>_range-<in>+<out>_type-snippet_video.mp4
 //   name-<source>_range-<in>+<out>_type-snippet_provenance.json
 //   name-<source>_range-<in>+<out>_type-snippet_overlay.mp4
+//   name-<source>_range-<in>+<out>_type-snippet_bundle.tar.gz
 // Files describing or rendering the same selection share every entity with it and differ only in
 // that suffix, so they sit side by side in a listing. The original video is not renamed at all — it
 // keeps the name it arrived with (see runUpload in main.ts).
@@ -98,6 +99,12 @@ export function frameFileName(sourceName: string, frame: number): string {
  * only in its suffix, so the pair sits side by side in a listing. */
 export function provenanceFileName(entities: AssetEntities): string {
   return assetFileName(entities, { type: entities.mode, suffix: "provenance", extension: "json" });
+}
+
+/** The saved bundle: every file an upload would have written, tarred and gzipped into one download.
+ * It shares its selection's entities like the rest, and `bundle` names what it holds. */
+export function bundleFileName(entities: AssetEntities): string {
+  return assetFileName(entities, { type: entities.mode, suffix: "bundle", extension: "tar.gz" });
 }
 
 /** The same selection with the pose drawn into the pixels, so `overlay` in place of the plain

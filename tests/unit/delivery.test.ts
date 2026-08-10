@@ -1,12 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
+  ORIGINAL_SUBDIRECTORY,
   UPLOAD_ROOT,
   defaultDeliveryMode,
   fileBrowserUrl,
+  selectionDirectory,
   uploadAssetPath,
   uploadDirectory,
   uploadOriginalPath,
 } from "../../src/lib/delivery";
+
+describe("selectionDirectory", () => {
+  it("names the directory with separate date and time entities, plus what it holds", () => {
+    expect(selectionDirectory(new Date("2026-08-09T22:49:13.482Z"), "snippet")).toBe("date-20260809_time-224913_type-snippet");
+  });
+
+  it("stands alone, with no archive prefix — a saved bundle unpacks to just this folder", () => {
+    expect(selectionDirectory(new Date("2026-08-09T22:49:13.482Z"), "frame")).toBe("date-20260809_time-224913_type-frame");
+  });
+});
 
 describe("uploadDirectory", () => {
   it("names the directory with separate date and time entities, plus what it holds", () => {
@@ -33,6 +45,11 @@ describe("uploadDirectory", () => {
     expect(UPLOAD_ROOT).toBe("sourcedata/raw/clip-extractor");
   });
 
+  it("is the selection directory under that root, and nothing else", () => {
+    const at = new Date("2026-08-09T22:49:13.482Z");
+    expect(uploadDirectory(at, "snippet")).toBe(`${UPLOAD_ROOT}/${selectionDirectory(at, "snippet")}`);
+  });
+
   it("gives two uploads a second apart their own directories", () => {
     const a = uploadDirectory(new Date("2026-08-09T22:49:13.000Z"), "snippet");
     const b = uploadDirectory(new Date("2026-08-09T22:49:14.000Z"), "snippet");
@@ -55,9 +72,17 @@ describe("uploadAssetPath", () => {
 });
 
 describe("uploadOriginalPath", () => {
-  it("keeps the original's own name, minus spaces", () => {
+  it("keeps the original's own name, minus spaces, in its own subdirectory", () => {
     expect(uploadOriginalPath("sourcedata/raw/clip-extractor/stamp", "file_example_480 - Copy.webm")).toBe(
-      "sourcedata/raw/clip-extractor/stamp/file_example_480-Copy.webm",
+      "sourcedata/raw/clip-extractor/stamp/original/file_example_480-Copy.webm",
+    );
+  });
+
+  it("separates what was handed to the app from what the app produced", () => {
+    const directory = "date-20260810_time-031053_type-snippet";
+    expect(uploadOriginalPath(directory, "mice.mp4")).toBe(`${directory}/${ORIGINAL_SUBDIRECTORY}/mice.mp4`);
+    expect(uploadAssetPath(directory, "name-mice_range-0+30_type-snippet_video.mp4")).toBe(
+      `${directory}/name-mice_range-0+30_type-snippet_video.mp4`,
     );
   });
 });

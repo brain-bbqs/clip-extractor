@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { bidsLabel, clipFileName, frameFileName, overlayFileName, provenanceFileName, sourceBaseName } from "../../src/lib/extract";
+import {
+  bidsLabel,
+  bundleFileName,
+  clipFileName,
+  frameFileName,
+  overlayFileName,
+  provenanceFileName,
+  sourceBaseName,
+} from "../../src/lib/extract";
 
 describe("sourceBaseName", () => {
   it("drops the extension", () => {
@@ -96,5 +104,19 @@ describe("overlayFileName", () => {
     const entities = { sourceName: "mice.mp4", mode: "frame" as const, inFrame: 42, outFrame: 42 };
     const plain = frameFileName(entities.sourceName, entities.inFrame);
     expect(overlayFileName(entities)).toBe(plain.replace("_image.png", "_overlay.png"));
+  });
+});
+
+describe("bundleFileName", () => {
+  it("names the saved bundle after the selection it holds", () => {
+    expect(bundleFileName({ sourceName: "mice.mp4", mode: "snippet", inFrame: 120, outFrame: 300 })).toBe(
+      "name-mice_range-120+300_type-snippet_bundle.tar.gz",
+    );
+  });
+
+  it("names a single frame's bundle the same way", () => {
+    expect(bundleFileName({ sourceName: "mice.mp4", mode: "frame", inFrame: 42, outFrame: 42 })).toBe(
+      "name-mice_index-42_type-frame_bundle.tar.gz",
+    );
   });
 });
