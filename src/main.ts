@@ -861,15 +861,16 @@ function updateDeliveryPreview(): void {
   const show = state.backend !== null && hasSelection();
   els.downloadPreview.hidden = !show;
   if (!show) return;
+  // Only ever annotated with what the file name does not already carry: the frame index and the
+  // frame range are both in the name, the snippet's duration is not.
   if (state.mode === "frame") {
     els.downloadPreviewName.textContent = frameFileName(state.sourceName, state.cur);
-    els.downloadPreviewMeta.textContent = ` · frame ${state.cur}`;
+    els.downloadPreviewMeta.textContent = "";
     return;
   }
   const [lo, hi] = selRange();
-  const n = hi - lo + 1;
   els.downloadPreviewName.textContent = clipFileName(state.sourceName, lo, hi);
-  els.downloadPreviewMeta.textContent = ` · ${n} frames · ${(n / state.fps).toFixed(2)}s`;
+  els.downloadPreviewMeta.textContent = ` · ${((hi - lo + 1) / state.fps).toFixed(2)}s`;
 }
 
 function setDeliveryBusy(busy: boolean): void {
