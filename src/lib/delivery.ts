@@ -12,7 +12,10 @@ export const UPLOAD_ROOT = "sourcedata/raw/clip-extractor";
  * selection never overwrites an earlier one. Colons and fractional seconds are dropped because
  * they are awkward in object keys and on Windows checkouts. */
 export function uploadDirectory(now: Date): string {
-  const stamp = now.toISOString().replace(/\.\d+Z$/, "Z").replace(/:/g, "-");
+  const stamp = now
+    .toISOString()
+    .replace(/\.\d+Z$/, "Z")
+    .replace(/:/g, "-");
   return `${UPLOAD_ROOT}/${stamp}`;
 }
 

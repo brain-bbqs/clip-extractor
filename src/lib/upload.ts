@@ -102,7 +102,8 @@ export async function uploadBlob(
 /** The draft-version asset already sitting at `path`, if any — an upload to an occupied path
  * replaces (PUT) rather than creates (POST). */
 export async function findExistingAsset(cfg: ArchiveConfig, path: string): Promise<Asset | null> {
-  let url: string | null = `/dandisets/${cfg.dandisetId}/versions/draft/assets/?path=${encodeURIComponent(path)}&metadata=false&page_size=100`;
+  let url: string | null =
+    `/dandisets/${cfg.dandisetId}/versions/draft/assets/?path=${encodeURIComponent(path)}&metadata=false&page_size=100`;
   for (let pages = 0; url && pages < 20; pages++) {
     const page: { results?: Asset[]; next?: string | null } = (await apiFetch<{ results?: Asset[]; next?: string | null }>(cfg, url))!;
     const hit = (page.results ?? []).find((a) => a.path === path);

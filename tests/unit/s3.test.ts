@@ -87,9 +87,7 @@ describe("uploadPartWithRetry", () => {
   it("fails immediately (no retry) when S3 accepts the part but hides the ETag header", async () => {
     FakeXHR.script = [{ status: 200, etag: null }];
 
-    await expect(uploadPartWithRetry("https://s3.example/part-1", blob, () => {})).rejects.toThrow(
-      /ETag response header is not readable/,
-    );
+    await expect(uploadPartWithRetry("https://s3.example/part-1", blob, () => {})).rejects.toThrow(/ETag response header is not readable/);
     expect(FakeXHR.sent).toHaveLength(1);
   });
 
@@ -122,9 +120,7 @@ describe("uploadPartWithRetry", () => {
     const controller = new AbortController();
     controller.abort();
 
-    await expect(uploadPartWithRetry("https://s3.example/part-1", blob, () => {}, controller.signal)).rejects.toThrow(
-      /cancelled/i,
-    );
+    await expect(uploadPartWithRetry("https://s3.example/part-1", blob, () => {}, controller.signal)).rejects.toThrow(/cancelled/i);
     expect(FakeXHR.sent).toHaveLength(0);
   });
 

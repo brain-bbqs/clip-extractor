@@ -15,7 +15,13 @@ function filled(size: number): Uint8Array {
 /** The dandi-etag as defined by dandischema: MD5 of the concatenated per-part MD5s, suffixed with
  * the part count. Computed here with node's crypto so the test is independent of spark-md5. */
 function referenceEtag(bytes: Uint8Array, parts: FilePart[]): string {
-  const inner = Buffer.concat(parts.map((p) => createHash("md5").update(bytes.subarray(p.offset, p.offset + p.size)).digest()));
+  const inner = Buffer.concat(
+    parts.map((p) =>
+      createHash("md5")
+        .update(bytes.subarray(p.offset, p.offset + p.size))
+        .digest(),
+    ),
+  );
   return `${createHash("md5").update(inner).digest("hex")}-${parts.length}`;
 }
 
