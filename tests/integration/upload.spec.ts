@@ -56,3 +56,28 @@ test("an upload registers the extract, the original and a matching provenance si
   );
   await expect(status.locator("a")).toHaveAttribute("target", "_blank");
 });
+
+test("the completion link survives a look at the other pane, and retires with the selection", async ({ page }) => {
+  await stubArchive(page);
+  await page.goto("/");
+  await expect(page.locator("#dandisetSingleText")).toContainText("000123");
+
+  await loadRecordedVideo(page, "mice.webm");
+  await page.locator('#modeSeg button[data-mode="frame"]').click();
+  await page.locator("#frameSlider").fill("5");
+  await page.locator("#selectionDescription").fill("Worth sharing with the lab.");
+  await page.locator("#btnUpload").click();
+  const status = page.locator("#uploadStatus");
+  await expect(status).toContainText("Upload complete", { timeout: 60_000 });
+
+  // Looking at what Save would have done, then coming back, is not a reason to lose the link to
+  // where the upload landed.
+  await page.locator('#deliverSeg button[data-deliver="download"]').click();
+  await page.locator('#deliverSeg button[data-deliver="upload"]').click();
+  await expect(status).toContainText("Upload complete");
+  await expect(status.locator("a")).toHaveText("click here to view and share");
+
+  // Moving to another frame does retire it: it named where a different selection went.
+  await page.locator("#frameSlider").fill("9");
+  await expect(status).not.toContainText("Upload complete");
+});

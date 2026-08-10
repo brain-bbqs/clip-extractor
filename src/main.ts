@@ -14,6 +14,7 @@ import {
   uploadDirectory,
   uploadOriginalPath,
   type DeliveryMode,
+  type SelectionKind,
 } from "./lib/delivery";
 import {
   bundleFileName,
@@ -26,6 +27,7 @@ import {
   type ExtractProgress,
 } from "./lib/extract";
 import { tarGzip, type BundleEntry } from "./lib/bundle";
+import { memoOne } from "./lib/memo";
 import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./lib/upload";
 import { buildProvenance, type ProvenanceAnnotationsInput } from "./lib/provenance";
 import { countLabeledFramesInRange } from "./lib/annotations";
@@ -119,6 +121,12 @@ const state: AppState = {
   curBitmap: null,
 };
 
+// Bumped by every successful load, so anything derived from the bytes behind the player (or behind
+// the pose) can be keyed to the load it came from — two files can share a name, and re-dropping an
+// edited one must not look like the same source. See the delivery caches below.
+let sourceGeneration = 0;
+let poseGeneration = 0;
+
 // ============================================================
 // Video loading (remote URL + local file)
 // ============================================================
@@ -176,6 +184,8 @@ async function loadVideo(source: File | string, name: string, url: string | null
     // loadVideo fully owns source state: this is either the dropped File, the one the stream
     // fallback materialized, or null for a live-streamed URL — never a previous load's leftover.
     state.sourceFile = file;
+    sourceGeneration++;
+    clearDeliveryOutcomes();
     state.cur = 0;
     state.inF = null;
     state.outF = null;
@@ -210,6 +220,8 @@ async function loadSlp(source: File | string, name: string): Promise<void> {
     // Only after a successful parse: a file this app could not read is not one to hand to the
     // archive.
     state.slpFile = source instanceof File ? source : null;
+    poseGeneration++;
+    clearDeliveryOutcomes();
     const nFrames = state.pose.byFrame.size;
     log(`SLP loaded: ${state.pose.skeleton.nodes.length} nodes, ${state.pose.tracks.length} tracks, ${nFrames} labeled frames`, "ok");
     els.slpBadge.textContent = `${nFrames} frames`;
@@ -384,6 +396,7 @@ function growSelection(target: number): void {
 /** Every in/out mutation funnels through here. Kept separate from updateSelUI(), which also runs on
  * every seek during playback, so the delivery card is only recomputed when the range really moves. */
 function selectionChanged(): void {
+  clearDeliveryOutcomes();
   updateSelUI();
   updateDeliveryGate();
 }
@@ -406,7 +419,12 @@ function updateSelUI(): void {
   els.selplay.style.display = state.backend ? "block" : "none";
   els.selplay.style.left = `${(state.cur / den) * 100}%`;
   // Frame mode's output name tracks the current frame, so the preview follows every seek.
-  if (!deliveryBusy) updateDeliveryPreview();
+  if (!deliveryBusy) {
+    updateDeliveryPreview();
+    // In frame mode the playhead *is* the selection, so moving it retires an outcome describing
+    // where the last frame went. (A snippet's in/out points go through selectionChanged instead.)
+    if (state.mode === "frame") clearDeliveryOutcomes();
+  }
   // Frame mode has no range summary — the current frame is already shown in the stage overlay.
   if (state.mode === "frame") return;
   const n = hi - lo + 1;
@@ -421,6 +439,7 @@ function updateSelUI(): void {
 // ============================================================
 function setMode(mode: SelectorMode): void {
   state.mode = mode;
+  clearDeliveryOutcomes();
   els.playerCard.classList.toggle("mode-frame", mode === "frame");
   if (mode === "frame") {
     // A frame selection is just the current frame; drop any in/out range.
@@ -832,6 +851,8 @@ els.oauthSignoutBtn.addEventListener("click", () => {
   void refreshDandisetOptions();
 });
 els.dandisetId.addEventListener("change", () => {
+  // The completion line names a dataset, so it does not survive a change of destination.
+  clearDeliveryOutcomes();
   updateDeliveryGate();
   updateViewDatasetLink();
   saveSettings();
@@ -891,6 +912,21 @@ function setStatusLink(el: HTMLElement, message: string, href: string, linkText:
   el.className = cls ? `hint ${cls}` : "hint";
 }
 
+/** True while a status line is showing a finished delivery's outcome — where the bundle was saved,
+ * where the upload landed, or why one failed — rather than a caption about what to do next. Those
+ * are the only lines worth keeping: everything else is recomputed on any UI change. */
+function showsOutcome(el: HTMLElement): boolean {
+  return el.classList.contains("ok") || el.classList.contains("err");
+}
+
+/** Retires both routes' outcome lines, once what they described has stopped being true: a different
+ * selection, a different source, a different destination, or another delivery starting. Merely
+ * looking at the other pane is not one of those, which is why the panes do not clear them. */
+function clearDeliveryOutcomes(): void {
+  for (const el of [els.downloadStatus, els.uploadStatus]) if (showsOutcome(el)) setStatus(el, "");
+  setUploadProgress(null);
+}
+
 /** Same, with a file name set in the monospace `code` style so it stands out from the prose. */
 function setStatusNaming(el: HTMLElement, before: string, filename: string, after: string, cls: "" | "ok" | "err" = ""): void {
   const code = document.createElement("code");
@@ -913,13 +949,19 @@ function hasSelection(): boolean {
   return state.mode === "frame" || state.inF !== null || state.outF !== null;
 }
 
+/** The copy in the delivery card that names whichever kind of selection the selector is on. */
+function updateDeliveryCopy(kind: SelectionKind): void {
+  els.downloadHint.textContent = `Saves the selected ${kind} to your computer, packed with everything an upload would have carried.`;
+  els.selectionDescription.placeholder = `What event does this ${kind} showcase? Note anything that went wrong in it, or any other details you want to share along with the clip.`;
+}
+
 // Enablement, the embargo warning, and both panes' copy, all derived from the current video,
 // selection, selector mode, and destination.
 function updateDeliveryGate(): void {
   const cfg = currentConfig();
   const hasVideo = state.backend !== null;
   const notEmbargoed = cfg.embargoed === false;
-  const frameMode = state.mode === "frame";
+  const kind: SelectionKind = state.mode === "frame" ? "frame" : "snippet";
   const selected = hasSelection();
   // Required on both routes: a clip nobody described is one nobody can act on once it is in the
   // archive, and the description is the one thing only the person making it can supply.
@@ -927,13 +969,7 @@ function updateDeliveryGate(): void {
   els.dandisetEmbargoError.hidden = !notEmbargoed;
   els.btnDownload.disabled = deliveryBusy || !hasVideo || !selected || !described;
   els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !described || !cfg.dandisetId || notEmbargoed;
-  els.downloadHint.textContent = frameMode
-    ? "Saves the selected frame to your computer, packed with everything an upload would have carried."
-    : "Saves the selected snippet to your computer, packed with everything an upload would have carried.";
-  // The description prompt names whichever kind of selection is being described.
-  els.selectionDescription.placeholder = frameMode
-    ? "What event does this frame showcase? Note anything that went wrong in it, or any other details you want to share along with the clip."
-    : "What event does this snippet showcase? Note anything that went wrong in it, or any other details you want to share along with the clip.";
+  updateDeliveryCopy(kind);
   // Original content can only ride along when its bytes are already in the browser; a range-streamed
   // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
   const canSendOriginal = state.sourceFile !== null || state.slpFile !== null;
@@ -947,10 +983,13 @@ function updateDeliveryGate(): void {
     : !selected
       ? "Mark an in or out point on the player to select a snippet."
       : !described
-        ? `Describe the ${frameMode ? "frame" : "snippet"} above before sending it on.`
+        ? `Describe the ${kind} above before sending it on.`
         : "";
-  setStatus(els.downloadStatus, blocked);
-  setStatus(els.uploadStatus, blocked || (!cfg.dandisetId ? "Pick an upload destination above." : ""));
+  // A finished delivery's own line outranks these captions until it is retired.
+  if (!showsOutcome(els.downloadStatus)) setStatus(els.downloadStatus, blocked);
+  if (!showsOutcome(els.uploadStatus)) {
+    setStatus(els.uploadStatus, blocked || (!cfg.dandisetId ? "Pick an upload destination above." : ""));
+  }
 }
 
 /** The entities identifying whatever the selector currently points at, shared by every file the next
@@ -972,6 +1011,8 @@ function updateDeliveryPreview(): void {
 
 function setDeliveryBusy(busy: boolean): void {
   deliveryBusy = busy;
+  // Starting a delivery retires the last one's line, so the two are never on screen together.
+  if (busy) clearDeliveryOutcomes();
   updateDeliveryGate();
 }
 
@@ -1010,12 +1051,34 @@ interface DeliverableFile {
   contentType: string;
   /** How the progress line names it. */
   label: string;
+  /** The dandi-etag it is stored under, hashed once by the assembly step so that both the upload
+   * and the provenance record quote the same value without hashing it twice. */
+  digest: BlobDigest;
 }
 
-/** Takes one assembled file and answers with the digest it was stored under, so the provenance
- * record quotes the same checksum the archive holds. `digest` is passed when the caller has already
- * computed it, so nothing is ever hashed twice. */
-type DeliverFile = (file: DeliverableFile, digest?: BlobDigest) => Promise<BlobDigest>;
+/** Hands one assembled file to whichever route asked for it. */
+type DeliverFile = (file: DeliverableFile) => Promise<void>;
+
+/** An extracted file together with the digest it will be stored under — cached as a pair, since
+ * whatever is worth not encoding twice is worth not hashing twice either. */
+interface ChecksummedMedia {
+  media: ExtractedMedia;
+  digest: BlobDigest;
+}
+
+// What makes a second delivery of a selection cheap: saving a bundle and then uploading it re-uses
+// the files the save produced rather than re-encoding an overlay frame by frame and re-hashing a
+// multi-gigabyte source. Each slot is keyed by everything its value was derived from, so a new
+// selection, video or `.slp` simply fails to match and the work is done again.
+const extractOnce = memoOne<ChecksummedMedia>();
+const overlayOnce = memoOne<ChecksummedMedia>();
+const sourceDigestOnce = memoOne<BlobDigest>();
+const annotationDigestOnce = memoOne<BlobDigest>();
+
+/** What an extraction was made from: which load of which video, and which frames of it. */
+function selectionKey(entities: AssetEntities): string {
+  return `source-${sourceGeneration}|${entities.mode}|${entities.inFrame}|${entities.outFrame}`;
+}
 
 const PHASE_LABEL: Record<UploadPhase, string> = { checksum: "Checksumming", upload: "Uploading", register: "Registering" };
 
@@ -1024,27 +1087,17 @@ function reportUploadStep(label: string, step: string, fraction: number): void {
   setUploadProgress(fraction);
 }
 
-/** Uploads one file and returns the digest it was stored under, so the provenance record can quote
- * the same checksum the archive holds. Reuses `digest` when the caller already computed it. */
-async function uploadOne(
-  cfg: ArchiveConfig,
-  blob: Blob,
-  path: string,
-  contentType: string,
-  label: string,
-  digest?: BlobDigest,
-): Promise<BlobDigest> {
-  const resolved = digest ?? (await checksumBlob(blob, (f) => reportUploadStep(label, PHASE_LABEL.checksum, f)));
-  log(`Uploading ${label} to ${path} (${bytes(blob.size)})…`);
+/** Uploads one assembled file, under the digest it was already hashed to. */
+async function uploadOne(cfg: ArchiveConfig, file: DeliverableFile): Promise<void> {
+  log(`Uploading ${file.label} to ${file.path} (${bytes(file.blob.size)})…`);
   await uploadAsset(cfg, {
-    blob,
-    path,
-    contentType,
-    digest: resolved,
-    onPhase: (phase, fraction) => reportUploadStep(label, PHASE_LABEL[phase], fraction),
+    blob: file.blob,
+    path: file.path,
+    contentType: file.contentType,
+    digest: file.digest,
+    onPhase: (phase, fraction) => reportUploadStep(file.label, PHASE_LABEL[phase], fraction),
   });
-  log(`Uploaded ${path}`, "ok");
-  return resolved;
+  log(`Uploaded ${file.path}`, "ok");
 }
 
 /** What was loaded from a `.slp`, restricted to the selection, or null when there is none. */
@@ -1090,21 +1143,27 @@ async function deliverOverlay(
 ): Promise<DeliveredOverlay | null> {
   const pose = els.slpToggle.checked ? state.pose : null;
   if (!pose) return null;
-  const media = await extractOverlay({
-    backend,
-    frameOrder: state.frameOrder,
-    pose,
-    mode: entities.mode,
-    inFrame: entities.inFrame,
-    outFrame: entities.outFrame,
-    fps: state.fps,
-    width: state.width,
-    height: state.height,
-    sourceName: state.sourceName,
-    onProgress,
+  const label = "the pose overlay";
+  // Drawing an overlay is the slowest thing this app does — every frame decoded, drawn and encoded
+  // — so a second delivery of the same selection and the same pose re-uses the one already drawn.
+  const { media, digest } = await overlayOnce(`${selectionKey(entities)}|pose-${poseGeneration}`, async () => {
+    const media = await extractOverlay({
+      backend,
+      frameOrder: state.frameOrder,
+      pose,
+      mode: entities.mode,
+      inFrame: entities.inFrame,
+      outFrame: entities.outFrame,
+      fps: state.fps,
+      width: state.width,
+      height: state.height,
+      sourceName: entities.sourceName,
+      onProgress,
+    });
+    return { media, digest: await checksumFor(media.blob, label, onProgress) };
   });
   const path = uploadAssetPath(directory, media.filename);
-  const digest = await deliver({ blob: media.blob, path, contentType: media.mime, label: "the pose overlay" });
+  await deliver({ blob: media.blob, path, contentType: media.mime, label, digest });
   return { media, path, digest };
 }
 
@@ -1118,15 +1177,21 @@ async function deliverOriginalVideo(
 ): Promise<{ original: File | null; originalDigest: BlobDigest | null; originalPath: string | null }> {
   const original = state.sourceFile;
   if (!original) return { original: null, originalDigest: null, originalPath: null };
-  const originalDigest = await checksumBlob(original, (f) => reportChecksum(onProgress, "the original video", f));
+  const label = "the original video";
+  // Keyed to the load rather than the selection: the same bytes hash to the same digest however
+  // many selections are cut out of them, and this is the hash that can take minutes.
+  const originalDigest = await sourceDigestOnce(`source-${sourceGeneration}`, () => checksumFor(original, label, onProgress));
   if (!els.uploadOriginal.checked) return { original, originalDigest, originalPath: null };
   // Carried under the name it arrived with, not a derived one: it is the untouched source, and its
   // verbatim name is what the provenance record reports.
   const originalPath = uploadOriginalPath(directory, original.name);
-  await deliver(
-    { blob: original, path: originalPath, contentType: original.type || "video/mp4", label: "the original video" },
-    originalDigest,
-  );
+  await deliver({
+    blob: original,
+    path: originalPath,
+    contentType: original.type || "video/mp4",
+    label,
+    digest: originalDigest,
+  });
   return { original, originalDigest, originalPath };
 }
 
@@ -1135,15 +1200,17 @@ async function deliverOriginalVideo(
 async function deliverAnnotationFile(deliver: DeliverFile, directory: string, onProgress: ExtractProgress): Promise<DeliveredSlp | null> {
   const slpFile = state.slpFile;
   if (!slpFile) return null;
-  const digest = await checksumBlob(slpFile, (f) => reportChecksum(onProgress, "the annotations", f));
+  const label = "the annotations";
+  const digest = await annotationDigestOnce(`pose-${poseGeneration}`, () => checksumFor(slpFile, label, onProgress));
   if (!els.uploadOriginal.checked) return { digest, path: null };
   const path = uploadOriginalPath(directory, slpFile.name);
-  await deliver({ blob: slpFile, path, contentType: slpFile.type || "application/octet-stream", label: "the annotations" }, digest);
+  await deliver({ blob: slpFile, path, contentType: slpFile.type || "application/octet-stream", label, digest });
   return { digest, path };
 }
 
-function reportChecksum(onProgress: ExtractProgress, label: string, fraction: number): void {
-  onProgress(`${PHASE_LABEL.checksum} ${label}… ${(fraction * 100).toFixed(0)}%`, fraction);
+/** Hashes one file for delivery, reporting progress on whichever route's status line is listening. */
+function checksumFor(blob: Blob, label: string, onProgress: ExtractProgress): Promise<BlobDigest> {
+  return checksumBlob(blob, (fraction) => onProgress(`${PHASE_LABEL.checksum} ${label}… ${(fraction * 100).toFixed(0)}%`, fraction));
 }
 
 interface AssembleParams {
@@ -1176,7 +1243,12 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   const { backend, deliver, onProgress } = params;
   const entities = currentEntities();
   const { mode: kind, inFrame: lo, outFrame: hi } = entities;
-  const media = await extractSelection(backend, entities, onProgress);
+  // Re-used when this selection has already been extracted — saving a bundle and then uploading it
+  // encodes nothing the second time round.
+  const { media, digest: mediaDigest } = await extractOnce(selectionKey(entities), async () => {
+    const media = await extractSelection(backend, entities, onProgress);
+    return { media, digest: await checksumFor(media.blob, `the ${kind}`, onProgress) };
+  });
   await params.onReady?.();
   const destination = params.destination();
   // One instant for the whole delivery, so the directory's date/time entities and the provenance
@@ -1187,7 +1259,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // The extracted selection goes first: it is the point of the delivery, and the original — which
   // can be orders of magnitude larger — is a recommended companion, not a prerequisite for it.
   const mediaPath = uploadAssetPath(directory, media.filename);
-  const mediaDigest = await deliver({ blob: media.blob, path: mediaPath, contentType: media.mime, label: `the ${kind}` });
+  await deliver({ blob: media.blob, path: mediaPath, contentType: media.mime, label: `the ${kind}`, digest: mediaDigest });
 
   const overlay = await deliverOverlay(deliver, directory, entities, backend, onProgress);
   const { original, originalDigest, originalPath } = await deliverOriginalVideo(deliver, directory, onProgress);
@@ -1237,7 +1309,16 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   });
   const provenanceBlob = new Blob([JSON.stringify(provenance, null, 2)], { type: "application/json" });
   const provenancePath = uploadAssetPath(directory, provenanceFileName(entities));
-  await deliver({ blob: provenanceBlob, path: provenancePath, contentType: "application/json", label: "the provenance record" });
+  const label = "the provenance record";
+  // The one file that is never re-used: it names this delivery's own directory and instant, so it
+  // differs even when everything it describes was carried over from the last one.
+  await deliver({
+    blob: provenanceBlob,
+    path: provenancePath,
+    contentType: "application/json",
+    label,
+    digest: await checksumFor(provenanceBlob, label, onProgress),
+  });
 
   return { entities, directory, createdAt };
 }
@@ -1255,14 +1336,12 @@ async function runDownload(): Promise<void> {
       backend,
       destination: () => null,
       onProgress: (message) => setStatus(els.downloadStatus, message),
-      deliver: async (file, digest) => {
-        // Checksummed even though nothing is being uploaded: the provenance record inside the bundle
-        // quotes the same digests an upload would have registered, so a file saved now and uploaded
-        // later is identifiable as the same bytes.
-        const resolved =
-          digest ?? (await checksumBlob(file.blob, (f) => reportChecksum((m) => setStatus(els.downloadStatus, m), file.label, f)));
+      // Every file is hashed on its way in even though nothing is being uploaded: the provenance
+      // record inside the bundle quotes the same digests an upload would have registered, so a
+      // selection saved now and uploaded later is identifiable as the same bytes.
+      deliver: (file) => {
         bundled.push({ path: file.path, blob: file.blob });
-        return resolved;
+        return Promise.resolve();
       },
     });
     setStatus(els.downloadStatus, "Packing the bundle…");
@@ -1306,7 +1385,7 @@ async function runUpload(): Promise<void> {
         setStatus(els.uploadStatus, message);
         setUploadProgress(fraction ?? 0);
       },
-      deliver: (file, digest) => uploadOne(currentConfig(), file.blob, file.path, file.contentType, file.label, digest),
+      deliver: (file) => uploadOne(currentConfig(), file),
     });
 
     const cfg = currentConfig();
