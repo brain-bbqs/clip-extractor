@@ -78,6 +78,24 @@ test("delivery toggle swaps between the download and upload panes", async ({ pag
   await expect(page.locator("#uploadPane")).toBeHidden();
 });
 
+test("the chosen delivery side survives a refresh", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('#deliverSeg button[data-deliver="upload"]').click();
+  await expect(page.locator("#uploadPane")).toBeVisible();
+
+  await page.reload();
+
+  // Without the choice being persisted, the sign-in default would decide this again on every load.
+  await expect(page.locator('#deliverSeg button[data-deliver="upload"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#uploadPane")).toBeVisible();
+  await expect(page.locator("#downloadPane")).toBeHidden();
+
+  await page.locator('#deliverSeg button[data-deliver="download"]').click();
+  await page.reload();
+  await expect(page.locator("#downloadPane")).toBeVisible();
+  await expect(page.locator("#uploadPane")).toBeHidden();
+});
+
 test("upload pane prompts for sign-in while signed out", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#oauthSigninBtn")).toBeVisible();

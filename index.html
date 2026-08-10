@@ -299,13 +299,23 @@
 
         <div id="downloadPane">
           <p class="hint deliver-hint" id="downloadHint">Saves the current selection to your computer.</p>
-          <div class="upload-bar">
+          <p class="hint deliver-preview" id="downloadPreview" hidden>
+            <code id="downloadPreviewName"></code><span id="downloadPreviewMeta"></span>
+          </p>
+          <div class="action-bar">
             <button type="button" id="btnDownload" class="primary upload-btn" disabled>Download</button>
             <span class="hint" id="downloadStatus">Load a video to extract a selection.</span>
           </div>
         </div>
 
         <div id="uploadPane" hidden>
+          <label class="hint slp-toggle upload-original" id="uploadOriginalRow">
+            <span>Also upload the original video <em>(recommended)</em></span>
+            <input type="checkbox" id="uploadOriginal" class="switch" role="switch" checked />
+          </label>
+          <p class="hint upload-original-note" id="uploadOriginalNote" hidden>
+            The original is streamed from a remote URL, so it is not uploaded again — only the extracted selection is.
+          </p>
           <div class="card-heading">
             <h2>Upload destination</h2>
             <a id="viewDatasetLink" class="view-dataset-link" target="_blank" rel="noopener" hidden
@@ -318,14 +328,7 @@
           <p id="dandisetEmbargoError" class="dandiset-embargo-error" hidden>
             This dataset is not embargoed. Direct uploads are only allowed to embargoed dandisets; contact EMBER/BBQS admins.
           </p>
-          <label class="hint slp-toggle upload-original" id="uploadOriginalRow">
-            <span>Also upload the original video <em>(recommended)</em></span>
-            <input type="checkbox" id="uploadOriginal" class="switch" role="switch" checked />
-          </label>
-          <p class="hint upload-original-note" id="uploadOriginalNote" hidden>
-            The original is streamed from a remote URL, so it is not uploaded again — only the extracted selection is.
-          </p>
-          <div class="upload-bar">
+          <div class="action-bar">
             <button type="button" id="btnUpload" class="primary upload-btn" disabled>Upload</button>
             <span class="hint" id="uploadStatus">Sign in and load a video to upload a selection.</span>
           </div>

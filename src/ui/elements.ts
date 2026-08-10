@@ -63,6 +63,9 @@ export function getElements() {
     deliverSeg: required<HTMLDivElement>("deliverSeg"),
     downloadPane: required<HTMLDivElement>("downloadPane"),
     downloadHint: required<HTMLParagraphElement>("downloadHint"),
+    downloadPreview: required<HTMLParagraphElement>("downloadPreview"),
+    downloadPreviewName: required<HTMLElement>("downloadPreviewName"),
+    downloadPreviewMeta: required<HTMLSpanElement>("downloadPreviewMeta"),
     btnDownload: required<HTMLButtonElement>("btnDownload"),
     downloadStatus: required<HTMLSpanElement>("downloadStatus"),
 

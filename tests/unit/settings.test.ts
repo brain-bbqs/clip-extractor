@@ -38,6 +38,16 @@ describe("stored settings", () => {
     expect(loadStoredSettings()).toEqual({ dandisetId: "000123", oauth: { accessToken: "tok", expiresAt: 42 } });
   });
 
+  it("round-trips the chosen delivery mode, so a refresh keeps the visitor's side of the toggle", () => {
+    saveStoredSettings({ dandisetId: "000123", deliveryMode: "download" });
+    expect(loadStoredSettings()?.deliveryMode).toBe("download");
+  });
+
+  it("leaves the delivery mode unset when the visitor has never picked a side", () => {
+    saveStoredSettings({ dandisetId: "000123" });
+    expect(loadStoredSettings()?.deliveryMode).toBe(undefined);
+  });
+
   it("returns null when nothing is stored", () => {
     expect(loadStoredSettings()).toBe(null);
   });

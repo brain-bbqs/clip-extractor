@@ -8,7 +8,7 @@ import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } fro
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
 import { defaultDeliveryMode, uploadAssetPath, uploadDirectory, type DeliveryMode, type SelectionKind } from "./lib/delivery";
-import { extractClip, extractFrame, type ExtractedMedia, type ExtractProgress } from "./lib/extract";
+import { clipFileName, extractClip, extractFrame, frameFileName, type ExtractedMedia, type ExtractProgress } from "./lib/extract";
 import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./lib/upload";
 import { buildProvenance, PROVENANCE_FILENAME } from "./lib/provenance";
 import { countLabeledFramesInRange } from "./lib/annotations";
@@ -316,7 +316,14 @@ function growSelection(target: number): void {
   if (lo === state.inF && hi === state.outF) return;
   state.inF = lo;
   state.outF = hi;
+  selectionChanged();
+}
+
+/** Every in/out mutation funnels through here. Kept separate from updateSelUI(), which also runs on
+ * every seek during playback, so the delivery card is only recomputed when the range really moves. */
+function selectionChanged(): void {
   updateSelUI();
+  updateDeliveryGate();
 }
 
 function updateSelUI(): void {
@@ -336,6 +343,8 @@ function updateSelUI(): void {
   }
   els.selplay.style.display = state.backend ? "block" : "none";
   els.selplay.style.left = `${(state.cur / den) * 100}%`;
+  // Frame mode's output name tracks the current frame, so the preview follows every seek.
+  if (!deliveryBusy) updateDeliveryPreview();
   // Frame mode has no range summary — the current frame is already shown in the stage overlay.
   if (state.mode === "frame") return;
   const n = hi - lo + 1;
@@ -455,17 +464,17 @@ els.frameSlider.addEventListener("input", () => {
 els.btnSetIn.addEventListener("click", () => {
   state.inF = state.cur;
   if (state.outF != null && state.outF < state.inF) state.outF = null;
-  updateSelUI();
+  selectionChanged();
 });
 els.btnSetOut.addEventListener("click", () => {
   state.outF = state.cur;
   if (state.inF != null && state.inF > state.outF) state.inF = null;
-  updateSelUI();
+  selectionChanged();
 });
 els.btnClearSel.addEventListener("click", () => {
   state.inF = null;
   state.outF = null;
-  updateSelUI();
+  selectionChanged();
 });
 els.showPose.addEventListener("change", renderFrame);
 
@@ -594,16 +603,28 @@ let currentDatasets: IncomingDandiset[] = [];
 // The signed-in account, resolved once for the header avatar and reused to name the uploader in
 // each upload's provenance record.
 let currentUser: ArchiveUser | null = null;
+// The Download/Upload side the visitor picked themselves, in this session or a previous one. Null
+// means they have never chosen, and the sign-in state decides (see applyDeliveryMode).
+let storedDeliveryMode: DeliveryMode | null = null;
 
-function loadAuthSettings(): void {
+function loadSettings(): void {
   const s = loadStoredSettings();
   if (!s) return;
   if (s.dandisetId) storedDandisetId = s.dandisetId;
   if (s.oauth) oauthTokens = s.oauth;
+  if (s.deliveryMode) storedDeliveryMode = s.deliveryMode;
 }
 
-function saveAuthSettings(): void {
-  saveStoredSettings({ dandisetId: els.dandisetId.value.trim(), oauth: oauthTokens ?? undefined });
+function saveSettings(): void {
+  // The picker is empty whenever it has no options yet (signed out, or still loading), which is not
+  // the same as "no dataset chosen" — keep the last known id instead of blanking it.
+  const selected = els.dandisetId.value.trim();
+  if (selected) storedDandisetId = selected;
+  saveStoredSettings({
+    dandisetId: storedDandisetId,
+    oauth: oauthTokens ?? undefined,
+    deliveryMode: storedDeliveryMode ?? undefined,
+  });
 }
 
 function currentConfig(): ArchiveConfig {
@@ -632,7 +653,7 @@ async function ensureFreshOAuth(): Promise<void> {
   const fresh = await ensureFreshToken(current).catch(() => current);
   if (fresh !== current) {
     oauthTokens = fresh;
-    saveAuthSettings();
+    saveSettings();
   }
 }
 
@@ -702,7 +723,7 @@ async function refreshDandisetOptions(): Promise<void> {
     currentDatasets = [];
     setDandisetPlaceholder("Please sign in to see your incoming datasets.");
     updateViewDatasetLink();
-    applyDefaultDeliveryMode();
+    applyDeliveryMode();
     return;
   }
   await ensureFreshOAuth();
@@ -720,9 +741,9 @@ async function refreshDandisetOptions(): Promise<void> {
     currentDatasets = [];
     setDandisetPlaceholder("Could not load your datasets");
   }
-  saveAuthSettings();
+  saveSettings();
   updateViewDatasetLink();
-  applyDefaultDeliveryMode();
+  applyDeliveryMode();
 }
 
 async function initEmberAuth(): Promise<void> {
@@ -732,7 +753,7 @@ async function initEmberAuth(): Promise<void> {
   });
   if (callbackTokens) {
     oauthTokens = callbackTokens;
-    saveAuthSettings();
+    saveSettings();
     renderAuthUI();
   }
   await refreshDandisetOptions();
@@ -743,7 +764,7 @@ els.oauthSignoutBtn.addEventListener("click", () => {
   const tokens = oauthTokens;
   oauthTokens = null;
   currentUser = null;
-  saveAuthSettings();
+  saveSettings();
   renderAuthUI();
   if (tokens) void revokeToken(tokens);
   void refreshDandisetOptions();
@@ -751,7 +772,7 @@ els.oauthSignoutBtn.addEventListener("click", () => {
 els.dandisetId.addEventListener("change", () => {
   updateDeliveryGate();
   updateViewDatasetLink();
-  saveAuthSettings();
+  saveSettings();
 });
 
 // ============================================================
@@ -760,9 +781,6 @@ els.dandisetId.addEventListener("change", () => {
 // Extraction runs on demand, when either button is pressed, so what leaves the page always matches
 // the selection currently on screen — there is no stale "extracted" artifact to invalidate.
 
-// Set once the visitor picks a side themselves, after which sign-in state no longer moves the
-// toggle under them.
-let deliveryChosen = false;
 // Guards both actions while an extraction or upload is in flight.
 let deliveryBusy = false;
 
@@ -772,18 +790,20 @@ function setDeliveryMode(mode: DeliveryMode): void {
   updateDeliveryGate();
 }
 
-/** Upload leads whenever it is actually usable (signed in, with at least one incoming dataset);
- * otherwise Download does, since there would be nowhere to upload to. */
-function applyDefaultDeliveryMode(): void {
-  if (deliveryChosen) return;
-  const mode = defaultDeliveryMode(currentDatasets.length);
+/** Shows the side the visitor last picked — including across a refresh, which is why the choice is
+ * persisted rather than kept in memory. With no choice on record, Upload leads whenever it is
+ * actually usable (signed in, with at least one incoming dataset) and Download leads otherwise,
+ * since there would be nowhere to upload to. */
+function applyDeliveryMode(): void {
+  const mode = storedDeliveryMode ?? defaultDeliveryMode(currentDatasets.length);
   selectSeg(els.deliverSeg, mode);
   setDeliveryMode(mode);
 }
 
 wireSeg(els.deliverSeg, (v) => {
-  deliveryChosen = true;
-  setDeliveryMode(v as DeliveryMode);
+  storedDeliveryMode = v as DeliveryMode;
+  setDeliveryMode(storedDeliveryMode);
+  saveSettings();
 });
 
 function setStatus(el: HTMLElement, message: string, cls: "" | "ok" | "err" = ""): void {
@@ -798,16 +818,24 @@ function setUploadProgress(fraction: number | null, done = false): void {
   els.uploadProgressFill.className = done ? "progress-fill ok" : "progress-fill";
 }
 
-// Enablement, the embargo warning, and both panes' idle copy, all derived from the current video,
-// selector mode, and destination.
+/** In frame mode the current frame is always a valid selection; a snippet needs at least one of the
+ * in/out points marked, since with neither the range silently means "the entire video" — which is
+ * not something to hand off under the name of a clip. */
+function hasSelection(): boolean {
+  return state.mode === "frame" || state.inF !== null || state.outF !== null;
+}
+
+// Enablement, the embargo warning, and both panes' copy, all derived from the current video,
+// selection, selector mode, and destination.
 function updateDeliveryGate(): void {
   const cfg = currentConfig();
   const hasVideo = state.backend !== null;
   const notEmbargoed = cfg.embargoed === false;
   const frameMode = state.mode === "frame";
+  const selected = hasSelection();
   els.dandisetEmbargoError.hidden = !notEmbargoed;
-  els.btnDownload.disabled = deliveryBusy || !hasVideo;
-  els.btnUpload.disabled = deliveryBusy || !hasVideo || !cfg.dandisetId || notEmbargoed;
+  els.btnDownload.disabled = deliveryBusy || !hasVideo || !selected;
+  els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !cfg.dandisetId || notEmbargoed;
   els.downloadHint.textContent = frameMode ? "Saves the selected frame to your computer." : "Saves the selected snippet to your computer.";
   // The original can only ride along when its bytes are already in the browser; a range-streamed
   // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
@@ -815,17 +843,33 @@ function updateDeliveryGate(): void {
   els.uploadOriginalRow.hidden = !canSendOriginal;
   els.uploadOriginalNote.hidden = canSendOriginal || !hasVideo;
   if (deliveryBusy) return;
-  setStatus(els.downloadStatus, hasVideo ? "" : "Load a video to extract a selection.");
-  setStatus(
-    els.uploadStatus,
-    !hasVideo
-      ? "Load a video to extract a selection."
-      : !cfg.dandisetId
-        ? "Pick an upload destination above."
-        : notEmbargoed
-          ? "This destination cannot accept direct uploads."
-          : `Uploads the selected ${frameMode ? "frame" : "snippet"} to the dataset above.`,
-  );
+  updateDeliveryPreview();
+  // Only ever says why the button is unavailable; a ready button needs no caption.
+  const blocked = !hasVideo
+    ? "Load a video to extract a selection."
+    : !selected
+      ? "Mark an in or out point on the player to select a snippet."
+      : "";
+  setStatus(els.downloadStatus, blocked);
+  setStatus(els.uploadStatus, blocked || (!cfg.dandisetId ? "Pick an upload destination above." : ""));
+}
+
+/** Names the file the Download button is about to produce, so it is clear what leaves the page. Also
+ * refreshed on every seek (frame mode's output follows the current frame), hence the two long-lived
+ * child elements rather than rebuilt markup. */
+function updateDeliveryPreview(): void {
+  const show = state.backend !== null && hasSelection();
+  els.downloadPreview.hidden = !show;
+  if (!show) return;
+  if (state.mode === "frame") {
+    els.downloadPreviewName.textContent = frameFileName(state.sourceName, state.cur);
+    els.downloadPreviewMeta.textContent = ` · frame ${state.cur}`;
+    return;
+  }
+  const [lo, hi] = selRange();
+  const n = hi - lo + 1;
+  els.downloadPreviewName.textContent = clipFileName(state.sourceName, lo, hi);
+  els.downloadPreviewMeta.textContent = ` · ${n} frames · ${(n / state.fps).toFixed(2)}s`;
 }
 
 function setDeliveryBusy(busy: boolean): void {
@@ -1011,8 +1055,11 @@ async function runUpload(): Promise<void> {
 els.btnDownload.addEventListener("click", () => void runDownload());
 els.btnUpload.addEventListener("click", () => void runUpload());
 
-loadAuthSettings();
+loadSettings();
 renderAuthUI();
+// Applied before the archive is consulted so a restored choice is the first thing painted, rather
+// than the default briefly winning and being corrected once the dataset listing lands.
+applyDeliveryMode();
 void initEmberAuth();
 
 // URL params: ?url=<video>&slp=<slp>

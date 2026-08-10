@@ -642,9 +642,24 @@ input[type="checkbox"] {
   grid-template-columns: 1fr;
 }
 
-/* Delivery card: Download / Upload toggle, then whichever pane it selected. */
+/* Delivery card: Download / Upload toggle, then whichever pane it selected. Both panes centre their
+   hint copy and their action button under the toggle above them. */
 .deliver-hint {
   margin: 0;
+  text-align: center;
+}
+.deliver-preview {
+  margin: 0.5rem 0 0;
+  text-align: center;
+}
+
+/* Action button with its status caption underneath, centred as one block */
+.action-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
 }
 
 /* Upload destination: the EMBER dataset the extracted selection is bound for. */
@@ -705,9 +720,11 @@ input[type="checkbox"] {
   font-size: 0.9rem;
 }
 
-/* The "also upload the original" recommendation */
+/* The "also upload the original" recommendation, centred directly under the delivery toggle */
 .upload-original {
-  margin-top: 0.75rem;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.25rem;
 }
 .upload-original em {
   color: var(--accent);
@@ -715,15 +732,10 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 .upload-original-note {
-  margin: 0.75rem 0 0;
+  margin: 0 0 1.25rem;
+  text-align: center;
 }
 
-.upload-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
 .upload-btn {
   min-width: 8rem;
 }

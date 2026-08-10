@@ -27,9 +27,16 @@ export interface OAuthTokenSet {
   expiresAt: number;
 }
 
+// Type-only, so this stays a leaf module at runtime: the stored-settings shape needs the delivery
+// mode's union without pulling lib/delivery.ts into the bundle graph here.
+import type { DeliveryMode } from "./delivery";
+
 export interface StoredSettings {
   dandisetId?: string;
   oauth?: OAuthTokenSet;
+  /** The Download/Upload side the visitor last picked themselves, so a refresh does not hand them
+   * back to whichever side the sign-in state would have defaulted to. */
+  deliveryMode?: DeliveryMode;
 }
 
 // ------------------------------------------------------------------
