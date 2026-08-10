@@ -65,9 +65,27 @@ export interface ProvenanceExtracted {
 }
 
 export interface ProvenanceAnnotations {
+  /** The `.slp` the annotations were read from, or null when it came from a URL rather than a local
+   * file (in which case there are no local bytes to name, checksum or upload). */
+  filename: string | null;
+  checksum: ProvenanceChecksum | null;
+  uploaded: boolean;
+  /** Where the `.slp` landed, or null when it was not uploaded. */
+  asset_path: string | null;
   skeleton_node_count: number;
   track_count: number;
   labeled_frames_in_selection: number;
+}
+
+/** The annotation fields buildProvenance takes, before the checksum is wrapped. */
+export interface ProvenanceAnnotationsInput {
+  filename: string | null;
+  checksum: string | null;
+  uploaded: boolean;
+  assetPath: string | null;
+  skeletonNodeCount: number;
+  trackCount: number;
+  labeledFramesInSelection: number;
 }
 
 export interface ProvenanceDocument {
@@ -117,7 +135,7 @@ export interface ProvenanceInput {
     checksum: string;
     encoding: string;
   };
-  annotations: ProvenanceAnnotations | null;
+  annotations: ProvenanceAnnotationsInput | null;
 }
 
 function checksum(value: string | null): ProvenanceChecksum | null {
@@ -161,6 +179,14 @@ export function buildProvenance(input: ProvenanceInput): ProvenanceDocument {
       checksum: checksum(input.extracted.checksum)!,
       encoding: input.extracted.encoding,
     },
-    annotations: input.annotations,
+    annotations: input.annotations && {
+      filename: input.annotations.filename,
+      checksum: checksum(input.annotations.checksum),
+      uploaded: input.annotations.uploaded,
+      asset_path: input.annotations.assetPath,
+      skeleton_node_count: input.annotations.skeletonNodeCount,
+      track_count: input.annotations.trackCount,
+      labeled_frames_in_selection: input.annotations.labeledFramesInSelection,
+    },
   };
 }

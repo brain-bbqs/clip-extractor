@@ -113,13 +113,50 @@ describe("buildProvenance", () => {
     expect(doc.extracted.encoding).toContain("trim=start_frame=120");
   });
 
-  it("summarizes loaded annotations, or records their absence", () => {
+  it("records no annotations block when no .slp was loaded", () => {
     expect(buildProvenance(base).annotations).toBeNull();
-    const annotated = buildProvenance({
+  });
+
+  it("names, checksums and locates an uploaded .slp alongside its counts", () => {
+    const doc = buildProvenance({
       ...base,
-      annotations: { skeleton_node_count: 5, track_count: 2, labeled_frames_in_selection: 12 },
+      annotations: {
+        filename: "mice.tracked.slp",
+        checksum: `${"c".repeat(32)}-1`,
+        uploaded: true,
+        assetPath: "sourcedata/raw/clip-extractor/stamp/mice.tracked.slp",
+        skeletonNodeCount: 5,
+        trackCount: 2,
+        labeledFramesInSelection: 12,
+      },
     });
-    expect(annotated.annotations).toEqual({ skeleton_node_count: 5, track_count: 2, labeled_frames_in_selection: 12 });
+    expect(doc.annotations).toEqual({
+      filename: "mice.tracked.slp",
+      checksum: { algorithm: "dandi:dandi-etag", value: `${"c".repeat(32)}-1` },
+      uploaded: true,
+      asset_path: "sourcedata/raw/clip-extractor/stamp/mice.tracked.slp",
+      skeleton_node_count: 5,
+      track_count: 2,
+      labeled_frames_in_selection: 12,
+    });
+  });
+
+  it("still records the .slp's checksum when it was not uploaded", () => {
+    const doc = buildProvenance({
+      ...base,
+      annotations: {
+        filename: "mice.tracked.slp",
+        checksum: `${"c".repeat(32)}-1`,
+        uploaded: false,
+        assetPath: null,
+        skeletonNodeCount: 5,
+        trackCount: 2,
+        labeledFramesInSelection: 12,
+      },
+    });
+    expect(doc.annotations?.uploaded).toBe(false);
+    expect(doc.annotations?.asset_path).toBeNull();
+    expect(doc.annotations?.checksum?.value).toBe(`${"c".repeat(32)}-1`);
   });
 
   it("serializes to JSON without losing an unknown uploader", () => {

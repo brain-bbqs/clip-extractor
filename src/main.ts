@@ -27,7 +27,7 @@ import {
   type ExtractProgress,
 } from "./lib/extract";
 import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./lib/upload";
-import { buildProvenance } from "./lib/provenance";
+import { buildProvenance, type ProvenanceAnnotationsInput } from "./lib/provenance";
 import { countLabeledFramesInRange } from "./lib/annotations";
 import { fetchArchiveUser, type ArchiveUser } from "./lib/users";
 import { friendlyError } from "./lib/errors";
@@ -91,6 +91,9 @@ interface AppState {
   playing: boolean;
   speed: number;
   pose: PoseModel | null;
+  /** The `.slp` behind `pose`, when it came from a local file — kept so it can ride along with an
+   * upload. Null for a `.slp` fetched from a URL, whose bytes were never held locally. */
+  slpFile: File | null;
   mode: SelectorMode;
   curBitmap: ImageBitmap | ImageData | ArrayBuffer | { buffer: ArrayBufferLike } | null;
 }
@@ -111,6 +114,7 @@ const state: AppState = {
   playing: false,
   speed: 1,
   pose: null,
+  slpFile: null,
   mode: "video",
   curBitmap: null,
 };
@@ -203,6 +207,9 @@ async function loadSlp(source: File | string, name: string): Promise<void> {
   try {
     const labels = (await sio.loadSlp(source, { openVideos: false })) as unknown as SleapLabels;
     state.pose = labelsToPose(labels);
+    // Only after a successful parse: a file this app could not read is not one to hand to the
+    // archive.
+    state.slpFile = source instanceof File ? source : null;
     const nFrames = state.pose.byFrame.size;
     log(`SLP loaded: ${state.pose.skeleton.nodes.length} nodes, ${state.pose.tracks.length} tracks, ${nFrames} labeled frames`, "ok");
     els.slpBadge.textContent = `${nFrames} frames`;
@@ -911,9 +918,9 @@ function updateDeliveryGate(): void {
   els.btnDownload.disabled = deliveryBusy || !hasVideo || !selected;
   els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !cfg.dandisetId || notEmbargoed;
   els.downloadHint.textContent = frameMode ? "Saves the selected frame to your computer." : "Saves the selected snippet to your computer.";
-  // The original can only ride along when its bytes are already in the browser; a range-streamed
+  // Original content can only ride along when its bytes are already in the browser; a range-streamed
   // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
-  const canSendOriginal = state.sourceFile !== null;
+  const canSendOriginal = state.sourceFile !== null || state.slpFile !== null;
   els.uploadOriginalRow.hidden = !canSendOriginal;
   els.uploadOriginalNote.hidden = canSendOriginal || !hasVideo;
   if (deliveryBusy) return;
@@ -1020,14 +1027,24 @@ async function uploadOne(
 }
 
 /** What was loaded from a `.slp`, restricted to the selection, or null when there is none. */
-function annotationsSummary(lo: number, hi: number) {
+function annotationsSummary(lo: number, hi: number, slp: UploadedSlp | null): ProvenanceAnnotationsInput | null {
   const pose = els.slpToggle.checked ? state.pose : null;
   if (!pose) return null;
   return {
-    skeleton_node_count: pose.skeleton.nodes.length,
-    track_count: pose.tracks.length,
-    labeled_frames_in_selection: countLabeledFramesInRange(pose, lo, hi),
+    filename: state.slpFile?.name ?? null,
+    checksum: slp?.digest.etag ?? null,
+    uploaded: slp?.path != null,
+    assetPath: slp?.path ?? null,
+    skeletonNodeCount: pose.skeleton.nodes.length,
+    trackCount: pose.tracks.length,
+    labeledFramesInSelection: countLabeledFramesInRange(pose, lo, hi),
   };
+}
+
+/** A loaded `.slp` that was checksummed, and uploaded too when `path` is set. */
+interface UploadedSlp {
+  digest: BlobDigest;
+  path: string | null;
 }
 
 async function runUpload(): Promise<void> {
@@ -1073,6 +1090,19 @@ async function runUpload(): Promise<void> {
       await uploadOne(cfg, original, originalPath, original.type || "video/mp4", "the original video", originalDigest);
     }
 
+    // A loaded .slp is original content too, so it rides along on the same toggle — and is
+    // checksummed either way, for the same reason the video is.
+    let slp: UploadedSlp | null = null;
+    if (state.slpFile) {
+      const slpFile = state.slpFile;
+      const digest = await checksumBlob(slpFile, (f) => reportUploadStep("the annotations", PHASE_LABEL.checksum, f));
+      slp = { digest, path: null };
+      if (els.uploadOriginal.checked) {
+        slp.path = uploadOriginalPath(directory, slpFile.name);
+        await uploadOne(cfg, slpFile, slp.path, slpFile.type || "application/octet-stream", "the annotations", digest);
+      }
+    }
+
     const provenance = buildProvenance({
       createdAt: new Date(),
       pageUrl: location.href.split("?")[0],
@@ -1104,7 +1134,7 @@ async function runUpload(): Promise<void> {
         checksum: mediaDigest.etag,
         encoding: media.encoding,
       },
-      annotations: annotationsSummary(lo, hi),
+      annotations: annotationsSummary(lo, hi, slp),
     });
     const provenanceBlob = new Blob([JSON.stringify(provenance, null, 2)], { type: "application/json" });
     const provenancePath = uploadAssetPath(directory, provenanceFileName(entities));

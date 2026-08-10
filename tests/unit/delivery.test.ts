@@ -17,6 +17,14 @@ describe("uploadDirectory", () => {
     expect(uploadDirectory(new Date("2026-08-09T22:49:13.482Z"), "frame")).toBe(`${UPLOAD_ROOT}/date-20260809_time-224913_type-frame`);
   });
 
+  it("uses UTC regardless of the local zone the Date was expressed in", () => {
+    // 23:30 at +05:30 is 18:00 UTC the same day; a local-time reading would name the wrong hour,
+    // and near midnight the wrong day.
+    expect(uploadDirectory(new Date("2026-08-10T23:30:00+05:30"), "snippet")).toBe(`${UPLOAD_ROOT}/date-20260810_time-180000_type-snippet`);
+    // 00:30 at +05:30 is the *previous* day in UTC.
+    expect(uploadDirectory(new Date("2026-08-10T00:30:00+05:30"), "snippet")).toBe(`${UPLOAD_ROOT}/date-20260809_time-190000_type-snippet`);
+  });
+
   it("zero-pads single-digit months, days and times", () => {
     expect(uploadDirectory(new Date("2026-01-02T03:04:05.000Z"), "snippet")).toBe(`${UPLOAD_ROOT}/date-20260102_time-030405_type-snippet`);
   });

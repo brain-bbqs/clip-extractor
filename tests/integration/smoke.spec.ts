@@ -73,8 +73,9 @@ test("delivery toggle swaps between the save and upload panes", async ({ page })
   await page.locator('#deliverSeg button[data-deliver="upload"]').click();
   await expect(page.locator("#uploadPane")).toBeVisible();
   await expect(page.locator("#downloadPane")).toBeHidden();
-  // The recommended companion upload is on by default.
+  // The recommended companion upload is on by default, and covers the video and any .slp.
   await expect(page.locator("#uploadOriginal")).toBeChecked();
+  await expect(page.locator("#uploadOriginalRow")).toContainText("Include the original content");
 
   await page.locator('#deliverSeg button[data-deliver="download"]').click();
   await expect(page.locator("#downloadPane")).toBeVisible();
