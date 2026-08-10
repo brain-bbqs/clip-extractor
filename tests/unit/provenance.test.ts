@@ -126,8 +126,8 @@ describe("buildProvenance", () => {
     const doc = buildProvenance({
       ...base,
       overlay: {
-        filename: "name-mice_range-120+149_type-snippet_desc-overlay_video.mp4",
-        assetPath: "sourcedata/raw/clip-extractor/stamp/name-mice_range-120+149_type-snippet_desc-overlay_video.mp4",
+        filename: "name-mice_range-120+149_type-snippet_overlay.mp4",
+        assetPath: "sourcedata/raw/clip-extractor/stamp/name-mice_range-120+149_type-snippet_overlay.mp4",
         mediaType: "video/mp4",
         sizeBytes: 4096,
         checksum: `${"d".repeat(32)}-1`,
@@ -135,8 +135,8 @@ describe("buildProvenance", () => {
       },
     });
     expect(doc.overlay).toEqual({
-      filename: "name-mice_range-120+149_type-snippet_desc-overlay_video.mp4",
-      asset_path: "sourcedata/raw/clip-extractor/stamp/name-mice_range-120+149_type-snippet_desc-overlay_video.mp4",
+      filename: "name-mice_range-120+149_type-snippet_overlay.mp4",
+      asset_path: "sourcedata/raw/clip-extractor/stamp/name-mice_range-120+149_type-snippet_overlay.mp4",
       media_type: "video/mp4",
       size_bytes: 4096,
       checksum: { algorithm: "dandi:dandi-etag", value: `${"d".repeat(32)}-1` },

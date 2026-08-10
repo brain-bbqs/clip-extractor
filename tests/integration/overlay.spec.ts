@@ -26,7 +26,7 @@ test("a loaded .slp adds the annotations file and a rendered overlay to the uplo
 
   expect(registered.map((path) => path.split("/").pop())).toEqual([
     "name-mice+new_index-5_type-frame_image.png",
-    "name-mice+new_index-5_type-frame_desc-overlay_image.png",
+    "name-mice+new_index-5_type-frame_overlay.png",
     "mice_new.webm",
     "mice_new.tracked.slp",
     "name-mice+new_index-5_type-frame_provenance.json",
@@ -52,7 +52,7 @@ test("the overlay is uploaded even when the original content is excluded", async
   // No source video and no .slp, but the overlay is still there.
   expect(registered.map((path) => path.split("/").pop())).toEqual([
     "name-mice+new_index-5_type-frame_image.png",
-    "name-mice+new_index-5_type-frame_desc-overlay_image.png",
+    "name-mice+new_index-5_type-frame_overlay.png",
     "name-mice+new_index-5_type-frame_provenance.json",
   ]);
 });

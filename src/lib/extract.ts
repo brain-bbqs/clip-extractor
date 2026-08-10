@@ -26,12 +26,10 @@ export type ExtractProgress = (message: string, fraction?: number) => void;
 //   name-<source>_index-<frame>_type-frame_provenance.json
 //   name-<source>_range-<in>+<out>_type-snippet_video.mp4
 //   name-<source>_range-<in>+<out>_type-snippet_provenance.json
-// A sidecar shares every entity with the file it describes and differs only in that suffix, so the
-// pair sits side by side in a listing. A rendered variant of the same selection takes a `desc-`
-// entity, BIDS's marker for a derived version:
-//   name-<source>_range-<in>+<out>_type-snippet_desc-overlay_video.mp4
-// The original video is not renamed at all — it keeps the name it arrived with (see runUpload in
-// main.ts).
+//   name-<source>_range-<in>+<out>_type-snippet_overlay.mp4
+// Files describing or rendering the same selection share every entity with it and differ only in
+// that suffix, so they sit side by side in a listing. The original video is not renamed at all — it
+// keeps the name it arrived with (see runUpload in main.ts).
 
 /** The source file name minus its extension, for naming derived files. */
 export function sourceBaseName(sourceName: string): string {
@@ -72,20 +70,17 @@ function selectionEntity(entities: AssetEntities): string {
   return entities.mode === "frame" ? `index-${entities.inFrame}` : `range-${entities.inFrame}+${entities.outFrame}`;
 }
 
-/** One file of an extraction: `name-…_<selection>_type-<type>[_desc-…][_<suffix>].<extension>`. */
+/** One file of an extraction: `name-…_<selection>_type-<type>[_<suffix>].<extension>`. */
 export interface AssetNameParts {
   type: string;
-  /** Marks a derived variant of the same selection, e.g. `overlay`. */
-  desc?: string;
-  /** Names what the file holds: `video`, `image`, `provenance`. */
+  /** Names what the file holds: `video`, `image`, `overlay`, `provenance`. */
   suffix?: string;
   extension: string;
 }
 
 export function assetFileName(entities: AssetEntities, parts: AssetNameParts): string {
-  const desc = parts.desc ? `_desc-${parts.desc}` : "";
   const suffix = parts.suffix ? `_${parts.suffix}` : "";
-  return `${nameEntity(entities.sourceName)}_${selectionEntity(entities)}_type-${parts.type}${desc}${suffix}.${parts.extension}`;
+  return `${nameEntity(entities.sourceName)}_${selectionEntity(entities)}_type-${parts.type}${suffix}.${parts.extension}`;
 }
 
 export function clipFileName(sourceName: string, lo: number, hi: number): string {
@@ -105,14 +100,13 @@ export function provenanceFileName(entities: AssetEntities): string {
   return assetFileName(entities, { type: entities.mode, suffix: "provenance", extension: "json" });
 }
 
-/** The same selection with the pose drawn into the pixels — a derived variant, so `desc-overlay`. */
+/** The same selection with the pose drawn into the pixels, so `overlay` in place of the plain
+ * extract's `image`/`video` suffix. */
 export function overlayFileName(entities: AssetEntities): string {
-  const frameMode = entities.mode === "frame";
   return assetFileName(entities, {
     type: entities.mode,
-    desc: "overlay",
-    suffix: frameMode ? "image" : "video",
-    extension: frameMode ? "png" : "mp4",
+    suffix: "overlay",
+    extension: entities.mode === "frame" ? "png" : "mp4",
   });
 }
 

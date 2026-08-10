@@ -80,22 +80,21 @@ describe("provenanceFileName", () => {
 });
 
 describe("overlayFileName", () => {
-  it("marks the rendered snippet as a derived variant with desc-overlay", () => {
+  it("takes an overlay suffix in place of the plain snippet's video one", () => {
     expect(overlayFileName({ sourceName: "mice.mp4", mode: "snippet", inFrame: 120, outFrame: 300 })).toBe(
-      "name-mice_range-120+300_type-snippet_desc-overlay_video.mp4",
+      "name-mice_range-120+300_type-snippet_overlay.mp4",
     );
   });
 
-  it("renders a single frame as a PNG variant of the same index", () => {
+  it("renders a single frame as a PNG of the same index", () => {
     expect(overlayFileName({ sourceName: "mice.mp4", mode: "frame", inFrame: 42, outFrame: 42 })).toBe(
-      "name-mice_index-42_type-frame_desc-overlay_image.png",
+      "name-mice_index-42_type-frame_overlay.png",
     );
   });
 
-  it("sorts next to the plain extract it renders, sharing every entity before desc-", () => {
+  it("shares every entity with the plain extract it renders, differing only in the suffix", () => {
     const entities = { sourceName: "mice.mp4", mode: "frame" as const, inFrame: 42, outFrame: 42 };
     const plain = frameFileName(entities.sourceName, entities.inFrame);
-    const overlay = overlayFileName(entities);
-    expect(overlay.startsWith(plain.replace(/_type-frame_image\.png$/, "_type-frame"))).toBe(true);
+    expect(overlayFileName(entities)).toBe(plain.replace("_image.png", "_overlay.png"));
   });
 });

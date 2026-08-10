@@ -28,7 +28,7 @@ A TypeScript + Vite video player built on [sleap-io.js](https://github.com/talmo
   - `name-mice_range-120+300_type-snippet_video.mp4` — the extracted snippet, with its inclusive frame range
   - `name-mice_range-120+300_type-snippet_provenance.json` — its sidecar, sharing every entity and differing only in the suffix
   - `name-mice_index-42_type-frame_image.png` and `name-mice_index-42_type-frame_provenance.json` — a single extracted frame and its sidecar
-  - `name-mice_range-120+300_type-snippet_desc-overlay_video.mp4` — the same selection with the pose drawn in, marked as a derived variant by `desc-`
+  - `name-mice_range-120+300_type-snippet_overlay.mp4` — the same selection with the pose drawn in
   - The `name-` label is reduced to alphanumerics so the entities stay unambiguous to parse, with every word separator (space, `_`, `-`, punctuation) marked as `+`: `mice_new` becomes `name-mice+new`. The unabridged original file name is preserved in the provenance record.
   - **Original content is never renamed** — the source video and any `.slp` are untouched, so they keep the names they arrived with (minus spaces).
 - **Pose overlay version** — whenever a `.slp` is loaded, an upload also carries a rendered copy of the selection with the skeleton drawn into the pixels, for looking at without a viewer that understands `.slp`: a PNG in Frame mode, an H.264 MP4 in Snippet mode (drawn frame by frame, then encoded by the same ffmpeg.wasm that trims the plain snippet, so it does not depend on which codecs the browser can encode). It is **not** governed by the "include the original content" toggle — it is a view of the selection, not a copy of a source.
