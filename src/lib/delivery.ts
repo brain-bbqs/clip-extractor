@@ -37,6 +37,13 @@ export function uploadOriginalPath(directory: string, filename: string): string 
   return sanitizePath(directory, verbatimFilename(filename));
 }
 
+/** A deep link into the archive's file browser, opened straight at an upload's own directory rather
+ * than the dandiset's landing page. Mirrors the route the archive web app itself uses:
+ * `/dandiset/<id>/<version>/files?location=<path>` (dandi/dandi-archive web/src/router). */
+export function fileBrowserUrl(web: string, dandisetId: string, directory: string): string {
+  return `${web}/dandiset/${dandisetId}/draft/files?location=${encodeURIComponent(directory)}`;
+}
+
 /** Upload is the default whenever it is actually usable — signed in with at least one incoming
  * dataset to upload to; otherwise there is nothing to upload to and Download leads instead. */
 export function defaultDeliveryMode(availableDatasets: number): DeliveryMode {

@@ -9,6 +9,7 @@ import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
 import {
   defaultDeliveryMode,
+  fileBrowserUrl,
   uploadAssetPath,
   uploadDirectory,
   uploadOriginalPath,
@@ -827,6 +828,17 @@ function setStatus(el: HTMLElement, message: string, cls: "" | "ok" | "err" = ""
   el.className = cls ? `hint ${cls}` : "hint";
 }
 
+/** Same, followed by a link — so an outcome can hand over somewhere to go next. */
+function setStatusLink(el: HTMLElement, message: string, href: string, linkText: string, cls: "" | "ok" | "err" = ""): void {
+  const link = document.createElement("a");
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.textContent = linkText;
+  el.replaceChildren(message, link);
+  el.className = cls ? `hint ${cls}` : "hint";
+}
+
 /** Same, with a file name set in the monospace `code` style so it stands out from the prose. */
 function setStatusNaming(el: HTMLElement, before: string, filename: string, after: string, cls: "" | "ok" | "err" = ""): void {
   const code = document.createElement("code");
@@ -1063,8 +1075,14 @@ async function runUpload(): Promise<void> {
     setDeliveryBusy(false);
     setUploadProgress(1, true);
     // Deliberately terse: uploadOne() has already logged every asset path to the console, and the
-    // "View on EMBER" link above goes to the dataset itself.
-    setStatus(els.uploadStatus, "Upload complete", "ok");
+    // link goes straight to this upload's own directory in the archive's file browser.
+    setStatusLink(
+      els.uploadStatus,
+      "Upload complete - ",
+      fileBrowserUrl(cfg.web, cfg.dandisetId, directory),
+      "click here to view and share",
+      "ok",
+    );
     log(`Upload complete: ${directory}/`, "ok");
   } catch (e) {
     setDeliveryBusy(false);

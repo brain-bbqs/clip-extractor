@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { UPLOAD_ROOT, defaultDeliveryMode, uploadAssetPath, uploadDirectory, uploadOriginalPath } from "../../src/lib/delivery";
+import {
+  UPLOAD_ROOT,
+  defaultDeliveryMode,
+  fileBrowserUrl,
+  uploadAssetPath,
+  uploadDirectory,
+  uploadOriginalPath,
+} from "../../src/lib/delivery";
 
 describe("uploadDirectory", () => {
   it("names the directory with separate date and time entities, plus what it holds", () => {
@@ -44,6 +51,20 @@ describe("uploadOriginalPath", () => {
     expect(uploadOriginalPath("sourcedata/raw/clip-extractor/stamp", "file_example_480 - Copy.webm")).toBe(
       "sourcedata/raw/clip-extractor/stamp/file_example_480-Copy.webm",
     );
+  });
+});
+
+describe("fileBrowserUrl", () => {
+  it("deep links into the archive's file browser at the upload's own directory", () => {
+    expect(
+      fileBrowserUrl("https://dandi.emberarchive.org", "000123", "sourcedata/raw/clip-extractor/date-20260810_time-031053_type-frame"),
+    ).toBe(
+      "https://dandi.emberarchive.org/dandiset/000123/draft/files?location=sourcedata%2Fraw%2Fclip-extractor%2Fdate-20260810_time-031053_type-frame",
+    );
+  });
+
+  it("escapes a directory holding a + from a range entity", () => {
+    expect(fileBrowserUrl("https://web", "1", "a/date-1_type-snippet")).toContain("location=a%2Fdate-1_type-snippet");
   });
 });
 

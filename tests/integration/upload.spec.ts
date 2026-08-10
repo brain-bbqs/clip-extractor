@@ -98,7 +98,8 @@ test("an upload registers the extract, the original and a matching provenance si
   await expect(page.locator("#btnUpload")).toBeEnabled();
 
   await page.locator("#btnUpload").click();
-  await expect(page.locator("#uploadStatus")).toHaveText("Upload complete", { timeout: 60_000 });
+  const status = page.locator("#uploadStatus");
+  await expect(status).toContainText("Upload complete", { timeout: 60_000 });
 
   expect(registered).toHaveLength(3);
   // One timestamped directory for the whole upload, tagged with what it holds.
@@ -111,4 +112,13 @@ test("an upload registers the extract, the original and a matching provenance si
     "file_example_480-Copy.webm",
     "name-fileexample480+Copy_index-5_type-frame_provenance.json",
   ]);
+
+  // The completion link opens the archive's file browser at this upload's own directory.
+  const directory = [...directories][0];
+  await expect(status.locator("a")).toHaveText("click here to view and share");
+  await expect(status.locator("a")).toHaveAttribute(
+    "href",
+    `https://dandi.emberarchive.org/dandiset/000123/draft/files?location=${encodeURIComponent(directory)}`,
+  );
+  await expect(status.locator("a")).toHaveAttribute("target", "_blank");
 });
