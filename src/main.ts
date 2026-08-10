@@ -854,23 +854,16 @@ function updateDeliveryGate(): void {
   setStatus(els.uploadStatus, blocked || (!cfg.dandisetId ? "Pick an upload destination above." : ""));
 }
 
-/** Names the file the Download button is about to produce, so it is clear what leaves the page. Also
- * refreshed on every seek (frame mode's output follows the current frame), hence the two long-lived
- * child elements rather than rebuilt markup. */
+/** Names the file the Download button is about to produce — the name alone, since it already spells
+ * out the frame or the frame range. Refreshed on every seek too, frame mode's output following the
+ * current frame, hence the long-lived child element rather than rebuilt markup. */
 function updateDeliveryPreview(): void {
   const show = state.backend !== null && hasSelection();
   els.downloadPreview.hidden = !show;
   if (!show) return;
-  // Only ever annotated with what the file name does not already carry: the frame index and the
-  // frame range are both in the name, the snippet's duration is not.
-  if (state.mode === "frame") {
-    els.downloadPreviewName.textContent = frameFileName(state.sourceName, state.cur);
-    els.downloadPreviewMeta.textContent = "";
-    return;
-  }
   const [lo, hi] = selRange();
-  els.downloadPreviewName.textContent = clipFileName(state.sourceName, lo, hi);
-  els.downloadPreviewMeta.textContent = ` · ${((hi - lo + 1) / state.fps).toFixed(2)}s`;
+  els.downloadPreviewName.textContent =
+    state.mode === "frame" ? frameFileName(state.sourceName, state.cur) : clipFileName(state.sourceName, lo, hi);
 }
 
 function setDeliveryBusy(busy: boolean): void {

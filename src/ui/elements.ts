@@ -65,7 +65,6 @@ export function getElements() {
     downloadHint: required<HTMLParagraphElement>("downloadHint"),
     downloadPreview: required<HTMLParagraphElement>("downloadPreview"),
     downloadPreviewName: required<HTMLElement>("downloadPreviewName"),
-    downloadPreviewMeta: required<HTMLSpanElement>("downloadPreviewMeta"),
     btnDownload: required<HTMLButtonElement>("btnDownload"),
     downloadStatus: required<HTMLSpanElement>("downloadStatus"),
 
