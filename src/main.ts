@@ -987,7 +987,6 @@ async function runUpload(): Promise<void> {
     // can be orders of magnitude larger — is a recommended companion, not a prerequisite for it.
     const mediaPath = uploadAssetPath(directory, media.filename);
     const mediaDigest = await uploadOne(cfg, media.blob, mediaPath, media.mime, kind);
-    const uploaded = [media.filename];
 
     // The original is checksummed even when it is not being uploaded: recording which video a clip
     // came from is only useful if the video can be identified again later.
@@ -1000,7 +999,6 @@ async function runUpload(): Promise<void> {
     if (original && originalDigest && els.uploadOriginal.checked) {
       originalPath = uploadAssetPath(directory, original.name);
       await uploadOne(cfg, original, originalPath, original.type || "video/mp4", "the original video", originalDigest);
-      uploaded.push(original.name);
     }
 
     const provenance = buildProvenance({
@@ -1038,11 +1036,13 @@ async function runUpload(): Promise<void> {
     });
     const provenanceBlob = new Blob([JSON.stringify(provenance, null, 2)], { type: "application/json" });
     await uploadOne(cfg, provenanceBlob, uploadAssetPath(directory, PROVENANCE_FILENAME), "application/json", "the provenance record");
-    uploaded.push(PROVENANCE_FILENAME);
 
     setDeliveryBusy(false);
     setUploadProgress(1, true);
-    setStatus(els.uploadStatus, `Uploaded ${uploaded.join(", ")} to ${directory}/`, "ok");
+    // Deliberately terse: uploadOne() has already logged every asset path to the console, and the
+    // "View on EMBER" link above goes to the dataset itself.
+    setStatus(els.uploadStatus, "Upload complete", "ok");
+    log(`Upload complete: ${directory}/`, "ok");
   } catch (e) {
     setDeliveryBusy(false);
     setUploadProgress(null);
