@@ -467,6 +467,46 @@ function updateSelUI(): void {
 // compete for the same drag: the top row only ever moves where you are looking, and this one only
 // ever moves what will be extracted.
 
+// Gradations the ruler is allowed to divide a video into, in seconds. Every one of them is a step
+// someone reads at a glance; 3s or 7s marks would be arithmetic instead.
+const RULER_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900];
+
+function rulerLabel(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(Math.round(seconds - minutes * 60)).padStart(2, "0")}`;
+}
+
+/** Lays out the time gradations under the track. Rebuilt per load, since the spacing that suits a
+ * thirty-second clip is unreadable on a ten-minute one: the step is chosen to land near six labelled
+ * divisions whatever the duration, then subdivided into fifths. */
+function buildRuler(): void {
+  els.selRuler.replaceChildren();
+  const last = state.totalFrames - 1;
+  if (!state.backend || last <= 0 || !state.fps) return;
+  const seconds = last / state.fps;
+  const major = RULER_STEPS.find((step) => step >= seconds / 6) ?? RULER_STEPS[RULER_STEPS.length - 1];
+  const minor = major / 5;
+  const marks = document.createDocumentFragment();
+  for (let step = 0; step * minor * state.fps <= last; step++) {
+    const frame = Math.round(step * minor * state.fps);
+    const position = `${(frame / last) * 100}%`;
+    const isMajor = step % 5 === 0;
+    const tick = document.createElement("div");
+    tick.className = isMajor ? "sel-tick major" : "sel-tick";
+    tick.style.left = position;
+    marks.append(tick);
+    if (!isMajor) continue;
+    const label = document.createElement("span");
+    // The outermost labels align inwards; centred, they would hang off the ends of the track.
+    const edge = frame === 0 ? " at-start" : frame / last > 0.96 ? " at-end" : "";
+    label.className = `sel-tick-label${edge}`;
+    label.style.left = position;
+    label.textContent = rulerLabel(step * minor);
+    marks.append(label);
+  }
+  els.selRuler.append(marks);
+}
+
 /** Which frame a page x-coordinate falls on, clamped to the video. */
 function frameAtClientX(clientX: number): number {
   const rect = els.selbar.getBoundingClientRect();
@@ -671,6 +711,7 @@ function enablePlayer(on: boolean): void {
     handle.setAttribute("aria-disabled", String(!on));
     handle.tabIndex = on ? 0 : -1;
   }
+  buildRuler();
   updateDeliveryGate();
 }
 

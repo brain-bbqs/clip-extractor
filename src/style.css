@@ -594,11 +594,14 @@ input[type="checkbox"] {
   margin-top: 0.75rem;
   accent-color: var(--accent);
 }
-/* The trim track sits under the playhead slider and is padded by half a range thumb, so a frame is
-   at the same x on both rows and the two read as one timeline. */
-#selbarWrap {
+/* The trim track and the ruler sit under the playhead slider, padded by half a range thumb so a
+   frame is at the same x on every row and the three read as one timeline. */
+.track-pad {
   padding: 0 8px;
-  margin-top: 0.5rem;
+}
+/* Room above the track for the markers, which rise out of it. */
+#selbarWrap {
+  margin-top: 1.15rem;
 }
 #selbar {
   position: relative;
@@ -634,39 +637,88 @@ input[type="checkbox"] {
   pointer-events: none;
 }
 
-/* The two range handles. Centred on their frame (hence the negative margin against a percentage
-   `left`), and tall enough to grab without hunting. */
+/* The two range markers. The element itself is only a hit area — wider than the drawing inside it,
+   so the marker stays easy to grab — positioned so that the tip of the drawing lands on the frame
+   (hence the negative margin against a percentage `left`) and points down at the ruler. */
 .sel-handle {
   position: absolute;
-  top: 50%;
-  width: 14px;
-  height: 22px;
-  margin-left: -7px;
-  transform: translateY(-50%);
-  border-radius: 4px;
-  background: var(--accent);
-  border: 1px solid var(--card);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  bottom: -3px;
+  width: 22px;
+  height: 26px;
+  margin-left: -11px;
+  display: flex;
+  justify-content: center;
+  /* The drawing hangs from the bottom of the hit area, so the tip stays put while the grabbable
+     box around it stays generous. */
+  align-items: flex-end;
   cursor: ew-resize;
   touch-action: none;
+  z-index: 2;
+}
+.sel-handle-mark {
+  width: 14px;
+  height: 20px;
+  /* A rectangle tapering to a point at the bottom: the shoulders give it something to grab, the
+     point says which single frame it is on. */
+  clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%);
+  background: var(--accent);
+  /* drop-shadow follows the clipped silhouette; box-shadow would be clipped away with it. */
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
 }
 /* An end sitting at the video's own boundary only because nothing has been marked there yet. */
-.sel-handle.unset {
+.sel-handle.unset .sel-handle-mark {
   background: var(--muted);
-  opacity: 0.6;
+  opacity: 0.65;
 }
-.sel-handle.dragging,
-.sel-handle:hover {
+.sel-handle:hover .sel-handle-mark,
+.sel-handle.dragging .sel-handle-mark {
   background: var(--accent);
   opacity: 1;
 }
 .sel-handle:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: 1px;
+  border-radius: 4px;
 }
 /* No video loaded: nothing to trim, so the track is the bare empty bar it used to be. */
 .sel-handle[aria-disabled="true"] {
   display: none;
+}
+
+/* Time gradations under the track — a minor tick per subdivision, a labelled major every fifth, so
+   a selection can be read as a duration and not only as two frame indices. */
+.sel-ruler {
+  position: relative;
+  height: 19px;
+  margin-top: 3px;
+}
+.sel-tick {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 4px;
+  background: var(--border);
+}
+.sel-tick.major {
+  height: 8px;
+  background: var(--muted);
+}
+.sel-tick-label {
+  position: absolute;
+  top: 10px;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--muted);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+/* The end labels would hang off the track, so they align inwards instead of centring. */
+.sel-tick-label.at-start {
+  transform: none;
+}
+.sel-tick-label.at-end {
+  transform: translateX(-100%);
 }
 
 .transport {

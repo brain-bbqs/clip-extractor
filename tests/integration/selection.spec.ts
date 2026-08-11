@@ -114,6 +114,22 @@ test("frame indices can be typed into the readouts", async ({ page }) => {
   await expect(page.locator("#rangeSummary")).toContainText("frames 3–11");
 });
 
+test("the ruler lays out time gradations, and stays put in frame mode", async ({ page }) => {
+  await page.goto("/");
+  await loadRecordedVideo(page, "trim.webm");
+
+  // The recorded clip is about a second long, so this lands on the ruler's finest step: five
+  // gradations, and one label at the start. The point of the assertion is that the ruler is built
+  // from the loaded video rather than hard-coded.
+  await expect(page.locator("#selruler .sel-tick")).toHaveCount(5);
+  await expect(page.locator("#selruler .sel-tick-label").first()).toHaveText("0:00");
+
+  // It sits outside the snippet-only wrapper, so a single frame is still placed against time.
+  await page.locator('#modeSeg button[data-mode="frame"]').click();
+  await expect(page.locator("#selruler")).toBeVisible();
+  await expect(page.locator("#selbar")).toBeHidden();
+});
+
 test("a snippet selection survives a trip through frame mode", async ({ page }) => {
   await page.goto("/");
   await loadRecordedVideo(page, "trim.webm");

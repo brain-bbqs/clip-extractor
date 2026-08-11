@@ -40,6 +40,7 @@ export function getElements() {
     selplay: required<HTMLDivElement>("selplay"),
     inHandle: required<HTMLDivElement>("inHandle"),
     outHandle: required<HTMLDivElement>("outHandle"),
+    selRuler: required<HTMLDivElement>("selruler"),
     btnPrev: required<HTMLButtonElement>("btnPrev"),
     btnPlay: required<HTMLButtonElement>("btnPlay"),
     btnNext: required<HTMLButtonElement>("btnNext"),

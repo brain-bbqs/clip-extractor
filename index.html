@@ -247,10 +247,14 @@
         <!-- Snippet mode's trim track, below the playhead slider and padded to the same thumb inset
              so the two rows line up frame-for-frame. The In/Out handles are the only way to set the
              range with the mouse; the [ ] I O shortcuts still mark either end at the playhead. -->
-        <div id="selbarWrap" class="video-only">
+        <div id="selbarWrap" class="track-pad video-only">
           <div id="selbar">
             <div id="selfill" style="display: none"></div>
             <div id="selplay" style="display: none"></div>
+            <!-- Each handle is a hit area holding the drawn marker: the marker tapers to a point at
+                 the bottom, so its tip names one frame on the ruler below instead of a 14px-wide
+                 guess at which frame it is on. The wrapper is what takes the focus ring, which a
+                 clip-path would otherwise clip away along with the corners. -->
             <div
               id="inHandle"
               class="sel-handle"
@@ -260,7 +264,9 @@
               aria-valuemin="0"
               aria-valuemax="0"
               aria-valuenow="0"
-            ></div>
+            >
+              <span class="sel-handle-mark" aria-hidden="true"></span>
+            </div>
             <div
               id="outHandle"
               class="sel-handle"
@@ -270,8 +276,16 @@
               aria-valuemin="0"
               aria-valuemax="0"
               aria-valuenow="0"
-            ></div>
+            >
+              <span class="sel-handle-mark" aria-hidden="true"></span>
+            </div>
           </div>
+        </div>
+        <!-- Time gradations, built per load by main.ts. Outside the snippet-only wrapper above, so
+             frame mode keeps the ruler under its playhead even with the trim track gone. Decorative:
+             every number it shows is also in the readouts below, hence aria-hidden. -->
+        <div class="track-pad">
+          <div id="selruler" class="sel-ruler" aria-hidden="true"></div>
         </div>
 
         <div class="transport">
