@@ -306,10 +306,12 @@
                triangle here is the play glyph at a smaller size, which leaves fill colour as the
                only thing separating "advance one frame" from "start playing". The arrows also put
                the shortcut on screen instead of behind a hover. They need an explicit label because
-               an arrow read aloud on its own names a direction, not an action. -->
+               an arrow read aloud on its own names a direction, not an action. With the arrows
+               taking the triangle off the step buttons, the play glyph no longer needs the word
+               beside it to say which button it is; main.ts keeps the aria-label on the state. -->
           <div class="transport-main">
             <button id="btnPrev" class="sec small" title="Prev frame (&larr;)" aria-label="Previous frame" disabled>&larr;</button>
-            <button id="btnPlay" class="primary" title="Play/Pause (space)" disabled>&#9654; Play</button>
+            <button id="btnPlay" class="primary" title="Play/Pause (space)" aria-label="Play" disabled>&#9654;</button>
             <button id="btnNext" class="sec small" title="Next frame (&rarr;)" aria-label="Next frame" disabled>&rarr;</button>
           </div>
           <!-- Three speeds rather than a dropdown: with the list this short, the current speed is

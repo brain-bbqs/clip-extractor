@@ -181,6 +181,38 @@ test("the speed buttons pick a rate, and playback runs at it", async ({ page }) 
   expect(fast).toBeGreaterThan(slow);
 });
 
+test("playback stays inside the marked range, starting from In wherever the playhead was", async ({ page }) => {
+  await page.goto("/");
+  await loadRecordedVideo(page, "trim.webm");
+  const last = await lastFrame(page);
+  // In sits well down the clip so a playhead left at 0 would take a visible run-up to reach it,
+  // which is exactly the stretch playback must not show.
+  const inF = Math.round(last * 0.6);
+  const outF = last - 1;
+
+  // Handles are dragged without moving the playhead, so this is the ordinary case: a range marked
+  // away from where the playhead happens to be sitting.
+  await dragHandle(page, "#inHandle", inF);
+  await dragHandle(page, "#outHandle", outF);
+  await page.locator("#curVal").fill("0");
+  await page.locator("#curVal").press("Enter");
+
+  // Sampled throughout rather than once at the end: the frames to catch are the ones played on the
+  // way in, and by the end of the run the playhead has wrapped into the band either way.
+  await page.locator("#btnPlay").click();
+  const seen: number[] = [];
+  for (let i = 0; i < 12; i++) {
+    seen.push(Number(await page.locator("#curVal").inputValue()));
+    await page.waitForTimeout(100);
+  }
+  await page.locator("#btnPlay").click();
+
+  expect(Math.min(...seen)).toBeGreaterThanOrEqual(inF);
+  expect(Math.max(...seen)).toBeLessThanOrEqual(outF);
+  // And it really ran, rather than sitting still at In for the whole sample.
+  expect(Math.max(...seen)).toBeGreaterThan(inF);
+});
+
 test("the ruler lays out time gradations, and stays put in frame mode", async ({ page }) => {
   await page.goto("/");
   await loadRecordedVideo(page, "trim.webm");

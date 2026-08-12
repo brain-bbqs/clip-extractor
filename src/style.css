@@ -763,6 +763,11 @@ input[type="checkbox"] {
   gap: 0.4rem;
   align-items: center;
 }
+/* The play and pause glyphs are not the same width, so without a floor the button resizes on every
+   toggle and drags the step buttons beside it along with it. */
+.transport-main .primary {
+  min-width: 3.5rem;
+}
 /* Set apart from the transport: it changes how playback runs rather than driving it. */
 .speed-seg {
   grid-column: 3;
