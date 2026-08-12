@@ -249,21 +249,29 @@ function clearPose(): void {
   els.slpStatus.hidden = true;
 }
 
-/** Refuses a `.slp` that describes a different recording, naming every field that disagrees: a pose
- * overlaid on the wrong video is wrong in a way that still looks like an annotation. */
-function rejectSlp(name: string, video: LoadedVideoMeta, mismatches: MetadataMismatch[]): void {
+/** Puts the card into its refused state: nothing loaded, a headline, and a line per reason. */
+function showSlpError(title: string, reasons: string[]): void {
   clearPose();
-  els.slpErrorTitle.textContent = `"${name}" does not match "${video.name}".`;
+  els.slpErrorTitle.textContent = title;
   els.slpErrorList.replaceChildren(
-    ...mismatches.map((m) => {
+    ...reasons.map((reason) => {
       const li = document.createElement("li");
-      li.textContent = `${m.field}: the .slp says ${m.slp}, the video has ${m.video}.`;
+      li.textContent = reason;
       return li;
     }),
   );
   els.slpError.hidden = false;
-  log(`SLP mismatch: ${name} does not match ${video.name} (${mismatches.map((m) => m.field.toLowerCase()).join(", ")})`, "err");
   renderFrame();
+}
+
+/** Refuses a `.slp` that describes a different recording, naming every field that disagrees: a pose
+ * overlaid on the wrong video is wrong in a way that still looks like an annotation. */
+function rejectSlp(name: string, video: LoadedVideoMeta, mismatches: MetadataMismatch[]): void {
+  showSlpError(
+    `"${name}" does not match "${video.name}".`,
+    mismatches.map((m) => `${m.field}: ${m.slp} in the .slp, ${m.video} in the video.`),
+  );
+  log(`SLP mismatch: ${name} does not match ${video.name} (${mismatches.map((m) => m.field.toLowerCase()).join(", ")})`, "err");
 }
 
 /** Re-runs the comparison after a video is opened under an already-loaded `.slp` — the pair can be
@@ -315,6 +323,10 @@ async function loadSlp(source: File | string, name: string): Promise<void> {
     els.slpStatus.hidden = false;
     renderFrame();
   } catch (e) {
+    // A file that could not be read has to say so on the card too: the console is not where someone
+    // dropping a `.slp` is looking, and a silent failure is indistinguishable from a check that
+    // never ran.
+    showSlpError(`"${name}" could not be read as a SLEAP labels file.`, [friendlyError(e)]);
     log(`SLP error: ${(e as Error).message}`, "err");
     console.error(e);
   }

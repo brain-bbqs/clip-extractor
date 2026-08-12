@@ -56,6 +56,14 @@ function baseName(filename: string | string[] | undefined): string | null {
   return name || null;
 }
 
+/** A filename reduced to what survives a re-encode: no directory, no extension, case-folded. The
+ * `.slp` records an absolute path from whichever machine labeled it, and a lab's copy of the same
+ * recording is routinely `mice.avi` next to `mice.mp4`, so the container is not identifying. */
+function stem(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return (dot > 0 ? name.slice(0, dot) : name).toLowerCase();
+}
+
 /** The video a `.slp`'s labels belong to: the one its labeled frames point at, falling back to the
  * first video it lists (which is the only one, in the single-video files this app is given). */
 function labeledVideo(labels: SleapLabels): SleapVideo | null {
@@ -92,6 +100,14 @@ export function slpSourceMeta(labels: SleapLabels): SlpSourceMeta {
  */
 export function slpVideoMismatches(slp: SlpSourceMeta, video: LoadedVideoMeta): MetadataMismatch[] {
   const mismatches: MetadataMismatch[] = [];
+  // The name is the only identifier a `.slp` always carries — the format records no checksum of the
+  // video, so there is nothing stronger to compare. It is also the only check that fires on a file
+  // that stored no shape at all, which is exactly the file most able to be paired with the wrong
+  // video unnoticed.
+  const name = baseName(video.name);
+  if (name && slp.filename && stem(name) !== stem(slp.filename)) {
+    mismatches.push({ field: "Video file", slp: `"${slp.filename}"`, video: `"${name}"` });
+  }
   const frames = positive(video.frames);
   if (frames !== null && slp.frames !== null && slp.frames !== frames) {
     mismatches.push({ field: "Frame count", slp: `${slp.frames} frames`, video: `${frames} frames` });
@@ -113,8 +129,8 @@ export function slpVideoMismatches(slp: SlpSourceMeta, video: LoadedVideoMeta): 
 }
 
 /**
- * Differences worth reporting but not worth refusing: neither can misplace a pose on a frame, and
- * both are routine for a video that was re-encoded or renamed after it was labeled.
+ * Differences worth reporting but not worth refusing: none of them can misplace a pose on a frame,
+ * and all are routine for a video that was re-encoded after it was labeled.
  */
 export function slpVideoWarnings(slp: SlpSourceMeta, video: LoadedVideoMeta): string[] {
   const warnings: string[] = [];
@@ -123,7 +139,7 @@ export function slpVideoWarnings(slp: SlpSourceMeta, video: LoadedVideoMeta): st
     warnings.push(`the .slp records ${slp.fps.toFixed(2)} fps, the video reports ${fps.toFixed(2)} fps`);
   }
   const name = baseName(video.name);
-  if (name && slp.filename && name.toLowerCase() !== slp.filename.toLowerCase()) {
+  if (name && slp.filename && name.toLowerCase() !== slp.filename.toLowerCase() && stem(name) === stem(slp.filename)) {
     warnings.push(`the .slp was labeled against "${slp.filename}", the loaded video is "${name}"`);
   }
   if (slp.videoCount > 1)

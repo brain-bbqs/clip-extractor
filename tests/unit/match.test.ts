@@ -90,10 +90,23 @@ describe("slpVideoMismatches", () => {
     expect(slpVideoMismatches(meta, VIDEO)).toEqual([{ field: "Frame size", slp: "640×480", video: "1024×768" }]);
   });
 
-  it("reports both fields when both differ", () => {
+  it("reports every field that differs", () => {
     const meta = slpSourceMeta(labels({ filename: "other.mp4", shape: [900, 480, 640, 1] }));
 
-    expect(slpVideoMismatches(meta, VIDEO).map((m) => m.field)).toEqual(["Frame count", "Frame size"]);
+    expect(slpVideoMismatches(meta, VIDEO).map((m) => m.field)).toEqual(["Video file", "Frame count", "Frame size"]);
+  });
+
+  it("refuses a .slp labeled against a differently named video, its only recorded metadata", () => {
+    // The case the numeric checks cannot see: no shape stored, and labels that happen to fit.
+    const meta = slpSourceMeta(labels({ filename: "some_other_recording.mp4" }, [7]));
+
+    expect(slpVideoMismatches(meta, VIDEO)).toEqual([{ field: "Video file", slp: '"some_other_recording.mp4"', video: '"mice.mp4"' }]);
+  });
+
+  it("ignores the directory the .slp was labeled in", () => {
+    const meta = slpSourceMeta(labels({ filename: "/some/other/machine/mice.mp4" }));
+
+    expect(slpVideoMismatches(meta, VIDEO)).toEqual([]);
   });
 
   it("catches labels running past the end of a video whose length the .slp never recorded", () => {
@@ -111,7 +124,7 @@ describe("slpVideoMismatches", () => {
   });
 
   it("skips every check the .slp has no metadata for", () => {
-    const meta = slpSourceMeta(labels({ filename: "renamed.mp4" }, [7]));
+    const meta = slpSourceMeta(labels({ filename: "mice.mp4" }, [7]));
 
     expect(slpVideoMismatches(meta, VIDEO)).toEqual([]);
   });
@@ -142,10 +155,11 @@ describe("slpVideoWarnings", () => {
     expect(slpVideoWarnings(meta, VIDEO)).toEqual(["the .slp records 60.00 fps, the video reports 30.00 fps"]);
   });
 
-  it("warns about a renamed video without refusing it", () => {
-    const meta = slpSourceMeta(labels({ filename: "/data/mice_raw.mp4", shape: [1100, 768, 1024, 1] }));
+  it("warns about a re-encoded video without refusing it", () => {
+    // Same recording, different container: the name a lab keeps across a convert.
+    const meta = slpSourceMeta(labels({ filename: "/data/mice.avi", shape: [1100, 768, 1024, 1] }));
 
-    expect(slpVideoWarnings(meta, VIDEO)).toEqual(['the .slp was labeled against "mice_raw.mp4", the loaded video is "mice.mp4"']);
+    expect(slpVideoWarnings(meta, VIDEO)).toEqual(['the .slp was labeled against "mice.avi", the loaded video is "mice.mp4"']);
     expect(slpVideoMismatches(meta, VIDEO)).toEqual([]);
   });
 
