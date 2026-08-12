@@ -361,10 +361,6 @@ select {
 .hint.err {
   color: var(--err);
 }
-.spacer {
-  flex: 1;
-}
-
 .badge {
   display: inline-block;
   flex-shrink: 0;
@@ -763,6 +759,11 @@ input[type="checkbox"] {
   gap: 0.4rem;
   align-items: center;
 }
+/* The play and pause glyphs are not the same width, so without a floor the button resizes on every
+   toggle and drags the step buttons beside it along with it. */
+.transport-main .primary {
+  min-width: 3.5rem;
+}
 /* Set apart from the transport: it changes how playback runs rather than driving it. */
 .speed-seg {
   grid-column: 3;
@@ -840,6 +841,7 @@ input[type="checkbox"] {
 .sel-row {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.5rem;
 }

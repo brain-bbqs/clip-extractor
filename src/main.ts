@@ -348,26 +348,36 @@ function playLoop(t: number): void {
     // Playback loops over the marked range in snippet mode. Frame mode keeps those marks (so
     // switching back restores them) but ignores them here — its selection is the playhead, and
     // penning playback inside a range nothing on screen mentions would look like a stuck player.
-    const ranged = state.mode === "video";
-    const end = ranged && state.outF != null ? state.outF : state.totalFrames - 1;
-    if (next > end) next = ranged && state.inF != null ? state.inF : 0;
+    const [lo, hi] = state.mode === "video" ? selRange() : [0, state.totalFrames - 1];
+    // Wrapping on either side, not just the far end: a playhead left ahead of In would otherwise
+    // play the whole run-up to the snippet before the first loop brought it inside.
+    if (next > hi || next < lo) next = lo;
     void seek(next);
   }
   rafId = requestAnimationFrame(playLoop);
 }
 function startPlay(): void {
   if (state.playing || !state.backend) return;
+  // Start inside the snippet rather than wherever the playhead was left: the handles are dragged
+  // without moving it, so pressing play on a fresh range would otherwise begin outside the band.
+  if (state.mode === "video") {
+    const [lo, hi] = selRange();
+    if (state.cur < lo || state.cur > hi) void seek(lo);
+  }
   state.playing = true;
   lastT = 0;
   accum = 0;
-  els.btnPlay.innerHTML = "&#10073;&#10073; Pause";
+  // Glyph only, so the label is the button's whole accessible name.
+  els.btnPlay.innerHTML = "&#10073;&#10073;";
+  els.btnPlay.setAttribute("aria-label", "Pause");
   rafId = requestAnimationFrame(playLoop);
 }
 function stopPlay(): void {
   state.playing = false;
   if (rafId != null) cancelAnimationFrame(rafId);
   rafId = null;
-  els.btnPlay.innerHTML = "&#9654; Play";
+  els.btnPlay.innerHTML = "&#9654;";
+  els.btnPlay.setAttribute("aria-label", "Play");
 }
 function togglePlay(): void {
   if (state.playing) stopPlay();
@@ -453,13 +463,6 @@ function updateSelUI(): void {
     // where the last frame went. (A snippet's in/out points go through selectionChanged instead.)
     if (state.mode === "frame") clearDeliveryOutcomes();
   }
-  // Frame mode has no range summary — the current frame is already shown in the stage overlay.
-  if (state.mode === "frame") return;
-  const n = hi - lo + 1;
-  els.rangeSummary.textContent =
-    state.inF == null && state.outF == null
-      ? `Selection: full video (${state.totalFrames} frames)`
-      : `Selection: frames ${lo}–${hi} · ${n} frames · ${(n / state.fps).toFixed(2)}s`;
 }
 
 // ============================================================

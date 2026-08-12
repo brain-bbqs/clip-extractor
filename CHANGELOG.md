@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.2
+
+#### 🚀 Enhancement
+
+- Removed the "Selection" summary line under the trim track, since the handles, the band on the track and the In/Out readouts already report the range ([#17](https://github.com/brain-bbqs/clip-extractor/pull/17))
+- Dropped the word "Play" from the play button, leaving the glyph now that the step buttons carry arrows instead of triangles ([#17](https://github.com/brain-bbqs/clip-extractor/pull/17))
+
+#### 🐛 Bug Fix
+
+- Playback again loops inside the marked range: with the trim handles the playhead is no longer moved when a range is marked, so pressing play started outside the band and ran the whole way up to Out before wrapping ([#17](https://github.com/brain-bbqs/clip-extractor/pull/17))
+
 ## 0.1.1
 
 #### 🚀 Enhancement

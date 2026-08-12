@@ -35,7 +35,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
 });
 
-test("the trim handles bound the snippet, and the range summary follows them", async ({ page }) => {
+test("the trim handles bound the snippet, and the readouts follow them", async ({ page }) => {
   await page.goto("/");
   await loadRecordedVideo(page, "trim.webm");
   const last = await lastFrame(page);
@@ -44,7 +44,7 @@ test("the trim handles bound the snippet, and the range summary follows them", a
   await expect(page.locator("#inHandle")).toHaveClass(/unset/);
   await expect(page.locator("#outHandle")).toHaveClass(/unset/);
   await expect(page.locator("#inVal")).toHaveValue("");
-  await expect(page.locator("#rangeSummary")).toContainText("full video");
+  await expect(page.locator("#outVal")).toHaveValue("");
 
   await dragHandle(page, "#inHandle", 5);
   // Dragging either handle commits both ends, so the band never has a "—" at one side of it.
@@ -54,8 +54,8 @@ test("the trim handles bound the snippet, and the range summary follows them", a
   await expect(page.locator("#outVal")).toHaveValue(String(last));
 
   await dragHandle(page, "#outHandle", last - 5);
+  await expect(page.locator("#inVal")).toHaveValue("5");
   await expect(page.locator("#outVal")).toHaveValue(String(last - 5));
-  await expect(page.locator("#rangeSummary")).toContainText(`frames 5–${last - 5}`);
 });
 
 test("a handle dragged past its partner stops there instead of crossing it", async ({ page }) => {
@@ -150,7 +150,11 @@ test("frame indices can be typed into the readouts", async ({ page }) => {
   await page.locator("#inVal").press("Enter");
   await page.locator("#outVal").fill("11");
   await page.locator("#outVal").press("Enter");
-  await expect(page.locator("#rangeSummary")).toContainText("frames 3–11");
+  // The band on the track is what a typed range has to reach, since the readouts would hold the
+  // typed text either way.
+  await expect(page.locator("#selfill")).toBeVisible();
+  await expect(page.locator("#inHandle")).not.toHaveClass(/unset/);
+  await expect(page.locator("#outHandle")).not.toHaveClass(/unset/);
 });
 
 test("the speed buttons pick a rate, and playback runs at it", async ({ page }) => {
@@ -181,6 +185,38 @@ test("the speed buttons pick a rate, and playback runs at it", async ({ page }) 
   expect(fast).toBeGreaterThan(slow);
 });
 
+test("playback stays inside the marked range, starting from In wherever the playhead was", async ({ page }) => {
+  await page.goto("/");
+  await loadRecordedVideo(page, "trim.webm");
+  const last = await lastFrame(page);
+  // In sits well down the clip so a playhead left at 0 would take a visible run-up to reach it,
+  // which is exactly the stretch playback must not show.
+  const inF = Math.round(last * 0.6);
+  const outF = last - 1;
+
+  // Handles are dragged without moving the playhead, so this is the ordinary case: a range marked
+  // away from where the playhead happens to be sitting.
+  await dragHandle(page, "#inHandle", inF);
+  await dragHandle(page, "#outHandle", outF);
+  await page.locator("#curVal").fill("0");
+  await page.locator("#curVal").press("Enter");
+
+  // Sampled throughout rather than once at the end: the frames to catch are the ones played on the
+  // way in, and by the end of the run the playhead has wrapped into the band either way.
+  await page.locator("#btnPlay").click();
+  const seen: number[] = [];
+  for (let i = 0; i < 12; i++) {
+    seen.push(Number(await page.locator("#curVal").inputValue()));
+    await page.waitForTimeout(100);
+  }
+  await page.locator("#btnPlay").click();
+
+  expect(Math.min(...seen)).toBeGreaterThanOrEqual(inF);
+  expect(Math.max(...seen)).toBeLessThanOrEqual(outF);
+  // And it really ran, rather than sitting still at In for the whole sample.
+  expect(Math.max(...seen)).toBeGreaterThan(inF);
+});
+
 test("the ruler lays out time gradations, and stays put in frame mode", async ({ page }) => {
   await page.goto("/");
   await loadRecordedVideo(page, "trim.webm");
@@ -209,7 +245,7 @@ test("a snippet selection survives a trip through frame mode", async ({ page }) 
   await page.locator("#inVal").press("Enter");
   await page.locator("#outVal").fill("12");
   await page.locator("#outVal").press("Enter");
-  await expect(page.locator("#rangeSummary")).toContainText("frames 4–12");
+  await expect(page.locator("#selfill")).toBeVisible();
 
   // Looking at a single frame is a detour, not a reason to throw the range away.
   await page.locator('#modeSeg button[data-mode="frame"]').click();
@@ -219,5 +255,5 @@ test("a snippet selection survives a trip through frame mode", async ({ page }) 
   await page.locator('#modeSeg button[data-mode="video"]').click();
   await expect(page.locator("#inVal")).toHaveValue("4");
   await expect(page.locator("#outVal")).toHaveValue("12");
-  await expect(page.locator("#rangeSummary")).toContainText("frames 4–12");
+  await expect(page.locator("#selfill")).toBeVisible();
 });
