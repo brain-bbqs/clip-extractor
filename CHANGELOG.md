@@ -4,7 +4,7 @@
 
 #### 🚀 Enhancement
 
-- Removed the "Selection: full video" summary shown before a range is trimmed, since the handles already sit at the video's own bounds ([#17](https://github.com/brain-bbqs/clip-extractor/pull/17))
+- Removed the "Selection" summary line under the trim track, since the handles, the band on the track and the In/Out readouts already report the range ([#17](https://github.com/brain-bbqs/clip-extractor/pull/17))
 - Dropped the word "Play" from the play button, leaving the glyph now that the step buttons carry arrows instead of triangles ([#17](https://github.com/brain-bbqs/clip-extractor/pull/17))
 
 #### 🐛 Bug Fix

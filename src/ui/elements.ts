@@ -47,7 +47,6 @@ export function getElements() {
     inVal: required<HTMLInputElement>("inVal"),
     curVal: required<HTMLInputElement>("curVal"),
     outVal: required<HTMLInputElement>("outVal"),
-    rangeSummary: required<HTMLSpanElement>("rangeSummary"),
     btnClearSel: required<HTMLButtonElement>("btnClearSel"),
 
     // SLEAP annotations card

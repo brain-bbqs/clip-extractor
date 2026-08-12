@@ -35,7 +35,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
 });
 
-test("the trim handles bound the snippet, and the range summary follows them", async ({ page }) => {
+test("the trim handles bound the snippet, and the readouts follow them", async ({ page }) => {
   await page.goto("/");
   await loadRecordedVideo(page, "trim.webm");
   const last = await lastFrame(page);
@@ -44,7 +44,7 @@ test("the trim handles bound the snippet, and the range summary follows them", a
   await expect(page.locator("#inHandle")).toHaveClass(/unset/);
   await expect(page.locator("#outHandle")).toHaveClass(/unset/);
   await expect(page.locator("#inVal")).toHaveValue("");
-  await expect(page.locator("#rangeSummary")).toHaveText("");
+  await expect(page.locator("#outVal")).toHaveValue("");
 
   await dragHandle(page, "#inHandle", 5);
   // Dragging either handle commits both ends, so the band never has a "—" at one side of it.
@@ -54,8 +54,8 @@ test("the trim handles bound the snippet, and the range summary follows them", a
   await expect(page.locator("#outVal")).toHaveValue(String(last));
 
   await dragHandle(page, "#outHandle", last - 5);
+  await expect(page.locator("#inVal")).toHaveValue("5");
   await expect(page.locator("#outVal")).toHaveValue(String(last - 5));
-  await expect(page.locator("#rangeSummary")).toContainText(`frames 5–${last - 5}`);
 });
 
 test("a handle dragged past its partner stops there instead of crossing it", async ({ page }) => {
@@ -150,7 +150,11 @@ test("frame indices can be typed into the readouts", async ({ page }) => {
   await page.locator("#inVal").press("Enter");
   await page.locator("#outVal").fill("11");
   await page.locator("#outVal").press("Enter");
-  await expect(page.locator("#rangeSummary")).toContainText("frames 3–11");
+  // The band on the track is what a typed range has to reach, since the readouts would hold the
+  // typed text either way.
+  await expect(page.locator("#selfill")).toBeVisible();
+  await expect(page.locator("#inHandle")).not.toHaveClass(/unset/);
+  await expect(page.locator("#outHandle")).not.toHaveClass(/unset/);
 });
 
 test("the speed buttons pick a rate, and playback runs at it", async ({ page }) => {
@@ -241,7 +245,7 @@ test("a snippet selection survives a trip through frame mode", async ({ page }) 
   await page.locator("#inVal").press("Enter");
   await page.locator("#outVal").fill("12");
   await page.locator("#outVal").press("Enter");
-  await expect(page.locator("#rangeSummary")).toContainText("frames 4–12");
+  await expect(page.locator("#selfill")).toBeVisible();
 
   // Looking at a single frame is a detour, not a reason to throw the range away.
   await page.locator('#modeSeg button[data-mode="frame"]').click();
@@ -251,5 +255,5 @@ test("a snippet selection survives a trip through frame mode", async ({ page }) 
   await page.locator('#modeSeg button[data-mode="video"]').click();
   await expect(page.locator("#inVal")).toHaveValue("4");
   await expect(page.locator("#outVal")).toHaveValue("12");
-  await expect(page.locator("#rangeSummary")).toContainText("frames 4–12");
+  await expect(page.locator("#selfill")).toBeVisible();
 });

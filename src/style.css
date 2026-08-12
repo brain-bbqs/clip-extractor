@@ -361,10 +361,6 @@ select {
 .hint.err {
   color: var(--err);
 }
-.spacer {
-  flex: 1;
-}
-
 .badge {
   display: inline-block;
   flex-shrink: 0;
@@ -845,6 +841,7 @@ input[type="checkbox"] {
 .sel-row {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
