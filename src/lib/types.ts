@@ -111,9 +111,20 @@ export interface SleapTrack {
   name: string;
 }
 
+/** The video a `.slp` was labeled against, as recorded in the file itself. `shape` is SLEAP's
+ * `[frames, height, width, channels]`; every field is optional because a `.slp` only carries what
+ * its writer stored, and none of it is re-derived here (the videos are not opened on load). */
+export interface SleapVideo {
+  filename?: string | string[];
+  shape?: [number, number, number, number] | null;
+  fps?: number | null;
+}
+
 export interface SleapLabeledFrame {
   frameIdx: number;
   instances: SleapInstance[];
+  /** Which of `SleapLabels.videos` this frame belongs to, when the file names one. */
+  video?: SleapVideo;
 }
 
 export interface SleapSkeleton {
@@ -126,6 +137,7 @@ export interface SleapLabels {
   skeletons: SleapSkeleton[];
   tracks: SleapTrack[];
   labeledFrames: SleapLabeledFrame[];
+  videos?: SleapVideo[];
 }
 
 // ------------------------------------------------------------------

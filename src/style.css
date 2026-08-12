@@ -520,6 +520,28 @@ input[type="checkbox"] {
   margin-top: 0.75rem;
 }
 
+/* A .slp that does not describe the loaded video: the mismatched fields are listed so it is clear
+   which file is the wrong one, rather than just that something did not line up. */
+.slp-error {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: var(--err-soft);
+  color: var(--err);
+  font-size: 0.9rem;
+}
+.slp-error-title {
+  margin: 0;
+  font-weight: 600;
+}
+.slp-error-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+.slp-error-action {
+  margin: 0.5rem 0 0;
+}
+
 .seg {
   display: inline-flex;
   border: 1px solid var(--border);

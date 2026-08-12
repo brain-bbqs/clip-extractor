@@ -5,6 +5,10 @@ import { expect, type Page } from "@playwright/test";
 // Shared scaffolding for the upload specs: a stubbed archive (so nothing leaves the browser) and a
 // synthesized video (so no binary video fixture has to be committed).
 
+/** Frames to draw for a clip that will be paired with the `.slp` fixture: it labels frames 0-29, so
+ * the recording has to still cover them after the recorder drops one or two. */
+export const SLP_CLIP_FRAMES = 40;
+
 const API = "**/api-dandi.emberarchive.org/api/**";
 const ADMIN_CHECK = "**/uploader-codycbakerphd.pythonanywhere.com/**";
 
@@ -104,31 +108,38 @@ export async function stubH5Wasm(page: Page): Promise<void> {
 }
 
 /** Records a short VP8 clip in-page and hands it to the file input, as if it had been dropped. A
- * synthesized video keeps a multi-megabyte fixture out of the repository. */
-export async function loadRecordedVideo(page: Page, filename: string): Promise<void> {
-  await page.evaluate(async (name) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 320;
-    canvas.height = 240;
-    const ctx = canvas.getContext("2d")!;
-    const chunks: Blob[] = [];
-    const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: "video/webm;codecs=vp8" });
-    recorder.ondataavailable = (e) => chunks.push(e.data);
-    recorder.start();
-    for (let i = 0; i < 30; i++) {
-      ctx.fillStyle = `hsl(${i * 10} 80% 50%)`;
-      ctx.fillRect(0, 0, 320, 240);
-      await new Promise((r) => setTimeout(r, 33));
-    }
-    await new Promise<void>((resolve) => {
-      recorder.onstop = () => resolve();
-      recorder.stop();
-    });
-    const input = document.querySelector<HTMLInputElement>("#videoFile")!;
-    const transfer = new DataTransfer();
-    transfer.items.add(new File(chunks, name, { type: "video/webm" }));
-    input.files = transfer.files;
-    input.dispatchEvent(new Event("change"));
-  }, filename);
+ * synthesized video keeps a multi-megabyte fixture out of the repository.
+ *
+ * `frames` is how many are *drawn*; the recorder drops one or two, so a spec that pairs the clip
+ * with the `.slp` fixture has to draw comfortably more than the 30 frames it labels — a clip that
+ * ends before the last labeled frame is one the SLEAP card is right to refuse. */
+export async function loadRecordedVideo(page: Page, filename: string, frames = 30): Promise<void> {
+  await page.evaluate(
+    async ({ name, frames }) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 320;
+      canvas.height = 240;
+      const ctx = canvas.getContext("2d")!;
+      const chunks: Blob[] = [];
+      const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: "video/webm;codecs=vp8" });
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.start();
+      for (let i = 0; i < frames; i++) {
+        ctx.fillStyle = `hsl(${i * 10} 80% 50%)`;
+        ctx.fillRect(0, 0, 320, 240);
+        await new Promise((r) => setTimeout(r, 33));
+      }
+      await new Promise<void>((resolve) => {
+        recorder.onstop = () => resolve();
+        recorder.stop();
+      });
+      const input = document.querySelector<HTMLInputElement>("#videoFile")!;
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(chunks, name, { type: "video/webm" }));
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change"));
+    },
+    { name: filename, frames },
+  );
   await expect(page.locator("#view")).toBeVisible();
 }

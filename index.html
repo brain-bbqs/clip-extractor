@@ -222,6 +222,13 @@
             </p>
           </div>
         </div>
+        <!-- Shown instead of the status row when the dropped .slp describes a different recording
+             than the one in the player: nothing is loaded, so the only way on is another file. -->
+        <div class="slp-error" id="slpError" role="alert" hidden>
+          <p class="slp-error-title" id="slpErrorTitle"></p>
+          <ul class="slp-error-list" id="slpErrorList"></ul>
+          <p class="slp-error-action">Select another <code>.slp</code>, or load the video it was labeled against.</p>
+        </div>
         <div class="slp-status" id="slpStatus" hidden>
           <span class="badge" id="slpBadge"></span>
           <label class="hint pose-toggle"><input type="checkbox" id="showPose" checked /> Show overlay</label>

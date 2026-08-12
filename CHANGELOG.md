@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+#### 🚀 Enhancement
+
+- The SLEAP card now refuses a `.slp` that was labeled against a different video, listing the frame count, frame size or labeled frame range that does not fit and asking for another file, instead of overlaying a pose that lands on the wrong pixels ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
+- The same check runs when a video is loaded under an already-loaded `.slp`, so swapping either side of the pair is caught ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
+
 ## 0.1.2
 
 #### 🚀 Enhancement

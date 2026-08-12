@@ -4,6 +4,14 @@ import { getElements } from "./ui/elements";
 import { bytes, fmtTime } from "./lib/format";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { drawPose, labelsToPose } from "./lib/pose";
+import {
+  slpSourceMeta,
+  slpVideoMismatches,
+  slpVideoWarnings,
+  type LoadedVideoMeta,
+  type MetadataMismatch,
+  type SlpSourceMeta,
+} from "./lib/match";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
@@ -102,6 +110,12 @@ interface AppState {
   /** The `.slp` behind `pose`, when it came from a local file — kept so it can ride along with an
    * upload. Null for a `.slp` fetched from a URL, whose bytes were never held locally. */
   slpFile: File | null;
+  /** Display name of the loaded `.slp`, including one loaded from a URL, so a later mismatch can
+   * name it. Null whenever `pose` is null. */
+  slpName: string | null;
+  /** What the loaded `.slp` says about the video it was labeled against, re-checked whenever a
+   * different video is opened underneath it. Null whenever `pose` is null. */
+  slpMeta: SlpSourceMeta | null;
   mode: SelectorMode;
   curBitmap: ImageBitmap | ImageData | ArrayBuffer | { buffer: ArrayBufferLike } | null;
 }
@@ -123,6 +137,8 @@ const state: AppState = {
   speed: 1,
   pose: null,
   slpFile: null,
+  slpName: null,
+  slpMeta: null,
   mode: "video",
   curBitmap: null,
 };
@@ -204,6 +220,7 @@ async function loadVideo(source: File | string, name: string, url: string | null
     els.overlayInfo.style.display = "block";
     enablePlayer(true);
     log(`Loaded ${state.width}×${state.height}, ${state.totalFrames} frames @ ${state.fps.toFixed(2)} fps`, "ok");
+    recheckPose();
     await seek(0, true);
     updateSelUI();
   } catch (e) {
@@ -215,6 +232,53 @@ async function loadVideo(source: File | string, name: string, url: string | null
 // ============================================================
 // SLP loading
 // ============================================================
+/** The open video's own metadata, for comparison against a `.slp`'s. Null when none is open. */
+function loadedVideoMeta(): LoadedVideoMeta | null {
+  if (!state.backend) return null;
+  return { name: state.sourceName, frames: state.totalFrames, width: state.width, height: state.height, fps: state.fps };
+}
+
+/** Drops whatever `.slp` was loaded, leaving the card free to report why. */
+function clearPose(): void {
+  state.pose = null;
+  state.slpFile = null;
+  state.slpName = null;
+  state.slpMeta = null;
+  poseGeneration++;
+  clearDeliveryOutcomes();
+  els.slpStatus.hidden = true;
+}
+
+/** Refuses a `.slp` that describes a different recording, naming every field that disagrees: a pose
+ * overlaid on the wrong video is wrong in a way that still looks like an annotation. */
+function rejectSlp(name: string, video: LoadedVideoMeta, mismatches: MetadataMismatch[]): void {
+  clearPose();
+  els.slpErrorTitle.textContent = `"${name}" does not match "${video.name}".`;
+  els.slpErrorList.replaceChildren(
+    ...mismatches.map((m) => {
+      const li = document.createElement("li");
+      li.textContent = `${m.field}: the .slp says ${m.slp}, the video has ${m.video}.`;
+      return li;
+    }),
+  );
+  els.slpError.hidden = false;
+  log(`SLP mismatch: ${name} does not match ${video.name} (${mismatches.map((m) => m.field.toLowerCase()).join(", ")})`, "err");
+  renderFrame();
+}
+
+/** Re-runs the comparison after a video is opened under an already-loaded `.slp` — the pair can be
+ * assembled in either order, and swapping the video out is just as able to break the match. */
+function recheckPose(): void {
+  // Any mismatch still on the card was reported against the video that just went away, so it is
+  // cleared before the new pairing is judged on its own terms.
+  els.slpError.hidden = true;
+  const video = loadedVideoMeta();
+  if (!state.slpMeta || !state.slpName || !video) return;
+  const mismatches = slpVideoMismatches(state.slpMeta, video);
+  if (mismatches.length) rejectSlp(state.slpName, video, mismatches);
+  else for (const w of slpVideoWarnings(state.slpMeta, video)) log(`SLP/video difference: ${w}`, "warn");
+}
+
 async function loadSlp(source: File | string, name: string): Promise<void> {
   // A .slp can arrive via the main dropzone or a URL param while the annotations step is still
   // toggled off — reveal the step so the load has somewhere visible to land.
@@ -222,7 +286,22 @@ async function loadSlp(source: File | string, name: string): Promise<void> {
   log(`Parsing SLP: ${name}…`);
   try {
     const labels = (await sio.loadSlp(source, { openVideos: false })) as unknown as SleapLabels;
+    const meta = slpSourceMeta(labels);
+    const video = loadedVideoMeta();
+    // Checked before anything is kept, so a mismatched file never reaches the overlay, the
+    // annotations sidecar or an upload. With no video open yet there is nothing to check against;
+    // loadVideo() runs the same comparison once one is.
+    if (video) {
+      const mismatches = slpVideoMismatches(meta, video);
+      if (mismatches.length) {
+        rejectSlp(name, video, mismatches);
+        return;
+      }
+      for (const w of slpVideoWarnings(meta, video)) log(`SLP/video difference: ${w}`, "warn");
+    }
     state.pose = labelsToPose(labels);
+    state.slpMeta = meta;
+    state.slpName = name;
     // Only after a successful parse: a file this app could not read is not one to hand to the
     // archive.
     state.slpFile = source instanceof File ? source : null;
@@ -232,6 +311,7 @@ async function loadSlp(source: File | string, name: string): Promise<void> {
     log(`SLP loaded: ${state.pose.skeleton.nodes.length} nodes, ${state.pose.tracks.length} tracks, ${nFrames} labeled frames`, "ok");
     els.slpBadge.textContent = `${nFrames} frames`;
     els.slpBadge.className = "badge ok";
+    els.slpError.hidden = true;
     els.slpStatus.hidden = false;
     renderFrame();
   } catch (e) {
