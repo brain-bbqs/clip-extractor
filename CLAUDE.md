@@ -3,6 +3,8 @@
 - Always run `pre-commit` before committing and pushing changes
 - To the best of your ability, ensure tests are passing
 - Follow assertion style (actual on left, expected on right)
+- Always bump the version in `package.json` appropriately when any file under `src/` (except `tests/`), `configs/`, `index.html`, or `package.json`/`package-lock.json` itself, is changed. Bump once per PR: if the version was already bumped by earlier work on the same PR/branch and it hasn't been merged yet, do not bump it again for follow-up commits on that same PR, keep adding entries under the existing top-most `CHANGELOG.md` heading instead
+- This project has no formal releases, so there is no `## Upcoming` staging section in `CHANGELOG.md`. Leave a short description of the change or addition directly under the top-most version heading (the same version just bumped in `package.json`; create the heading if it does not yet exist) under the appropriate subsection (`#### 🚀 Enhancement`, `#### 🐛 Bug Fix`, or `#### 🏠 Internal`); create the subsection if it does not yet exist; include the GitHub PR link at the end of each entry in the format `([#N](https://github.com/brain-bbqs/clip-extractor/pull/N))`
 - PR titles should be human-readable and in the past tense; they should NOT use conventional commit style
 - Keep PR descriptions short and to the point
 - Limit use of em-dashes in all text
