@@ -93,8 +93,8 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-DI5EvPHu.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BHydcynS.css">
+    <script type="module" crossorigin src="./assets/index-DFWeKDWS.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-C84KUeMZ.css">
   </head>
   <body>
     <a class="brand-watermark-link" href="https://brain-bbqs.org" target="_blank" rel="noopener" aria-label="BBQS" title="BBQS">
@@ -245,23 +245,23 @@
           <div id="overlayInfo" style="display: none"></div>
         </div>
 
-        <input type="range" id="frameSlider" min="0" max="0" value="0" step="1" aria-label="Current frame" disabled />
-        <!-- Snippet mode's trim track, below the playhead slider and padded to the same thumb inset
-             so the two rows line up frame-for-frame. The In/Out handles are the only way to set the
-             range with the mouse; the [ ] I O shortcuts still mark either end at the playhead. -->
-        <div id="selbarWrap" class="track-pad video-only">
+        <!-- One timeline. The In and Out markers point down onto the track from above; the playhead
+             points up at it from below, in its own colour, because three markers in one lane are
+             indistinguishable wherever they meet. Each marker tapers to a point, so its tip names
+             one frame on the ruler instead of a 14px-wide guess at which frame it is on, and each is
+             a hit area holding the drawn marker — a clip-path would otherwise clip the focus ring
+             away along with the corners. The [ ] I O shortcuts still mark either end at the
+             playhead. -->
+        <div id="selbarWrap" class="track-pad">
           <div id="selbar">
-            <div id="selfill" style="display: none"></div>
+            <div id="selfill" class="video-only" style="display: none"></div>
             <div id="selplay" style="display: none"></div>
-            <!-- Each handle is a hit area holding the drawn marker: the marker tapers to a point at
-                 the bottom, so its tip names one frame on the ruler below instead of a 14px-wide
-                 guess at which frame it is on. The wrapper is what takes the focus ring, which a
-                 clip-path would otherwise clip away along with the corners. -->
             <div
               id="inHandle"
-              class="sel-handle"
+              class="sel-handle video-only"
               role="slider"
-              tabindex="0"
+              tabindex="-1"
+              aria-disabled="true"
               aria-label="Selection in point"
               aria-valuemin="0"
               aria-valuemax="0"
@@ -271,9 +271,10 @@
             </div>
             <div
               id="outHandle"
-              class="sel-handle"
+              class="sel-handle video-only"
               role="slider"
-              tabindex="0"
+              tabindex="-1"
+              aria-disabled="true"
               aria-label="Selection out point"
               aria-valuemin="0"
               aria-valuemax="0"
@@ -281,12 +282,22 @@
             >
               <span class="sel-handle-mark" aria-hidden="true"></span>
             </div>
+            <div
+              id="playHandle"
+              class="sel-handle play"
+              role="slider"
+              tabindex="-1"
+              aria-disabled="true"
+              aria-label="Current frame"
+              aria-valuemin="0"
+              aria-valuemax="0"
+              aria-valuenow="0"
+            >
+              <span class="sel-handle-mark" aria-hidden="true"></span>
+            </div>
           </div>
-        </div>
-        <!-- Time gradations, built per load by main.ts. Outside the snippet-only wrapper above, so
-             frame mode keeps the ruler under its playhead even with the trim track gone. Decorative:
-             every number it shows is also in the readouts below, hence aria-hidden. -->
-        <div class="track-pad">
+          <!-- Time gradations, laid out per load by main.ts. Decorative: every number it shows is
+               also in the readouts below, hence aria-hidden. -->
           <div id="selruler" class="sel-ruler" aria-hidden="true"></div>
         </div>
 
