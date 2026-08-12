@@ -589,45 +589,206 @@ input[type="checkbox"] {
 }
 
 /* Timeline */
-#frameSlider {
-  width: 100%;
-  margin-top: 0.75rem;
-  accent-color: var(--accent);
+/* Padded at the sides so a marker sitting on the first or last frame has room to overhang the
+   track, and at the top for the markers that rise out of it. */
+.track-pad {
+  padding: 16px 8px 0;
+}
+#selbarWrap {
+  margin-top: 0.4rem;
 }
 #selbar {
   position: relative;
-  height: 8px;
+  height: 12px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  margin-top: 0.35rem;
-  overflow: hidden;
+  border-radius: 6px;
+  /* Markers overhang the track on both sides, so it cannot clip its own children. */
+  touch-action: none;
+  cursor: pointer;
 }
 #selfill {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: -1px;
+  bottom: -1px;
   background: color-mix(in srgb, var(--accent) 35%, transparent);
   border-left: 2px solid var(--accent);
   border-right: 2px solid var(--accent);
+  cursor: grab;
+  touch-action: none;
 }
-#selplay {
+#selfill:active {
+  cursor: grabbing;
+}
+/* The playhead's line through the track is drawn by the marker itself (see .sel-handle.play::before)
+   rather than by a second element positioned alongside it. Two elements at the same percentage can
+   still land a rasterised pixel apart; one element cannot disagree with itself. */
+
+/* The two range markers. The element itself is only a hit area — wider than the drawing inside it,
+   so the marker stays easy to grab — positioned so that the tip of the drawing lands on the frame
+   (hence the negative margin against a percentage `left`) and points down at the ruler. */
+.sel-handle {
   position: absolute;
-  top: -2px;
-  bottom: -2px;
-  width: 2px;
+  bottom: -3px;
+  width: 22px;
+  height: 26px;
+  margin-left: -11px;
+  display: flex;
+  justify-content: center;
+  /* The drawing hangs from the bottom of the hit area, so the tip stays put while the grabbable
+     box around it stays generous. */
+  align-items: flex-end;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 2;
+}
+.sel-handle-mark {
+  width: 14px;
+  height: 20px;
+  /* A rectangle tapering to a point at the bottom: the shoulders give it something to grab, the
+     point says which single frame it is on. */
+  clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%);
+  background: var(--accent);
+  /* drop-shadow follows the clipped silhouette; box-shadow would be clipped away with it. */
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+/* An end sitting at the video's own boundary only because nothing has been marked there yet. */
+.sel-handle.unset .sel-handle-mark {
+  background: var(--muted);
+  opacity: 0.65;
+}
+.sel-handle:hover .sel-handle-mark,
+.sel-handle.dragging .sel-handle-mark {
+  background: var(--accent);
+  opacity: 1;
+}
+.sel-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+/* The playhead shares the track but not the lane: it rides the ruler below, pointing up, in its own
+   colour, so that where it meets an In or Out marker the two are still told apart at a glance. */
+.sel-handle.play {
+  bottom: auto;
+  top: 100%;
+  height: 22px;
+  align-items: flex-start;
+  cursor: grab;
+  z-index: 3;
+}
+.sel-handle.play:active {
+  cursor: grabbing;
+}
+.sel-handle.play .sel-handle-mark {
+  height: 13px;
+  clip-path: polygon(50% 0, 100% 45%, 100% 100%, 0 100%, 0 45%);
   background: var(--ok);
 }
+/* The stem rises from the head back up through the track. Drawn here rather than as a separate
+   element in the track, so the line and the head are centred in the same box: two elements sharing
+   a percentage can still rasterise a pixel apart, one element cannot disagree with itself. */
+.sel-handle.play::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  margin-left: -1px;
+  bottom: 100%;
+  width: 2px;
+  /* The track's inner height, plus enough to clear its top border. */
+  height: 14px;
+  background: var(--ok);
+  /* The stem crosses the lane the In and Out markers live in, so it must never take a press: with
+     the playhead parked on either of them, its line would otherwise sit over the marker underneath
+     and swallow the drag. The head below the track is the grab target. */
+  pointer-events: none;
+}
 
+/* No video loaded: nothing to trim, so the track is the bare empty bar it used to be. */
+.sel-handle[aria-disabled="true"] {
+  display: none;
+}
+
+/* Time gradations under the track — a minor tick per subdivision, a labelled major every fifth, so
+   a selection can be read as a duration and not only as two frame indices. Sits flush under the
+   track; the playhead's head rides over the tick row rather than being given a lane of its own,
+   which would push the gradations away from the thing they are measuring. The only ticks it ever
+   covers are the ones it is already pointing between. */
+.sel-ruler {
+  position: relative;
+  height: 19px;
+  margin-top: 3px;
+}
+.sel-tick {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 4px;
+  background: var(--border);
+}
+.sel-tick.major {
+  height: 8px;
+  background: var(--muted);
+}
+.sel-tick-label {
+  position: absolute;
+  top: 10px;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--muted);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+/* The end labels would hang off the track, so they align inwards instead of centring. */
+.sel-tick-label.at-start {
+  transform: none;
+}
+.sel-tick-label.at-end {
+  transform: translateX(-100%);
+}
+
+/* Equal-width outer columns are what centre the middle one, so the transport lands on the card's
+   centre line — the same one the mode toggle and the Current readout sit on — and stays there
+   whatever the speed control beside it is doing. */
 .transport {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin-top: 0.75rem;
+}
+.transport-main {
+  grid-column: 2;
   display: flex;
   gap: 0.4rem;
   align-items: center;
-  flex-wrap: wrap;
-  margin-top: 0.75rem;
 }
-.speed-label {
-  margin-left: 0.4rem;
+/* Set apart from the transport: it changes how playback runs rather than driving it. */
+.speed-seg {
+  grid-column: 3;
+  justify-self: start;
+  margin-left: 0.9rem;
+}
+.speed-seg button {
+  padding: 0.35rem 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+/* Too narrow to hold both on one line: stack them, each centred, rather than letting the grid
+   squeeze the speed control into a column it does not fit. */
+@media (max-width: 560px) {
+  .transport {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 0.5rem;
+  }
+  .transport-main,
+  .speed-seg {
+    grid-column: 1;
+  }
+  .speed-seg {
+    justify-self: center;
+    margin-left: 0;
+  }
 }
 .seltimes {
   display: grid;
@@ -643,14 +804,38 @@ input[type="checkbox"] {
   text-align: center;
 }
 .seltimes .box .k {
+  display: block;
   font-size: 0.68rem;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+/* Readout and entry field at once: styled as the plain number it used to be, so it only looks like
+   an input once it is focused. */
 .seltimes .box .v {
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: center;
   font-family: var(--mono);
   font-size: 1.05rem;
+  /* Spinners would crowd a three-digit frame index in a box this narrow. */
+  appearance: textfield;
+}
+.seltimes .box .v::-webkit-outer-spin-button,
+.seltimes .box .v::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+/* Nothing about a centered monospace number says "type here", so hovering one underlines it — the
+   same hint a text field gives, without carrying a box around all three of them all the time. */
+.seltimes .box .v:hover:not(:disabled) {
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+.seltimes .box .v:disabled {
+  color: var(--muted);
 }
 .sel-row {
   display: flex;

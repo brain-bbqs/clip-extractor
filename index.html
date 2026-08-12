@@ -243,45 +243,121 @@
           <div id="overlayInfo" style="display: none"></div>
         </div>
 
-        <input type="range" id="frameSlider" min="0" max="0" value="0" step="1" disabled />
-        <div id="selbar" class="video-only">
-          <div id="selfill" style="display: none"></div>
-          <div id="selplay" style="display: none"></div>
+        <!-- One timeline. The In and Out markers point down onto the track from above; the playhead
+             points up at it from below, in its own colour, because three markers in one lane are
+             indistinguishable wherever they meet. Each marker tapers to a point, so its tip names
+             one frame on the ruler instead of a 14px-wide guess at which frame it is on, and each is
+             a hit area holding the drawn marker — a clip-path would otherwise clip the focus ring
+             away along with the corners. The [ ] I O shortcuts still mark either end at the
+             playhead. -->
+        <div id="selbarWrap" class="track-pad">
+          <div id="selbar">
+            <div id="selfill" class="video-only" style="display: none"></div>
+            <div
+              id="inHandle"
+              class="sel-handle video-only"
+              role="slider"
+              tabindex="-1"
+              aria-disabled="true"
+              aria-label="Selection in point"
+              aria-valuemin="0"
+              aria-valuemax="0"
+              aria-valuenow="0"
+            >
+              <span class="sel-handle-mark" aria-hidden="true"></span>
+            </div>
+            <div
+              id="outHandle"
+              class="sel-handle video-only"
+              role="slider"
+              tabindex="-1"
+              aria-disabled="true"
+              aria-label="Selection out point"
+              aria-valuemin="0"
+              aria-valuemax="0"
+              aria-valuenow="0"
+            >
+              <span class="sel-handle-mark" aria-hidden="true"></span>
+            </div>
+            <div
+              id="playHandle"
+              class="sel-handle play"
+              role="slider"
+              tabindex="-1"
+              aria-disabled="true"
+              aria-label="Current frame"
+              aria-valuemin="0"
+              aria-valuemax="0"
+              aria-valuenow="0"
+            >
+              <span class="sel-handle-mark" aria-hidden="true"></span>
+            </div>
+          </div>
+          <!-- Time gradations, laid out per load by main.ts. Decorative: every number it shows is
+               also in the readouts below, hence aria-hidden. -->
+          <div id="selruler" class="sel-ruler" aria-hidden="true"></div>
         </div>
 
+        <!-- The transport triple is its own group inside a three-column grid, so it lands on the
+             same centre line as the mode toggle above and the Current readout below rather than
+             being pushed off it by the speed control sharing the row. -->
         <div class="transport">
-          <button id="btnFirst" class="sec small" title="First frame" disabled>&#124;&#9664;</button>
-          <button id="btnPrev" class="sec small" title="Prev frame (&larr;)" disabled>&#9664;</button>
-          <button id="btnPlay" class="primary" title="Play/Pause (space)" disabled>&#9654; Play</button>
-          <button id="btnNext" class="sec small" title="Next frame (&rarr;)" disabled>&#9654;</button>
-          <button id="btnLast" class="sec small" title="Last frame" disabled>&#9654;&#124;</button>
-          <label class="hint speed-label">
-            Speed
-            <select id="speed">
-              <option value="0.25">0.25&times;</option>
-              <option value="0.5">0.5&times;</option>
-              <option value="1" selected>1&times;</option>
-              <option value="2">2&times;</option>
-              <option value="4">4&times;</option>
-            </select>
-          </label>
-          <span class="spacer"></span>
-          <button id="btnSetIn" class="sec small video-only" title="Set in point ([ or I)" disabled>[ Set In</button>
-          <button id="btnSetOut" class="sec small video-only" title="Set out point (] or O)" disabled>Set Out ]</button>
+          <div class="transport-main">
+            <button id="btnPrev" class="sec small" title="Prev frame (&larr;)" disabled>&#9664;</button>
+            <button id="btnPlay" class="primary" title="Play/Pause (space)" disabled>&#9654; Play</button>
+            <button id="btnNext" class="sec small" title="Next frame (&rarr;)" disabled>&#9654;</button>
+          </div>
+          <!-- Three speeds rather than a dropdown: with the list this short, the current speed is
+               worth showing rather than hiding behind a click, and it matches the segmented controls
+               the rest of the page uses. -->
+          <div class="seg speed-seg" id="speedSeg" role="group" aria-label="Playback speed">
+            <button type="button" data-speed="0.5" aria-pressed="false">0.5&times;</button>
+            <button type="button" data-speed="1" class="active" aria-pressed="true">1&times;</button>
+            <button type="button" data-speed="2" aria-pressed="false">2&times;</button>
+          </div>
         </div>
 
+        <!-- Every readout is also an entry field: typing a frame index is the exact-value counterpart
+             to dragging, and in frame mode it is the only way to land on a known frame directly. -->
         <div class="seltimes">
           <div class="box video-only">
-            <div class="k">In</div>
-            <div class="v" id="inVal">&mdash;</div>
+            <label class="k" for="inVal">In</label>
+            <input
+              type="number"
+              class="v"
+              id="inVal"
+              min="0"
+              step="1"
+              placeholder="&mdash;"
+              title="First frame of the snippet — type an index"
+              disabled
+            />
           </div>
           <div class="box">
-            <div class="k">Current</div>
-            <div class="v" id="curVal">&mdash;</div>
+            <label class="k" for="curVal">Current</label>
+            <input
+              type="number"
+              class="v"
+              id="curVal"
+              min="0"
+              step="1"
+              placeholder="&mdash;"
+              title="Frame under the playhead — type an index to jump to it"
+              disabled
+            />
           </div>
           <div class="box video-only">
-            <div class="k">Out</div>
-            <div class="v" id="outVal">&mdash;</div>
+            <label class="k" for="outVal">Out</label>
+            <input
+              type="number"
+              class="v"
+              id="outVal"
+              min="0"
+              step="1"
+              placeholder="&mdash;"
+              title="Last frame of the snippet — type an index"
+              disabled
+            />
           </div>
         </div>
         <div class="sel-row video-only">

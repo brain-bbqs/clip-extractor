@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
-import { stubArchive, stubH5Wasm, loadRecordedVideo } from "./helpers";
+import { loadRecordedVideo, seekTo, stubArchive, stubH5Wasm } from "./helpers";
 
 // A .slp loaded alongside the video adds two more assets to an upload: the annotations file itself
 // (with the "include the original content" toggle) and a rendered overlay version of the selection
@@ -20,7 +20,7 @@ test("a loaded .slp adds the annotations file and a rendered overlay to the uplo
   await expect(page.locator("#slpBadge")).toHaveText("30 frames");
 
   await page.locator('#modeSeg button[data-mode="frame"]').click();
-  await page.locator("#frameSlider").fill("5");
+  await seekTo(page, 5);
   await page.locator("#selectionDescription").fill("Both mice are tracked cleanly through this frame.");
   await page.locator("#btnUpload").click();
   await expect(page.locator("#uploadStatus")).toContainText("Upload complete", { timeout: 120_000 });
@@ -48,7 +48,7 @@ test("the overlay is uploaded even when the original content is excluded", async
   await expect(page.locator("#slpBadge")).toHaveText("30 frames");
 
   await page.locator('#modeSeg button[data-mode="frame"]').click();
-  await page.locator("#frameSlider").fill("5");
+  await seekTo(page, 5);
   await page.locator("#selectionDescription").fill("The skeleton drifts off the second mouse here.");
   await page.locator("#uploadOriginal").uncheck();
   await page.locator("#btnUpload").click();

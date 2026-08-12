@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { stubArchive, loadRecordedVideo } from "./helpers";
+import { loadRecordedVideo, seekTo, stubArchive } from "./helpers";
 
 // Drives a real upload against a stubbed archive, to pin down the asset paths every file actually
 // lands at: the directory's date/time/type entities, the extract's own entities, the sidecar that
@@ -20,7 +20,7 @@ test("an upload registers the extract, the original and a matching provenance si
 
   await loadRecordedVideo(page, "file_example_480 - Copy.webm");
   await page.locator('#modeSeg button[data-mode="frame"]').click();
-  await page.locator("#frameSlider").fill("5");
+  await seekTo(page, 5);
   await page.locator("#selectionDescription").fill("Frame 5 is where the two tracks swap identities.");
   await expect(page.locator("#uploadOriginal")).toBeChecked();
   await expect(page.locator("#btnUpload")).toBeEnabled();
@@ -71,7 +71,7 @@ test("the completion link survives a look at the other pane, and retires with th
 
   await loadRecordedVideo(page, "mice.webm");
   await page.locator('#modeSeg button[data-mode="frame"]').click();
-  await page.locator("#frameSlider").fill("5");
+  await seekTo(page, 5);
   await page.locator("#selectionDescription").fill("Worth sharing with the lab.");
   await page.locator("#btnUpload").click();
   const status = page.locator("#uploadStatus");
@@ -89,7 +89,7 @@ test("the completion link survives a look at the other pane, and retires with th
 
   // Moving to another frame retires both: the line named where a different selection went, and
   // this one has not been uploaded yet.
-  await page.locator("#frameSlider").fill("9");
+  await seekTo(page, 9);
   await expect(status).not.toContainText("Upload complete");
   await expect(page.locator("#btnUpload")).toBeVisible();
 });

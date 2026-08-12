@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
-import { stubArchive, stubH5Wasm, loadRecordedVideo } from "./helpers";
+import { loadRecordedVideo, seekTo, stubArchive, stubH5Wasm } from "./helpers";
 
 // Delivering one selection twice — saving a bundle and then uploading it — must not extract or
 // re-draw anything a second time. Drawing the pose overlay is the slowest thing this app does, so
@@ -32,7 +32,7 @@ test("delivering the same selection twice re-uses the extract and the overlay", 
   await expect(page.locator("#slpBadge")).toHaveText("30 frames");
 
   await page.locator('#modeSeg button[data-mode="frame"]').click();
-  await page.locator("#frameSlider").fill("5");
+  await seekTo(page, 5);
   await page.locator("#selectionDescription").fill("The overlay here is worth keeping.");
 
   // Save first: one encode for the frame itself, one for the overlay drawn over it.
@@ -49,7 +49,7 @@ test("delivering the same selection twice re-uses the extract and the overlay", 
   expect(await countEncodes(page)).toBe(afterSave);
 
   // A different frame is a different selection, so that one is drawn.
-  await page.locator("#frameSlider").fill("9");
+  await seekTo(page, 9);
   await Promise.all([
     page.waitForEvent("download", { timeout: 60_000 }),
     page

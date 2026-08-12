@@ -345,8 +345,12 @@ function playLoop(t: number): void {
     const step = Math.floor(accum);
     accum -= step;
     let next = state.cur + step;
-    const end = state.outF != null ? state.outF : state.totalFrames - 1;
-    if (next > end) next = state.inF != null ? state.inF : 0;
+    // Playback loops over the marked range in snippet mode. Frame mode keeps those marks (so
+    // switching back restores them) but ignores them here — its selection is the playhead, and
+    // penning playback inside a range nothing on screen mentions would look like a stuck player.
+    const ranged = state.mode === "video";
+    const end = ranged && state.outF != null ? state.outF : state.totalFrames - 1;
+    if (next > end) next = ranged && state.inF != null ? state.inF : 0;
     void seek(next);
   }
   rafId = requestAnimationFrame(playLoop);
@@ -407,23 +411,41 @@ function selectionChanged(): void {
   updateDeliveryGate();
 }
 
+/** Refreshes one of the editable readouts, unless it is the field being typed into — overwriting a
+ * half-typed frame index mid-keystroke would make the field unusable. Its own commit handler puts it
+ * back in step when the entry lands. */
+function setFrameField(input: HTMLInputElement, value: number | null): void {
+  if (document.activeElement === input) return;
+  input.value = value == null ? "" : String(value);
+}
+
+/** Places one trim handle and tells assistive technology where it now sits. `unset` marks an end
+ * that is only sitting at the video's own boundary because nothing has been marked there yet. */
+function positionHandle(handle: HTMLElement, frame: number, den: number, unset: boolean): void {
+  handle.style.left = `${(frame / den) * 100}%`;
+  handle.classList.toggle("unset", unset);
+  handle.setAttribute("aria-valuemax", String(Math.max(0, state.totalFrames - 1)));
+  handle.setAttribute("aria-valuenow", String(frame));
+  handle.setAttribute("aria-valuetext", `frame ${frame}`);
+}
+
 function updateSelUI(): void {
-  els.frameSlider.value = String(state.cur);
-  els.curVal.textContent = String(state.cur);
-  els.inVal.textContent = state.inF != null ? String(state.inF) : "—";
-  els.outVal.textContent = state.outF != null ? String(state.outF) : "—";
+  setFrameField(els.curVal, state.backend ? state.cur : null);
+  setFrameField(els.inVal, state.inF);
+  setFrameField(els.outVal, state.outF);
   const tf = state.totalFrames || 1;
   const den = Math.max(1, tf - 1); // avoid 0/0 → NaN% for a single-frame video
   const [lo, hi] = selRange();
-  if (state.inF != null || state.outF != null) {
-    els.selfill.style.display = "block";
-    els.selfill.style.left = `${(lo / den) * 100}%`;
-    els.selfill.style.width = `${((hi - lo) / den) * 100}%`;
-  } else {
-    els.selfill.style.display = "none";
-  }
-  els.selplay.style.display = state.backend ? "block" : "none";
-  els.selplay.style.left = `${(state.cur / den) * 100}%`;
+  // The band is hidden by an inline style rather than by `.video-only`, which a live inline display
+  // would outrank; the markers beside it carry no inline display, so the class is enough for them.
+  const banded = state.mode === "video" && (state.inF != null || state.outF != null);
+  els.selfill.style.display = banded ? "block" : "none";
+  els.selfill.style.left = `${(lo / den) * 100}%`;
+  els.selfill.style.width = `${((hi - lo) / den) * 100}%`;
+  positionHandle(els.inHandle, lo, den, state.inF == null);
+  positionHandle(els.outHandle, hi, den, state.outF == null);
+  // The playhead draws its own line through the track, so positioning the marker positions both.
+  positionHandle(els.playHandle, state.cur, den, false);
   // Frame mode's output name tracks the current frame, so the preview follows every seek.
   if (!deliveryBusy) {
     updateDeliveryPreview();
@@ -441,17 +463,247 @@ function updateSelUI(): void {
 }
 
 // ============================================================
+// Trim track: the two range handles that bound a snippet
+// ============================================================
+// The playhead keeps the native range input above this track, so scrubbing and trimming never
+// compete for the same drag: the top row only ever moves where you are looking, and this one only
+// ever moves what will be extracted.
+
+// Gradations the ruler is allowed to divide a video into, in seconds. Every one of them is a step
+// someone reads at a glance; 3s or 7s marks would be arithmetic instead.
+const RULER_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900];
+
+function rulerLabel(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(Math.round(seconds - minutes * 60)).padStart(2, "0")}`;
+}
+
+/** Lays out the time gradations under the track. Rebuilt per load, since the spacing that suits a
+ * thirty-second clip is unreadable on a ten-minute one: the step is chosen to land near six labelled
+ * divisions whatever the duration, then subdivided into fifths. */
+function buildRuler(): void {
+  els.selRuler.replaceChildren();
+  const last = state.totalFrames - 1;
+  if (!state.backend || last <= 0 || !state.fps) return;
+  const seconds = last / state.fps;
+  const major = RULER_STEPS.find((step) => step >= seconds / 6) ?? RULER_STEPS[RULER_STEPS.length - 1];
+  const minor = major / 5;
+  const marks = document.createDocumentFragment();
+  for (let step = 0; step * minor * state.fps <= last; step++) {
+    const frame = Math.round(step * minor * state.fps);
+    const position = `${(frame / last) * 100}%`;
+    const isMajor = step % 5 === 0;
+    const tick = document.createElement("div");
+    tick.className = isMajor ? "sel-tick major" : "sel-tick";
+    tick.style.left = position;
+    marks.append(tick);
+    if (!isMajor) continue;
+    const label = document.createElement("span");
+    // The outermost labels align inwards; centred, they would hang off the ends of the track.
+    const edge = frame === 0 ? " at-start" : frame / last > 0.96 ? " at-end" : "";
+    label.className = `sel-tick-label${edge}`;
+    label.style.left = position;
+    label.textContent = rulerLabel(step * minor);
+    marks.append(label);
+  }
+  els.selRuler.append(marks);
+}
+
+/** Which frame a page x-coordinate falls on, clamped to the video. */
+function frameAtClientX(clientX: number): number {
+  const rect = els.selbar.getBoundingClientRect();
+  if (rect.width <= 0) return 0;
+  const den = Math.max(1, state.totalFrames - 1);
+  return Math.round(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * den);
+}
+
+/** Writes both ends at once, materializing whichever was still unmarked: once a handle has been
+ * dragged the range is a real one, and a band with a "—" at one end of it reads as a bug. */
+function setSelection(lo: number, hi: number): void {
+  const last = Math.max(0, state.totalFrames - 1);
+  const clamp = (frame: number) => Math.max(0, Math.min(last, Math.round(frame)));
+  const nextIn = clamp(Math.min(lo, hi));
+  const nextOut = clamp(Math.max(lo, hi));
+  if (nextIn === state.inF && nextOut === state.outF) return;
+  state.inF = nextIn;
+  state.outF = nextOut;
+  selectionChanged();
+}
+
+/** Moves one end to `frame`, stopping at the other rather than crossing it — a handle dragged past
+ * its partner collapses the range instead of silently swapping the two. */
+function moveHandle(which: "in" | "out", frame: number): void {
+  const [lo, hi] = selRange();
+  if (which === "in") setSelection(Math.min(frame, hi), hi);
+  else setSelection(lo, Math.max(frame, lo));
+}
+
+/** Marks an end at the playhead, for the `[ ] I O` shortcuts. Unlike a drag this can invalidate the
+ * other end (marking In past Out), in which case that end goes back to unmarked and the range runs
+ * to the boundary — which is what someone re-marking a snippet from scratch is after. */
+function markIn(): void {
+  state.inF = state.cur;
+  if (state.outF != null && state.outF < state.inF) state.outF = null;
+  selectionChanged();
+}
+function markOut(): void {
+  state.outF = state.cur;
+  if (state.inF != null && state.inF > state.outF) state.inF = null;
+  selectionChanged();
+}
+
+/** Wires one marker: `read` is the frame it currently sits on, `move` is what dragging or arrowing it
+ * does. All three markers on the track go through here, which is what makes the playhead behave like
+ * the trim ends rather than like a second kind of control. */
+function wireHandle(handle: HTMLElement, read: () => number, move: (frame: number) => void): void {
+  handle.addEventListener("pointerdown", (e) => {
+    if (!state.backend) return;
+    // Deliberately does not move the handle yet: a press that lands off-centre would jump it, and
+    // the first pointermove is close enough behind to feel immediate anyway.
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add("dragging");
+    handle.focus();
+    stopPlay();
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    move(frameAtClientX(e.clientX));
+  });
+  const release = (e: PointerEvent) => {
+    if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+    handle.classList.remove("dragging");
+  };
+  handle.addEventListener("pointerup", release);
+  handle.addEventListener("pointercancel", release);
+  handle.addEventListener("keydown", (e) => {
+    if (!state.backend) return;
+    const last = Math.max(0, state.totalFrames - 1);
+    const at = read();
+    const step = e.shiftKey ? 10 : 1;
+    const next =
+      e.key === "ArrowLeft" || e.key === "ArrowDown"
+        ? at - step
+        : e.key === "ArrowRight" || e.key === "ArrowUp"
+          ? at + step
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? last
+              : null;
+    if (next === null) return;
+    e.preventDefault();
+    // The window-level shortcut handler would otherwise read the same arrow key as a seek too.
+    e.stopPropagation();
+    move(Math.max(0, Math.min(last, next)));
+  });
+}
+wireHandle(
+  els.inHandle,
+  () => selRange()[0],
+  (frame) => moveHandle("in", frame),
+);
+wireHandle(
+  els.outHandle,
+  () => selRange()[1],
+  (frame) => moveHandle("out", frame),
+);
+wireHandle(
+  els.playHandle,
+  () => state.cur,
+  (frame) => void seek(frame),
+);
+
+// Pressing the bare track moves the playhead there — the thing most often moved, and the only one of
+// the three whose meaning does not depend on which mode the selector is in.
+els.selbar.addEventListener("pointerdown", (e) => {
+  if (!state.backend || e.target !== els.selbar) return;
+  stopPlay();
+  void seek(frameAtClientX(e.clientX));
+});
+
+// Dragging the band between the handles slides the whole range, keeping its length — the usual way
+// to move a clip of the right duration onto the right moment.
+let bandDrag: { grabbedAt: number; lo: number; hi: number } | null = null;
+els.selfill.addEventListener("pointerdown", (e) => {
+  if (!state.backend) return;
+  e.preventDefault();
+  els.selfill.setPointerCapture(e.pointerId);
+  const [lo, hi] = selRange();
+  bandDrag = { grabbedAt: frameAtClientX(e.clientX), lo, hi };
+  stopPlay();
+});
+els.selfill.addEventListener("pointermove", (e) => {
+  if (!bandDrag) return;
+  const last = Math.max(0, state.totalFrames - 1);
+  // Clamp the shift rather than either end, so sliding into a boundary stops the band there instead
+  // of squashing it against the edge.
+  const shift = Math.max(-bandDrag.lo, Math.min(last - bandDrag.hi, frameAtClientX(e.clientX) - bandDrag.grabbedAt));
+  setSelection(bandDrag.lo + shift, bandDrag.hi + shift);
+});
+const releaseBand = (e: PointerEvent): void => {
+  if (els.selfill.hasPointerCapture(e.pointerId)) els.selfill.releasePointerCapture(e.pointerId);
+  bandDrag = null;
+};
+els.selfill.addEventListener("pointerup", releaseBand);
+els.selfill.addEventListener("pointercancel", releaseBand);
+
+// ============================================================
+// Frame-index entry
+// ============================================================
+/** Wires one readout as an entry field: `read` is what it shows, `apply` what a committed index
+ * does. Anything unparseable or out of range is clamped or discarded, and the field is written back
+ * either way, so what it shows is never a value the player is not actually on. */
+function wireFrameField(input: HTMLInputElement, read: () => number | null, apply: (frame: number) => void): void {
+  const refresh = (): void => {
+    const value = read();
+    input.value = value == null ? "" : String(value);
+  };
+  const commit = (): void => {
+    const typed = parseInt(input.value.trim(), 10);
+    if (Number.isFinite(typed)) apply(Math.max(0, Math.min(Math.max(0, state.totalFrames - 1), typed)));
+    refresh();
+  };
+  input.addEventListener("change", commit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    commit();
+  });
+  // A field left mid-edit and abandoned goes back to what the player is on.
+  input.addEventListener("blur", refresh);
+}
+
+wireFrameField(
+  els.curVal,
+  () => (state.backend ? state.cur : null),
+  (frame) => {
+    stopPlay();
+    void seek(frame);
+  },
+);
+wireFrameField(
+  els.inVal,
+  () => state.inF,
+  (frame) => moveHandle("in", frame),
+);
+wireFrameField(
+  els.outVal,
+  () => state.outF,
+  (frame) => moveHandle("out", frame),
+);
+
+// ============================================================
 // Selector mode (video vs frame)
 // ============================================================
 function setMode(mode: SelectorMode): void {
   state.mode = mode;
   clearDeliveryOutcomes();
   els.playerCard.classList.toggle("mode-frame", mode === "frame");
-  if (mode === "frame") {
-    // A frame selection is just the current frame; drop any in/out range.
-    state.inF = null;
-    state.outF = null;
-  }
+  // A frame selection is just the current frame, so frame mode hides the in/out controls — but it
+  // deliberately leaves state.inF/outF alone. Looking at a single frame is a detour people take in
+  // the middle of trimming a snippet, and throwing the range away on the way there means marking it
+  // all over again on the way back.
   updateSelUI();
   // The delivery card names what it will produce (MP4 vs PNG), so it follows the selector mode.
   updateDeliveryGate();
@@ -461,11 +713,19 @@ function setMode(mode: SelectorMode): void {
 // UI wiring
 // ============================================================
 function enablePlayer(on: boolean): void {
-  for (const b of [els.btnFirst, els.btnPrev, els.btnPlay, els.btnNext, els.btnLast, els.btnSetIn, els.btnSetOut, els.btnClearSel]) {
-    b.disabled = !on;
+  for (const b of [els.btnPrev, els.btnPlay, els.btnNext, els.btnClearSel]) b.disabled = !on;
+  const last = String(Math.max(0, state.totalFrames - 1));
+  for (const field of [els.inVal, els.curVal, els.outVal]) {
+    field.disabled = !on;
+    field.max = last;
   }
-  els.frameSlider.disabled = !on;
-  els.frameSlider.max = String(Math.max(0, state.totalFrames - 1));
+  // The markers are divs, so there is no `disabled` to set: aria-disabled carries the state (CSS
+  // hides them on it), and dropping them out of the tab order keeps a dead control off the path.
+  for (const handle of [els.inHandle, els.outHandle, els.playHandle]) {
+    handle.setAttribute("aria-disabled", String(!on));
+    handle.tabIndex = on ? 0 : -1;
+  }
+  buildRuler();
   updateDeliveryGate();
 }
 
@@ -525,14 +785,6 @@ els.slpToggle.addEventListener("change", () => {
 
 // Transport buttons
 els.btnPlay.addEventListener("click", togglePlay);
-els.btnFirst.addEventListener("click", () => {
-  stopPlay();
-  void seek(0);
-});
-els.btnLast.addEventListener("click", () => {
-  stopPlay();
-  void seek(state.totalFrames - 1);
-});
 els.btnPrev.addEventListener("click", () => {
   stopPlay();
   void seek(state.cur - 1);
@@ -541,22 +793,8 @@ els.btnNext.addEventListener("click", () => {
   stopPlay();
   void seek(state.cur + 1);
 });
-els.speed.addEventListener("change", () => {
-  state.speed = parseFloat(els.speed.value);
-});
-els.frameSlider.addEventListener("input", () => {
-  stopPlay();
-  void seek(parseInt(els.frameSlider.value, 10));
-});
-els.btnSetIn.addEventListener("click", () => {
-  state.inF = state.cur;
-  if (state.outF != null && state.outF < state.inF) state.outF = null;
-  selectionChanged();
-});
-els.btnSetOut.addEventListener("click", () => {
-  state.outF = state.cur;
-  if (state.inF != null && state.inF > state.outF) state.inF = null;
-  selectionChanged();
+wireSeg(els.speedSeg, (v) => {
+  state.speed = parseFloat(v);
 });
 els.btnClearSel.addEventListener("click", () => {
   state.inF = null;
@@ -584,28 +822,24 @@ window.addEventListener("blur", () => {
   shiftAnchor = null;
 });
 
-// Keyboard shortcuts. The seek slider (<input type=range>) is allowed through so [ ] I O / space
-// work while it's focused; only text fields, checkboxes, and selects suppress them.
+// Keyboard shortcuts. Form fields suppress them, so typing a frame index or a description is never
+// also a transport command. The markers on the track handle their own arrow keys and stop those
+// events before they reach here.
 window.addEventListener("keydown", (e) => {
-  const t = e.target as HTMLElement;
-  const tag = t.tagName;
-  if (tag === "TEXTAREA" || tag === "SELECT") return;
-  if (tag === "INPUT" && (t as HTMLInputElement).type !== "range") return;
+  const tag = (e.target as HTMLElement).tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT" || tag === "INPUT") return;
   if (!state.backend) return;
   if (e.code === "Space") {
     e.preventDefault();
     togglePlay();
   } else if (e.code === "ArrowLeft" || e.code === "ArrowRight") {
-    // On the slider itself the native arrow keys already step it (which seeks via the input
-    // handler); handling it again here would double-step.
-    if (t === els.frameSlider) return;
     e.preventDefault();
     stopPlay();
     void seek(state.cur + (e.code === "ArrowRight" ? 1 : -1));
   } else if (state.mode === "video" && (e.key === "i" || e.key === "I" || e.key === "[")) {
-    els.btnSetIn.click();
+    markIn();
   } else if (state.mode === "video" && (e.key === "o" || e.key === "O" || e.key === "]")) {
-    els.btnSetOut.click();
+    markOut();
   }
 });
 
@@ -1000,7 +1234,7 @@ function updateDeliveryGate(): void {
   const blocked = !hasVideo
     ? "Load a video to extract a selection."
     : !selected
-      ? "Mark an in or out point on the player to select a snippet."
+      ? "Drag the In and Out handles under the player to select a snippet."
       : !described
         ? `Describe the ${kind} above before sending it on.`
         : "";
