@@ -302,10 +302,15 @@
              same centre line as the mode toggle above and the Current readout below rather than
              being pushed off it by the speed control sharing the row. -->
         <div class="transport">
+          <!-- The step buttons carry the arrow keys they are bound to rather than triangles: a
+               triangle here is the play glyph at a smaller size, which leaves fill colour as the
+               only thing separating "advance one frame" from "start playing". The arrows also put
+               the shortcut on screen instead of behind a hover. They need an explicit label because
+               an arrow read aloud on its own names a direction, not an action. -->
           <div class="transport-main">
-            <button id="btnPrev" class="sec small" title="Prev frame (&larr;)" disabled>&#9664;</button>
+            <button id="btnPrev" class="sec small" title="Prev frame (&larr;)" aria-label="Previous frame" disabled>&larr;</button>
             <button id="btnPlay" class="primary" title="Play/Pause (space)" disabled>&#9654; Play</button>
-            <button id="btnNext" class="sec small" title="Next frame (&rarr;)" disabled>&#9654;</button>
+            <button id="btnNext" class="sec small" title="Next frame (&rarr;)" aria-label="Next frame" disabled>&rarr;</button>
           </div>
           <!-- Three speeds rather than a dropdown: with the list this short, the current speed is
                worth showing rather than hiding behind a click, and it matches the segmented controls
