@@ -44,7 +44,7 @@ test("the trim handles bound the snippet, and the range summary follows them", a
   await expect(page.locator("#inHandle")).toHaveClass(/unset/);
   await expect(page.locator("#outHandle")).toHaveClass(/unset/);
   await expect(page.locator("#inVal")).toHaveValue("");
-  await expect(page.locator("#rangeSummary")).toContainText("full video");
+  await expect(page.locator("#rangeSummary")).toHaveText("");
 
   await dragHandle(page, "#inHandle", 5);
   // Dragging either handle commits both ends, so the band never has a "—" at one side of it.

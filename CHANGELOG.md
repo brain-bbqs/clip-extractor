@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+#### 🚀 Enhancement
+
+- Removed the "Selection: full video" summary shown before a range is trimmed, since the handles already sit at the video's own bounds ([#17](https://github.com/brain-bbqs/clip-extractor/pull/17))
+
 ## 0.1.1
 
 #### 🚀 Enhancement

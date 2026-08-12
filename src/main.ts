@@ -456,10 +456,9 @@ function updateSelUI(): void {
   // Frame mode has no range summary — the current frame is already shown in the stage overlay.
   if (state.mode === "frame") return;
   const n = hi - lo + 1;
+  // An untrimmed video needs no summary: the handles already sit at its own bounds.
   els.rangeSummary.textContent =
-    state.inF == null && state.outF == null
-      ? `Selection: full video (${state.totalFrames} frames)`
-      : `Selection: frames ${lo}–${hi} · ${n} frames · ${(n / state.fps).toFixed(2)}s`;
+    state.inF == null && state.outF == null ? "" : `Selection: frames ${lo}–${hi} · ${n} frames · ${(n / state.fps).toFixed(2)}s`;
 }
 
 // ============================================================
