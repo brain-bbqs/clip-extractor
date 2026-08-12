@@ -298,20 +298,23 @@
           <div id="selruler" class="sel-ruler" aria-hidden="true"></div>
         </div>
 
+        <!-- The transport triple is its own group inside a three-column grid, so it lands on the
+             same centre line as the mode toggle above and the Current readout below rather than
+             being pushed off it by the speed control sharing the row. -->
         <div class="transport">
-          <button id="btnPrev" class="sec small" title="Prev frame (&larr;)" disabled>&#9664;</button>
-          <button id="btnPlay" class="primary" title="Play/Pause (space)" disabled>&#9654; Play</button>
-          <button id="btnNext" class="sec small" title="Next frame (&rarr;)" disabled>&#9654;</button>
-          <label class="hint speed-label">
-            Speed
-            <select id="speed">
-              <option value="0.25">0.25&times;</option>
-              <option value="0.5">0.5&times;</option>
-              <option value="1" selected>1&times;</option>
-              <option value="2">2&times;</option>
-              <option value="4">4&times;</option>
-            </select>
-          </label>
+          <div class="transport-main">
+            <button id="btnPrev" class="sec small" title="Prev frame (&larr;)" disabled>&#9664;</button>
+            <button id="btnPlay" class="primary" title="Play/Pause (space)" disabled>&#9654; Play</button>
+            <button id="btnNext" class="sec small" title="Next frame (&rarr;)" disabled>&#9654;</button>
+          </div>
+          <!-- Three speeds rather than a dropdown: with the list this short, the current speed is
+               worth showing rather than hiding behind a click, and it matches the segmented controls
+               the rest of the page uses. -->
+          <div class="seg speed-seg" id="speedSeg" role="group" aria-label="Playback speed">
+            <button type="button" data-speed="0.5" aria-pressed="false">0.5&times;</button>
+            <button type="button" data-speed="1" class="active" aria-pressed="true">1&times;</button>
+            <button type="button" data-speed="2" aria-pressed="false">2&times;</button>
+          </div>
         </div>
 
         <!-- Every readout is also an entry field: typing a frame index is the exact-value counterpart

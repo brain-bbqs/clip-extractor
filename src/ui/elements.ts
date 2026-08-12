@@ -43,7 +43,7 @@ export function getElements() {
     btnPrev: required<HTMLButtonElement>("btnPrev"),
     btnPlay: required<HTMLButtonElement>("btnPlay"),
     btnNext: required<HTMLButtonElement>("btnNext"),
-    speed: required<HTMLSelectElement>("speed"),
+    speedSeg: required<HTMLDivElement>("speedSeg"),
     inVal: required<HTMLInputElement>("inVal"),
     curVal: required<HTMLInputElement>("curVal"),
     outVal: required<HTMLInputElement>("outVal"),

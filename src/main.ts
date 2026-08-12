@@ -793,8 +793,8 @@ els.btnNext.addEventListener("click", () => {
   stopPlay();
   void seek(state.cur + 1);
 });
-els.speed.addEventListener("change", () => {
-  state.speed = parseFloat(els.speed.value);
+wireSeg(els.speedSeg, (v) => {
+  state.speed = parseFloat(v);
 });
 els.btnClearSel.addEventListener("click", () => {
   state.inF = null;

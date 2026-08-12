@@ -153,6 +153,34 @@ test("frame indices can be typed into the readouts", async ({ page }) => {
   await expect(page.locator("#rangeSummary")).toContainText("frames 3–11");
 });
 
+test("the speed buttons pick a rate, and playback runs at it", async ({ page }) => {
+  await page.goto("/");
+  await loadRecordedVideo(page, "trim.webm");
+
+  const seg = page.locator("#speedSeg button");
+  await expect(seg).toHaveText(["0.5×", "1×", "2×"]);
+  await expect(seg.nth(1)).toHaveAttribute("aria-pressed", "true");
+
+  await seg.nth(2).click();
+  await expect(seg.nth(2)).toHaveAttribute("aria-pressed", "true");
+  await expect(seg.nth(1)).toHaveAttribute("aria-pressed", "false");
+
+  // The pressed state has to reach playback, not just the button: play the same wall-clock stretch
+  // at 2x and at 0.5x from the same frame, and the fast one must cover more ground.
+  const advancedOver = async (ms: number) => {
+    await page.locator("#curVal").fill("0");
+    await page.locator("#curVal").press("Enter");
+    await page.locator("#btnPlay").click();
+    await page.waitForTimeout(ms);
+    await page.locator("#btnPlay").click();
+    return Number(await page.locator("#curVal").inputValue());
+  };
+  const fast = await advancedOver(400);
+  await seg.nth(0).click();
+  const slow = await advancedOver(400);
+  expect(fast).toBeGreaterThan(slow);
+});
+
 test("the ruler lays out time gradations, and stays put in frame mode", async ({ page }) => {
   await page.goto("/");
   await loadRecordedVideo(page, "trim.webm");
