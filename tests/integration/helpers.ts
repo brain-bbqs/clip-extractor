@@ -17,6 +17,17 @@ export interface StubbedArchive {
 }
 
 /**
+ * Moves the playhead onto a frame. The timeline carries no native slider to `fill()` — the playhead
+ * is a marker dragged on the track — so the exact-value path is the Current readout, which is what
+ * a spec that just needs to be on a known frame should drive.
+ */
+export async function seekTo(page: Page, frame: number): Promise<void> {
+  await page.locator("#curVal").fill(String(frame));
+  await page.locator("#curVal").press("Enter");
+  await expect(page.locator("#curVal")).toHaveValue(String(frame));
+}
+
+/**
  * Stubs the archive, its admin-ownership check and S3, and signs the page in with a stored token.
  */
 export async function stubArchive(page: Page): Promise<StubbedArchive> {

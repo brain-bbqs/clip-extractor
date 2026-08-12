@@ -430,18 +430,21 @@ function positionHandle(handle: HTMLElement, frame: number, den: number, unset: 
 }
 
 function updateSelUI(): void {
-  els.frameSlider.value = String(state.cur);
   setFrameField(els.curVal, state.backend ? state.cur : null);
   setFrameField(els.inVal, state.inF);
   setFrameField(els.outVal, state.outF);
   const tf = state.totalFrames || 1;
   const den = Math.max(1, tf - 1); // avoid 0/0 → NaN% for a single-frame video
   const [lo, hi] = selRange();
-  els.selfill.style.display = state.inF != null || state.outF != null ? "block" : "none";
+  // The band is hidden by an inline style rather than by `.video-only`, which a live inline display
+  // would outrank; the markers beside it carry no inline display, so the class is enough for them.
+  const banded = state.mode === "video" && (state.inF != null || state.outF != null);
+  els.selfill.style.display = banded ? "block" : "none";
   els.selfill.style.left = `${(lo / den) * 100}%`;
   els.selfill.style.width = `${((hi - lo) / den) * 100}%`;
   positionHandle(els.inHandle, lo, den, state.inF == null);
   positionHandle(els.outHandle, hi, den, state.outF == null);
+  positionHandle(els.playHandle, state.cur, den, false);
   els.selplay.style.display = state.backend ? "block" : "none";
   els.selplay.style.left = `${(state.cur / den) * 100}%`;
   // Frame mode's output name tracks the current frame, so the preview follows every seek.
@@ -550,7 +553,10 @@ function markOut(): void {
   selectionChanged();
 }
 
-function wireHandle(handle: HTMLElement, which: "in" | "out"): void {
+/** Wires one marker: `read` is the frame it currently sits on, `move` is what dragging or arrowing it
+ * does. All three markers on the track go through here, which is what makes the playhead behave like
+ * the trim ends rather than like a second kind of control. */
+function wireHandle(handle: HTMLElement, read: () => number, move: (frame: number) => void): void {
   handle.addEventListener("pointerdown", (e) => {
     if (!state.backend) return;
     // Deliberately does not move the handle yet: a press that lands off-centre would jump it, and
@@ -563,7 +569,7 @@ function wireHandle(handle: HTMLElement, which: "in" | "out"): void {
   });
   handle.addEventListener("pointermove", (e) => {
     if (!handle.hasPointerCapture(e.pointerId)) return;
-    moveHandle(which, frameAtClientX(e.clientX));
+    move(frameAtClientX(e.clientX));
   });
   const release = (e: PointerEvent) => {
     if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
@@ -574,7 +580,7 @@ function wireHandle(handle: HTMLElement, which: "in" | "out"): void {
   handle.addEventListener("keydown", (e) => {
     if (!state.backend) return;
     const last = Math.max(0, state.totalFrames - 1);
-    const at = which === "in" ? selRange()[0] : selRange()[1];
+    const at = read();
     const step = e.shiftKey ? 10 : 1;
     const next =
       e.key === "ArrowLeft" || e.key === "ArrowDown"
@@ -588,22 +594,33 @@ function wireHandle(handle: HTMLElement, which: "in" | "out"): void {
               : null;
     if (next === null) return;
     e.preventDefault();
-    // The window-level shortcut handler would otherwise read the same arrow key as a seek.
+    // The window-level shortcut handler would otherwise read the same arrow key as a seek too.
     e.stopPropagation();
-    moveHandle(which, next);
+    move(Math.max(0, Math.min(last, next)));
   });
 }
-wireHandle(els.inHandle, "in");
-wireHandle(els.outHandle, "out");
+wireHandle(
+  els.inHandle,
+  () => selRange()[0],
+  (frame) => moveHandle("in", frame),
+);
+wireHandle(
+  els.outHandle,
+  () => selRange()[1],
+  (frame) => moveHandle("out", frame),
+);
+wireHandle(
+  els.playHandle,
+  () => state.cur,
+  (frame) => void seek(frame),
+);
 
-// Pressing the bare track brings the nearer handle to the press — one gesture to set an endpoint,
-// without having to hit a handle-sized target first.
+// Pressing the bare track moves the playhead there — the thing most often moved, and the only one of
+// the three whose meaning does not depend on which mode the selector is in.
 els.selbar.addEventListener("pointerdown", (e) => {
   if (!state.backend || e.target !== els.selbar) return;
-  const frame = frameAtClientX(e.clientX);
-  const [lo, hi] = selRange();
   stopPlay();
-  moveHandle(Math.abs(frame - lo) <= Math.abs(frame - hi) ? "in" : "out", frame);
+  void seek(frameAtClientX(e.clientX));
 });
 
 // Dragging the band between the handles slides the whole range, keeping its length — the usual way
@@ -703,11 +720,9 @@ function enablePlayer(on: boolean): void {
     field.disabled = !on;
     field.max = last;
   }
-  els.frameSlider.disabled = !on;
-  els.frameSlider.max = last;
-  // The handles are divs, so there is no `disabled` to set: aria-disabled carries the state (CSS
+  // The markers are divs, so there is no `disabled` to set: aria-disabled carries the state (CSS
   // hides them on it), and dropping them out of the tab order keeps a dead control off the path.
-  for (const handle of [els.inHandle, els.outHandle]) {
+  for (const handle of [els.inHandle, els.outHandle, els.playHandle]) {
     handle.setAttribute("aria-disabled", String(!on));
     handle.tabIndex = on ? 0 : -1;
   }
@@ -782,10 +797,6 @@ els.btnNext.addEventListener("click", () => {
 els.speed.addEventListener("change", () => {
   state.speed = parseFloat(els.speed.value);
 });
-els.frameSlider.addEventListener("input", () => {
-  stopPlay();
-  void seek(parseInt(els.frameSlider.value, 10));
-});
 els.btnClearSel.addEventListener("click", () => {
   state.inF = null;
   state.outF = null;
@@ -812,21 +823,17 @@ window.addEventListener("blur", () => {
   shiftAnchor = null;
 });
 
-// Keyboard shortcuts. The seek slider (<input type=range>) is allowed through so [ ] I O / space
-// work while it's focused; only text fields, checkboxes, and selects suppress them.
+// Keyboard shortcuts. Form fields suppress them, so typing a frame index or a description is never
+// also a transport command. The markers on the track handle their own arrow keys and stop those
+// events before they reach here.
 window.addEventListener("keydown", (e) => {
-  const t = e.target as HTMLElement;
-  const tag = t.tagName;
-  if (tag === "TEXTAREA" || tag === "SELECT") return;
-  if (tag === "INPUT" && (t as HTMLInputElement).type !== "range") return;
+  const tag = (e.target as HTMLElement).tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT" || tag === "INPUT") return;
   if (!state.backend) return;
   if (e.code === "Space") {
     e.preventDefault();
     togglePlay();
   } else if (e.code === "ArrowLeft" || e.code === "ArrowRight") {
-    // On the slider itself the native arrow keys already step it (which seeks via the input
-    // handler); handling it again here would double-step.
-    if (t === els.frameSlider) return;
     e.preventDefault();
     stopPlay();
     void seek(state.cur + (e.code === "ArrowRight" ? 1 : -1));

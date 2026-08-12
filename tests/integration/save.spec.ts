@@ -1,7 +1,7 @@
 import { gunzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
-import { loadRecordedVideo } from "./helpers";
+import { loadRecordedVideo, seekTo } from "./helpers";
 
 // Save writes the same files an upload would have registered, packed into one gzipped tar — so this
 // drives a real save and unpacks what lands on disk. A single frame is used as the selection because
@@ -41,7 +41,7 @@ test("a save writes a bundle holding the extract, the original and their provena
 
   await loadRecordedVideo(page, "file_example_480 - Copy.webm");
   await page.locator('#modeSeg button[data-mode="frame"]').click();
-  await page.locator("#frameSlider").fill("5");
+  await seekTo(page, 5);
   // Nothing is saved until the selection has been described.
   await expect(page.locator("#btnDownload")).toBeDisabled();
   await expect(page.locator("#downloadStatus")).toContainText("Describe the frame");

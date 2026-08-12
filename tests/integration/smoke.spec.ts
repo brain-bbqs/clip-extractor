@@ -54,6 +54,7 @@ test("source toggle swaps between the local dropzone and the EMBER stream pane",
 
 test("mode toggle switches the selector between range and single frame", async ({ page }) => {
   await page.goto("/");
+  // The track itself is shared: it carries the playhead in both modes.
   await expect(page.locator("#selbar")).toBeVisible();
   await expect(page.locator("#inVal")).toBeVisible();
   await expect(page.locator("#outVal")).toBeVisible();
@@ -62,7 +63,7 @@ test("mode toggle switches the selector between range and single frame", async (
   await expect(page.locator("#selectionDescription")).toHaveAttribute("placeholder", /What event does this snippet showcase\?/);
 
   await page.locator('#modeSeg button[data-mode="frame"]').click();
-  await expect(page.locator("#selbar")).toBeHidden();
+  await expect(page.locator("#selbar")).toBeVisible();
   await expect(page.locator("#inVal")).toBeHidden();
   await expect(page.locator("#outVal")).toBeHidden();
   // The current frame is the frame-mode selection, so its field stays — and stays typeable.
@@ -70,7 +71,6 @@ test("mode toggle switches the selector between range and single frame", async (
   await expect(page.locator("#selectionDescription")).toHaveAttribute("placeholder", /What event does this frame showcase\?/);
 
   await page.locator('#modeSeg button[data-mode="video"]').click();
-  await expect(page.locator("#selbar")).toBeVisible();
   await expect(page.locator("#inVal")).toBeVisible();
   await expect(page.locator("#outVal")).toBeVisible();
   await expect(page.locator("#selectionDescription")).toHaveAttribute("placeholder", /What event does this snippet showcase\?/);

@@ -5,9 +5,9 @@ import { loadRecordedVideo } from "./helpers";
 // In/Current/Out fields under it. These specs drive the real gestures against a real loaded video,
 // since the whole point of the handles is that they are pointer targets.
 
-/** The last frame index of the loaded video, which the playhead slider already carries. */
+/** The last frame index of the loaded video, which the Current readout already carries as its max. */
 async function lastFrame(page: Page): Promise<number> {
-  return Number(await page.locator("#frameSlider").getAttribute("max"));
+  return Number(await page.locator("#curVal").getAttribute("max"));
 }
 
 /** Page x of a frame on the trim track — the same mapping the app reads a pointer through. The
@@ -20,7 +20,7 @@ async function xOfFrame(page: Page, frame: number): Promise<{ x: number; y: numb
   return { x: track.x + (frame / max) * track.width, y: track.y + track.height / 2 };
 }
 
-/** Drags one handle onto `frame`. The handle follows the pointer's absolute position rather than
+/** Drags one marker onto `frame`. The marker follows the pointer's absolute position rather than
  * its offset from where it was grabbed, so this lands on the frame exactly. */
 async function dragHandle(page: Page, selector: string, frame: number): Promise<void> {
   const target = await xOfFrame(page, frame);
@@ -89,6 +89,31 @@ test("dragging the band between the handles slides the range without resizing it
   await expect(page.locator("#outVal")).toHaveValue("15");
 });
 
+test("the playhead is a marker on the same track, dragged and pressed for", async ({ page }) => {
+  await page.goto("/");
+  await loadRecordedVideo(page, "trim.webm");
+  const last = await lastFrame(page);
+
+  await dragHandle(page, "#playHandle", 12);
+  await expect(page.locator("#curVal")).toHaveValue("12");
+  await expect(page.locator("#overlayInfo")).toContainText("frame 12 /");
+
+  // Pressing bare track moves the playhead, not a trim end — the one gesture whose meaning does not
+  // change with the selector mode.
+  const target = await xOfFrame(page, 20);
+  await page.mouse.click(target.x, target.y);
+  await expect(page.locator("#curVal")).toHaveValue("20");
+  // The trim ends stayed where they were.
+  await expect(page.locator("#inVal")).toHaveValue("");
+  await expect(page.locator("#outVal")).toHaveValue("");
+
+  // It survives into frame mode, where it is the whole selection.
+  await page.locator('#modeSeg button[data-mode="frame"]').click();
+  await expect(page.locator("#playHandle")).toBeVisible();
+  await dragHandle(page, "#playHandle", last);
+  await expect(page.locator("#curVal")).toHaveValue(String(last));
+});
+
 test("frame indices can be typed into the readouts", async ({ page }) => {
   await page.goto("/");
   await loadRecordedVideo(page, "trim.webm");
@@ -124,10 +149,14 @@ test("the ruler lays out time gradations, and stays put in frame mode", async ({
   await expect(page.locator("#selruler .sel-tick")).toHaveCount(5);
   await expect(page.locator("#selruler .sel-tick-label").first()).toHaveText("0:00");
 
-  // It sits outside the snippet-only wrapper, so a single frame is still placed against time.
+  // The track and its ruler are shared by both modes; only the trim markers and the band are
+  // snippet-only, so a single frame is still placed against time.
   await page.locator('#modeSeg button[data-mode="frame"]').click();
   await expect(page.locator("#selruler")).toBeVisible();
-  await expect(page.locator("#selbar")).toBeHidden();
+  await expect(page.locator("#selbar")).toBeVisible();
+  await expect(page.locator("#inHandle")).toBeHidden();
+  await expect(page.locator("#outHandle")).toBeHidden();
+  await expect(page.locator("#selfill")).toBeHidden();
 });
 
 test("a snippet selection survives a trip through frame mode", async ({ page }) => {

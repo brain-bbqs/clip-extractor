@@ -589,27 +589,21 @@ input[type="checkbox"] {
 }
 
 /* Timeline */
-#frameSlider {
-  width: 100%;
-  margin-top: 0.75rem;
-  accent-color: var(--accent);
-}
-/* The trim track and the ruler sit under the playhead slider, padded by half a range thumb so a
-   frame is at the same x on every row and the three read as one timeline. */
+/* Padded at the sides so a marker sitting on the first or last frame has room to overhang the
+   track, and at the top for the markers that rise out of it. */
 .track-pad {
-  padding: 0 8px;
+  padding: 16px 8px 0;
 }
-/* Room above the track for the markers, which rise out of it. */
 #selbarWrap {
-  margin-top: 1.15rem;
+  margin-top: 0.4rem;
 }
 #selbar {
   position: relative;
-  height: 10px;
+  height: 12px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 5px;
-  /* Handles overhang the track vertically, so it cannot clip its own children. */
+  border-radius: 6px;
+  /* Markers overhang the track on both sides, so it cannot clip its own children. */
   touch-action: none;
   cursor: pointer;
 }
@@ -631,9 +625,12 @@ input[type="checkbox"] {
   top: -3px;
   bottom: -3px;
   width: 2px;
+  /* Centred on its frame. Without this the 2px line is positioned by its left edge, which leaves it
+     a pixel to the right of the marker that is supposed to be pointing at it. */
+  margin-left: -1px;
   background: var(--ok);
-  /* The playhead is a readout of the slider above, not a target of its own — it must never swallow
-     a press meant for a handle or the track behind it. */
+  /* The line is the marker's readout inside the track, not a target of its own — it must never
+     swallow a press meant for a marker or the track behind it. */
   pointer-events: none;
 }
 
@@ -680,17 +677,36 @@ input[type="checkbox"] {
   outline-offset: 1px;
   border-radius: 4px;
 }
+/* The playhead shares the track but not the lane: it hangs below, pointing up, in its own colour, so
+   that where it meets an In or Out marker the two are still telling apart at a glance. */
+.sel-handle.play {
+  bottom: auto;
+  top: 100%;
+  margin-top: 3px;
+  align-items: flex-start;
+  cursor: grab;
+  z-index: 3;
+}
+.sel-handle.play:active {
+  cursor: grabbing;
+}
+.sel-handle.play .sel-handle-mark {
+  clip-path: polygon(50% 0, 100% 45%, 100% 100%, 0 100%, 0 45%);
+  background: var(--ok);
+}
+
 /* No video loaded: nothing to trim, so the track is the bare empty bar it used to be. */
 .sel-handle[aria-disabled="true"] {
   display: none;
 }
 
 /* Time gradations under the track — a minor tick per subdivision, a labelled major every fifth, so
-   a selection can be read as a duration and not only as two frame indices. */
+   a selection can be read as a duration and not only as two frame indices. The top margin clears
+   the playhead marker hanging below the track. */
 .sel-ruler {
   position: relative;
   height: 19px;
-  margin-top: 3px;
+  margin-top: 31px;
 }
 .sel-tick {
   position: absolute;
