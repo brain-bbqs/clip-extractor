@@ -71,6 +71,20 @@ test("a handle dragged past its partner stops there instead of crossing it", asy
   await expect(page.locator("#outVal")).toHaveValue("10");
 });
 
+test("a trim marker stays grabbable with the playhead parked on it", async ({ page }) => {
+  await page.goto("/");
+  await loadRecordedVideo(page, "trim.webm");
+
+  // Everything starts at frame 0, so the playhead's line runs straight down through the In marker.
+  // The line is a readout rather than a target, so the press has to reach the marker underneath it
+  // — otherwise the first thing anyone tries to trim on a freshly loaded video cannot be grabbed.
+  await expect(page.locator("#curVal")).toHaveValue("0");
+  await dragHandle(page, "#inHandle", 8);
+  await expect(page.locator("#inVal")).toHaveValue("8");
+  // ...and the playhead did not come along for the ride.
+  await expect(page.locator("#curVal")).toHaveValue("0");
+});
+
 test("dragging the band between the handles slides the range without resizing it", async ({ page }) => {
   await page.goto("/");
   await loadRecordedVideo(page, "trim.webm");

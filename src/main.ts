@@ -444,9 +444,8 @@ function updateSelUI(): void {
   els.selfill.style.width = `${((hi - lo) / den) * 100}%`;
   positionHandle(els.inHandle, lo, den, state.inF == null);
   positionHandle(els.outHandle, hi, den, state.outF == null);
+  // The playhead draws its own line through the track, so positioning the marker positions both.
   positionHandle(els.playHandle, state.cur, den, false);
-  els.selplay.style.display = state.backend ? "block" : "none";
-  els.selplay.style.left = `${(state.cur / den) * 100}%`;
   // Frame mode's output name tracks the current frame, so the preview follows every seek.
   if (!deliveryBusy) {
     updateDeliveryPreview();

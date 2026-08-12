@@ -36,7 +36,6 @@ export function getElements() {
     overlayInfo: required<HTMLDivElement>("overlayInfo"),
     selbar: required<HTMLDivElement>("selbar"),
     selfill: required<HTMLDivElement>("selfill"),
-    selplay: required<HTMLDivElement>("selplay"),
     inHandle: required<HTMLDivElement>("inHandle"),
     outHandle: required<HTMLDivElement>("outHandle"),
     playHandle: required<HTMLDivElement>("playHandle"),

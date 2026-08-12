@@ -620,19 +620,9 @@ input[type="checkbox"] {
 #selfill:active {
   cursor: grabbing;
 }
-#selplay {
-  position: absolute;
-  top: -3px;
-  bottom: -3px;
-  width: 2px;
-  /* Centred on its frame. Without this the 2px line is positioned by its left edge, which leaves it
-     a pixel to the right of the marker that is supposed to be pointing at it. */
-  margin-left: -1px;
-  background: var(--ok);
-  /* The line is the marker's readout inside the track, not a target of its own — it must never
-     swallow a press meant for a marker or the track behind it. */
-  pointer-events: none;
-}
+/* The playhead's line through the track is drawn by the marker itself (see .sel-handle.play::before)
+   rather than by a second element positioned alongside it. Two elements at the same percentage can
+   still land a rasterised pixel apart; one element cannot disagree with itself. */
 
 /* The two range markers. The element itself is only a hit area — wider than the drawing inside it,
    so the marker stays easy to grab — positioned so that the tip of the drawing lands on the frame
@@ -677,12 +667,12 @@ input[type="checkbox"] {
   outline-offset: 1px;
   border-radius: 4px;
 }
-/* The playhead shares the track but not the lane: it hangs below, pointing up, in its own colour, so
-   that where it meets an In or Out marker the two are still telling apart at a glance. */
+/* The playhead shares the track but not the lane: it rides the ruler below, pointing up, in its own
+   colour, so that where it meets an In or Out marker the two are still told apart at a glance. */
 .sel-handle.play {
   bottom: auto;
   top: 100%;
-  margin-top: 3px;
+  height: 22px;
   align-items: flex-start;
   cursor: grab;
   z-index: 3;
@@ -691,8 +681,27 @@ input[type="checkbox"] {
   cursor: grabbing;
 }
 .sel-handle.play .sel-handle-mark {
+  height: 13px;
   clip-path: polygon(50% 0, 100% 45%, 100% 100%, 0 100%, 0 45%);
   background: var(--ok);
+}
+/* The stem rises from the head back up through the track. Drawn here rather than as a separate
+   element in the track, so the line and the head are centred in the same box: two elements sharing
+   a percentage can still rasterise a pixel apart, one element cannot disagree with itself. */
+.sel-handle.play::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  margin-left: -1px;
+  bottom: 100%;
+  width: 2px;
+  /* The track's inner height, plus enough to clear its top border. */
+  height: 14px;
+  background: var(--ok);
+  /* The stem crosses the lane the In and Out markers live in, so it must never take a press: with
+     the playhead parked on either of them, its line would otherwise sit over the marker underneath
+     and swallow the drag. The head below the track is the grab target. */
+  pointer-events: none;
 }
 
 /* No video loaded: nothing to trim, so the track is the bare empty bar it used to be. */
@@ -701,12 +710,14 @@ input[type="checkbox"] {
 }
 
 /* Time gradations under the track — a minor tick per subdivision, a labelled major every fifth, so
-   a selection can be read as a duration and not only as two frame indices. The top margin clears
-   the playhead marker hanging below the track. */
+   a selection can be read as a duration and not only as two frame indices. Sits flush under the
+   track; the playhead's head rides over the tick row rather than being given a lane of its own,
+   which would push the gradations away from the thing they are measuring. The only ticks it ever
+   covers are the ones it is already pointing between. */
 .sel-ruler {
   position: relative;
   height: 19px;
-  margin-top: 31px;
+  margin-top: 3px;
 }
 .sel-tick {
   position: absolute;
