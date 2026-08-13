@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
-import { loadRecordedVideo, seekTo, stubArchive, stubH5Wasm } from "./helpers";
+import { loadRecordedVideo, seekTo, stubArchive, stubH5Wasm, SLP_CLIP_FRAMES } from "./helpers";
 
 // A .slp loaded alongside the video adds two more assets to an upload: the annotations file itself
 // (with the "include the original content" toggle) and a rendered overlay version of the selection
@@ -14,7 +14,7 @@ test("a loaded .slp adds the annotations file and a rendered overlay to the uplo
   await page.goto("/");
   await expect(page.locator("#dandisetSingleText")).toContainText("000123");
 
-  await loadRecordedVideo(page, "mice_new.webm");
+  await loadRecordedVideo(page, "mice_new.webm", SLP_CLIP_FRAMES);
   await page.locator("#slpFile").setInputFiles(SLP_FIXTURE);
   // The badge only appears once the .slp has parsed, which is also when it becomes uploadable.
   await expect(page.locator("#slpBadge")).toHaveText("30 frames");
@@ -43,7 +43,7 @@ test("the overlay is uploaded even when the original content is excluded", async
 
   await page.goto("/");
   await expect(page.locator("#dandisetSingleText")).toContainText("000123");
-  await loadRecordedVideo(page, "mice_new.webm");
+  await loadRecordedVideo(page, "mice_new.webm", SLP_CLIP_FRAMES);
   await page.locator("#slpFile").setInputFiles(SLP_FIXTURE);
   await expect(page.locator("#slpBadge")).toHaveText("30 frames");
 

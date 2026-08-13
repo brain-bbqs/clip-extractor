@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
-import { loadRecordedVideo, seekTo, stubArchive, stubH5Wasm } from "./helpers";
+import { loadRecordedVideo, seekTo, stubArchive, stubH5Wasm, SLP_CLIP_FRAMES } from "./helpers";
 
 // Delivering one selection twice — saving a bundle and then uploading it — must not extract or
 // re-draw anything a second time. Drawing the pose overlay is the slowest thing this app does, so
@@ -27,7 +27,7 @@ test("delivering the same selection twice re-uses the extract and the overlay", 
   });
 
   await page.goto("/");
-  await loadRecordedVideo(page, "mice_new.webm");
+  await loadRecordedVideo(page, "mice_new.webm", SLP_CLIP_FRAMES);
   await page.locator("#slpFile").setInputFiles(SLP_FIXTURE);
   await expect(page.locator("#slpBadge")).toHaveText("30 frames");
 
