@@ -5,6 +5,7 @@ import {
   blurSummary,
   clampRegion,
   defaultBlurRadius,
+  frameFit,
   hitRegion,
   maxBlurRadius,
   radiusSigma,
@@ -83,6 +84,39 @@ describe("hitRegion", () => {
 
   it("reports -1 for a point outside every area", () => {
     expect(hitRegion(regions, 400, 400)).toBe(-1);
+  });
+});
+
+describe("frameFit", () => {
+  it("scales up to fill a box of the video's own shape, with no letterbox", () => {
+    expect(frameFit(640, 480, 320, 240)).toEqual({ scale: 2, offsetX: 0, offsetY: 0 });
+  });
+
+  it("fits the height and centres sideways in a box wider than the video", () => {
+    // The player's own case: `max-height` clamps the box while `width: 100%` holds its width, which
+    // is what would stretch a circular area into an ellipse if the frame filled the box.
+    const fit = frameFit(876, 496, 320, 240);
+    expect(fit.scale).toBeCloseTo(496 / 240, 10);
+    expect(fit.offsetX).toBeCloseTo((876 - 320 * (496 / 240)) / 2, 10);
+    expect(fit.offsetY).toBeCloseTo(0, 10);
+  });
+
+  it("fits the width and centres vertically in a box taller than the video", () => {
+    expect(frameFit(320, 480, 320, 240)).toEqual({ scale: 1, offsetX: 0, offsetY: 120 });
+  });
+
+  it("puts the centre of the frame at the centre of the box, on one scale for both axes", () => {
+    const fit = frameFit(876, 496, 320, 240);
+    expect(fit.offsetX + 160 * fit.scale).toBeCloseTo(876 / 2, 10);
+    expect(fit.offsetY + 120 * fit.scale).toBeCloseTo(496 / 2, 10);
+    // Deliberately not the box's own width scale, which is what a ring placed on that alone used to
+    // sit at: on this box it is a third again too large, and lands a circle 80px below its blur.
+    expect(fit.scale).toBeLessThan(876 / 320);
+  });
+
+  it("reports no mapping at all when there is nothing to fit into", () => {
+    expect(frameFit(0, 0, 320, 240).scale).toBe(0);
+    expect(frameFit(640, 480, 0, 0).scale).toBe(0);
   });
 });
 

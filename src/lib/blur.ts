@@ -61,6 +61,29 @@ export function hitRegion(regions: BlurRegion[], x: number, y: number): number {
   return -1;
 }
 
+/** Where the frame sits inside the box the player draws it in: the scale it is drawn at, and the
+ * letterbox margins left around it. */
+export interface FrameFit {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+/**
+ * How a `width`×`height` frame fits a `boxWidth`×`boxHeight` element under `object-fit: contain` —
+ * scaled up until one axis fills the box, and centred in the other.
+ *
+ * The player's canvas is not always its video's shape (see `#view` in style.css), so a blur area's
+ * position on screen is not simply its source coordinate times one scale. Both the ring handles and
+ * the pointer that places them go through this, which is what keeps the ring on top of the pixels it
+ * is actually blurring. A scale of 0 means there is nothing to fit into and no mapping to be had.
+ */
+export function frameFit(boxWidth: number, boxHeight: number, width: number, height: number): FrameFit {
+  if (boxWidth <= 0 || boxHeight <= 0 || width <= 0 || height <= 0) return { scale: 0, offsetX: 0, offsetY: 0 };
+  const scale = Math.min(boxWidth / width, boxHeight / height);
+  return { scale, offsetX: (boxWidth - width * scale) / 2, offsetY: (boxHeight - height * scale) / 2 };
+}
+
 /** Names what was blurred, for the provenance record and the `encoding` line beside it. */
 export function blurSummary(regions: BlurRegion[]): string {
   if (!regions.length) return "";

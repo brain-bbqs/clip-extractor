@@ -14,7 +14,16 @@ import {
   type SlpSourceMeta,
 } from "./lib/match";
 import { alignDenseFrames, probeNwbSeriesLength } from "./lib/nwb";
-import { blurSigma, clampRegion, defaultBlurRadius, maxBlurRadius, paintBlurRegions, MIN_BLUR_RADIUS, type BlurRegion } from "./lib/blur";
+import {
+  blurSigma,
+  clampRegion,
+  defaultBlurRadius,
+  frameFit,
+  maxBlurRadius,
+  paintBlurRegions,
+  MIN_BLUR_RADIUS,
+  type BlurRegion,
+} from "./lib/blur";
 import { containsHumanSubjects, fetchDraftMetadata } from "./lib/humanSubjects";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
@@ -474,11 +483,13 @@ function blurRadiusBounds(): { min: number; max: number } {
 }
 
 /** Where a pointer is in source-video pixels. The canvas is drawn at whatever size the layout gives
- * it, so every screen coordinate the tool reads comes through here. */
+ * it, and letterboxed inside that box when the two are different shapes, so every screen coordinate
+ * the tool reads comes through the same fit the rings are placed by. */
 function sourcePoint(clientX: number, clientY: number): { x: number; y: number } {
   const rect = els.view.getBoundingClientRect();
-  if (!rect.width || !rect.height) return { x: 0, y: 0 };
-  return { x: ((clientX - rect.left) / rect.width) * state.width, y: ((clientY - rect.top) / rect.height) * state.height };
+  const fit = frameFit(rect.width, rect.height, state.width, state.height);
+  if (!fit.scale) return { x: 0, y: 0 };
+  return { x: (clientX - rect.left - fit.offsetX) / fit.scale, y: (clientY - rect.top - fit.offsetY) / fit.scale };
 }
 
 /** Sizes the controls to the video just loaded. */
@@ -665,18 +676,22 @@ function syncBlurHandles(): void {
   positionBlurHandles();
 }
 
-/** Lays the rings over the canvas. They are positioned against the stage in display pixels, since
- * the canvas is scaled to fit and sits centred inside it, so this re-runs whenever it is resized. */
+/** Lays the rings over the canvas. They are positioned against the stage in display pixels, through
+ * the same fit that maps a pointer back to the frame — the canvas box is not always the video's
+ * shape, and a ring placed by the box's width alone would sit off the circle it stands for, in a
+ * shape the circle is not. This re-runs whenever the canvas is resized. */
 function positionBlurHandles(): void {
   els.blurLayer.hidden = state.blurRegions.length === 0;
-  const scale = state.width > 0 ? els.view.clientWidth / state.width : 0;
+  const fit = frameFit(els.view.clientWidth, els.view.clientHeight, state.width, state.height);
+  const left = els.view.offsetLeft + fit.offsetX;
+  const top = els.view.offsetTop + fit.offsetY;
   state.blurRegions.forEach((region, i) => {
     const handle = els.blurLayer.children[i] as HTMLElement | undefined;
     if (!handle) return;
-    handle.style.left = `${els.view.offsetLeft + (region.x - region.radius) * scale}px`;
-    handle.style.top = `${els.view.offsetTop + (region.y - region.radius) * scale}px`;
-    handle.style.width = `${region.radius * 2 * scale}px`;
-    handle.style.height = `${region.radius * 2 * scale}px`;
+    handle.style.left = `${left + (region.x - region.radius) * fit.scale}px`;
+    handle.style.top = `${top + (region.y - region.radius) * fit.scale}px`;
+    handle.style.width = `${region.radius * 2 * fit.scale}px`;
+    handle.style.height = `${region.radius * 2 * fit.scale}px`;
     handle.classList.toggle("selected", selectedBlur === i);
     handle.setAttribute("aria-label", `Blur area ${i + 1} of ${state.blurRegions.length}, radius ${region.radius} pixels`);
   });

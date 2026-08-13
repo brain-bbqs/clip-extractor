@@ -598,6 +598,12 @@ input[type="checkbox"] {
   width: 100%;
   height: auto;
   max-height: 62vh;
+  /* The element's box is not always the video's shape: `width: 100%` holds the width while
+     `max-height` clamps the height, and a canvas fills its box by default — which stretches the
+     frame, and with it turns a circular blur area into an ellipse. `contain` letterboxes the frame
+     inside the box instead, so what is on screen is the video's own proportions. main.ts maps
+     pointers and blur rings through the same fit (see frameFit in lib/blur.ts). */
+  object-fit: contain;
 }
 #overlayInfo {
   position: absolute;
