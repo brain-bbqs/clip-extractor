@@ -31,10 +31,16 @@ export async function seekTo(page: Page, frame: number): Promise<void> {
   await expect(page.locator("#curVal")).toHaveValue(String(frame));
 }
 
+export interface StubArchiveOptions {
+  /** Marks the stubbed dataset's draft description with the phrase that flags a dataset as holding
+   * human-subjects data, so the warning banner and the blur tool can be driven without one. */
+  humanSubjects?: boolean;
+}
+
 /**
  * Stubs the archive, its admin-ownership check and S3, and signs the page in with a stored token.
  */
-export async function stubArchive(page: Page): Promise<StubbedArchive> {
+export async function stubArchive(page: Page, { humanSubjects = false }: StubArchiveOptions = {}): Promise<StubbedArchive> {
   const registered: string[] = [];
   const uploaded: Buffer[] = [];
 
@@ -56,6 +62,10 @@ export async function stubArchive(page: Page): Promise<StubbedArchive> {
       const { metadata } = JSON.parse(route.request().postData()!) as { metadata: { path: string } };
       registered.push(metadata.path);
       return json({ asset_id: "asset-1", path: metadata.path });
+    }
+    // Checked after the assets route above, whose path starts the same way.
+    if (url.includes("/versions/draft/")) {
+      return json({ description: humanSubjects ? "Incoming staging dataset. CONTAINS HUMAN SUBJECTS." : "Incoming staging dataset." });
     }
     return json({});
   });
