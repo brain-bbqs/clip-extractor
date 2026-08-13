@@ -1,6 +1,6 @@
 import type { SleapLabels, SleapVideo } from "./types";
 
-// Does a loaded `.slp` actually describe the video sitting in the player? A `.slp` records the
+// Does a loaded pose file actually describe the video sitting in the player? A `.slp` records the
 // video it was labeled against — its frame count, frame size, fps and filename — so the pair can be
 // checked before any of it is drawn, extracted, or uploaded. Overlaying pose from one recording onto
 // another produces annotations that look plausible and are wrong everywhere.
@@ -9,9 +9,13 @@ import type { SleapLabels, SleapVideo } from "./types";
 // or frame size that disagrees is proof of a different recording, and {@link slpVideoMismatches}
 // refuses the pair on it. A name that disagrees is only a suggestion — copies get renamed and
 // re-encoded on the way between machines — so it goes to {@link slpVideoWarnings}, which the card
-// shows alongside a `.slp` it loaded anyway.
+// shows alongside a file it loaded anyway.
+//
+// An `.nwb` carries less: the ndx-pose predictions flavor records the video's filename and nothing
+// else about it, so the shape checks below have nothing to compare until lib/nwb.ts supplies the
+// pose series length — see `seriesLength`.
 
-/** What a `.slp` says about the video it was labeled against. Every field is nullable: a `.slp`
+/** What a pose file says about the video it was labeled against. Every field is nullable: the file
  * carries whatever its writer stored, and older/hand-built files often record only a filename. */
 export interface SlpSourceMeta {
   /** Basename of the labeled video, or null when the file records none. */
@@ -23,8 +27,12 @@ export interface SlpSourceMeta {
   /** Highest frame index the file actually labels, or null when it labels nothing. Checkable even
    * when no shape was stored. */
   maxLabeledFrame: number | null;
-  /** How many videos the `.slp` references; > 1 means the comparison used one of several. */
+  /** How many videos the file references; > 1 means the comparison used one of several. */
   videoCount: number;
+  /** Samples in an `.nwb`'s pose series, read from the data array itself rather than from anything
+   * the file says about the video (see lib/nwb.ts). Null for a `.slp`, and for an `.nwb` whose
+   * series could not be measured. */
+  seriesLength: number | null;
 }
 
 /** The same facts about the video currently open in the player. */
@@ -42,6 +50,10 @@ export interface MetadataMismatch {
   slp: string;
   video: string;
 }
+
+/** How to name the loaded file in a notice the reader sees. The two formats say different things
+ * about the same pair, so the notices name the one in hand rather than a generic "pose file". */
+export type PoseFileKind = ".slp" | ".nwb";
 
 /** fps is stored as a float and re-derived from the container on load, so 29.97 against 30 is a
  * rounding difference rather than a different recording. Only a gap wider than this is worth
@@ -68,8 +80,10 @@ function labeledVideo(labels: SleapLabels): SleapVideo | null {
   return labels.videos?.at(0) ?? null;
 }
 
-/** Reads the source-video facts out of a parsed `.slp`. */
-export function slpSourceMeta(labels: SleapLabels): SlpSourceMeta {
+/** Reads the source-video facts out of a parsed pose file. `seriesLength` is the one fact that does
+ * not come from the labels — lib/nwb.ts measures it off an `.nwb`'s data array — so it is passed
+ * in rather than derived. */
+export function slpSourceMeta(labels: SleapLabels, seriesLength: number | null = null): SlpSourceMeta {
   const video = labeledVideo(labels);
   // shape is SLEAP's [frames, height, width, channels].
   const shape = video?.shape ?? null;
@@ -87,6 +101,7 @@ export function slpSourceMeta(labels: SleapLabels): SlpSourceMeta {
     fps: positive(video?.fps),
     maxLabeledFrame,
     videoCount: labels.videos?.length ?? 0,
+    seriesLength: positive(seriesLength),
   };
 }
 
@@ -114,6 +129,13 @@ export function slpVideoMismatches(slp: SlpSourceMeta, video: LoadedVideoMeta): 
   if (width !== null && height !== null && slp.width !== null && slp.height !== null && (slp.width !== width || slp.height !== height)) {
     mismatches.push({ field: "Frame size", slp: `${slp.width}×${slp.height}`, video: `${width}×${height}` });
   }
+  // A pose series longer than the video has samples for frames the video does not have, which no
+  // sparse-labeling story explains — it was sampled over a longer recording. The other direction is
+  // not proof of anything (a series may legitimately cover part of a video) and is warned about
+  // instead.
+  if (frames !== null && slp.seriesLength !== null && slp.seriesLength > frames) {
+    mismatches.push({ field: "Pose samples", slp: `${slp.seriesLength} samples`, video: `${frames} frames` });
+  }
   return mismatches;
 }
 
@@ -122,21 +144,29 @@ export function slpVideoMismatches(slp: SlpSourceMeta, video: LoadedVideoMeta): 
  * or the wrong pixel, and a renamed or re-encoded video is routine. Written as whole sentences,
  * since the card shows them to the reader as they are.
  */
-export function slpVideoWarnings(slp: SlpSourceMeta, video: LoadedVideoMeta): string[] {
+export function slpVideoWarnings(slp: SlpSourceMeta, video: LoadedVideoMeta, kind: PoseFileKind = ".slp"): string[] {
   const warnings: string[] = [];
   // A name is the weakest of the identifiers (the format records no checksum of the video, and a
   // copy gets renamed on the way between machines), so a difference here is a prompt to look rather
   // than grounds to refuse: the frame count and frame size are what actually decide the pairing.
   const name = baseName(video.name);
   if (name && slp.filename && name.toLowerCase() !== slp.filename.toLowerCase()) {
-    warnings.push(`The .slp was labeled against "${slp.filename}", but the loaded video is "${name}".`);
+    warnings.push(`The ${kind} was labeled against "${slp.filename}", but the loaded video is "${name}".`);
   }
   const fps = positive(video.fps);
   if (fps !== null && slp.fps !== null && Math.abs(slp.fps - fps) / fps > FPS_TOLERANCE) {
-    warnings.push(`The .slp records ${slp.fps.toFixed(2)} fps; the video reports ${fps.toFixed(2)} fps.`);
+    warnings.push(`The ${kind} records ${slp.fps.toFixed(2)} fps; the video reports ${fps.toFixed(2)} fps.`);
   }
   if (slp.videoCount > 1) {
-    warnings.push(`The .slp references ${slp.videoCount} videos; it was checked against the one its labels belong to.`);
+    warnings.push(`The ${kind} references ${slp.videoCount} videos; it was checked against the one its labels belong to.`);
+  }
+  // ndx-pose samples a pose series once per video frame, so a series shorter than the video is
+  // either pose for part of it or pose for a different, shorter recording. The two are not
+  // distinguishable from the file, and only one of them is a problem, so this says what it sees
+  // rather than refusing.
+  const frames = positive(video.frames);
+  if (frames !== null && slp.seriesLength !== null && slp.seriesLength < frames) {
+    warnings.push(`The ${kind} holds ${slp.seriesLength} pose samples for a video of ${frames} frames.`);
   }
   return warnings;
 }

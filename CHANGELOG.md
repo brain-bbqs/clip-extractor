@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.4
+
+#### 🚀 Enhancement
+
+- The annotations card now takes an ndx-pose `.nwb` as well as a SLEAP `.slp`, reading both flavors of the format (`PoseEstimation` predictions and `PoseTraining` annotations) through sleap-io.js's `loadNwb`. Both formats land in the same pose model, so the overlay, the annotations sidecar, the rendered overlay copy and the provenance record treat them alike ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
+- An `.nwb`'s pose series is measured off its data array, which is what a predictions file has instead of a recorded frame count: it names its original video and nothing else about it. More samples than the video has frames refuses the pair; fewer says on the card how much of the video the file covers ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
+- A dense `.nwb` series is re-indexed by sample order when its timestamps were read as spread-out frame indices, which happens to real-seconds timestamps slower than about 1 fps. A series exactly as long as the video is one sample per frame whatever its timestamps said ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
+- Card notices now name the format in hand rather than always saying `.slp`, and `?pose=` joins `?slp=` as the URL parameter for either format ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
+
+#### 🏠 Internal
+
+- Added `h5wasm` as a direct dependency, for the shallow HDF5 walk that measures the pose series. It was already in the bundle behind sleap-io.js, which loads it to read `.slp` and `.nwb` alike, so this costs a dependency entry rather than download weight ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
+- Moved `@talmolab/sleap-io.js` to `^0.5.9`, the first release exporting the NWB readers ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
+- Added `tests/fixtures/make_nwb_fixtures.py`, which regenerates the committed `.nwb` fixtures from a minimal hand-built ndx-pose layout ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
+
 ## 0.1.3
 
 #### 🚀 Enhancement
