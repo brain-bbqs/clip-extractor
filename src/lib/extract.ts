@@ -1,6 +1,7 @@
 import { ensureFfmpeg, ffmpegArgs } from "./ffmpeg";
 import { decodeIndex, drawVideoFrame } from "./video";
 import { drawPose } from "./pose";
+import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
 import type { SelectionKind } from "./delivery";
 import type { PoseModel, SleapVideoBackend, TrimMode } from "./types";
 
@@ -130,12 +131,14 @@ export interface ExtractClipParams {
   /** "precise" (the default) re-encodes for a frame-exact cut; "fast" stream-copies from the
    * nearest keyframe and may include a few extra leading frames. */
   trim?: TrimMode;
+  /** Areas blurred into every frame on the way out, in source pixels. */
+  blur?: BlurRegion[];
   onProgress?: ExtractProgress;
 }
 
 /** Trims [lo, hi] out of the source video with ffmpeg.wasm and returns it as an MP4. */
 export async function extractClip(params: ExtractClipParams): Promise<ExtractedMedia> {
-  const { sourceFile, sourceUrl, sourceName, lo, hi, fps, trim = "precise", onProgress } = params;
+  const { sourceFile, sourceUrl, sourceName, lo, hi, fps, trim = "precise", blur = [], onProgress } = params;
   const ext = (/\.[a-z0-9]+$/i.exec(sourceName) ?? [".mp4"])[0];
   const inName = `in${ext}`;
   const outName = "clip.mp4";
@@ -165,7 +168,7 @@ export async function extractClip(params: ExtractClipParams): Promise<ExtractedM
   }
 
   await ff.writeFile(inName, inputBytes);
-  const args = ffmpegArgs(inName, outName, lo, hi, fps, trim);
+  const args = ffmpegArgs(inName, outName, lo, hi, fps, trim, blur);
   const command = `ffmpeg ${args.join(" ")}`;
   console.info(`$ ${command}`);
   onProgress?.("Encoding snippet…", 0);
@@ -192,11 +195,13 @@ export interface ExtractFrameParams {
   width: number;
   height: number;
   sourceName: string;
+  /** Areas blurred into the image, in source pixels. */
+  blur?: BlurRegion[];
 }
 
 /** Re-decodes one frame and encodes it as a PNG (no pose overlay burned in). */
 export async function extractFrame(params: ExtractFrameParams): Promise<ExtractedMedia> {
-  const { backend, frameOrder, frame, width, height, sourceName } = params;
+  const { backend, frameOrder, frame, width, height, sourceName, blur = [] } = params;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -205,13 +210,15 @@ export async function extractFrame(params: ExtractFrameParams): Promise<Extracte
   const decoded = await backend.getFrame(decodeIndex(frameOrder, frame));
   if (!decoded) throw new Error(`Frame ${frame} could not be decoded`);
   drawVideoFrame(decoded, ctx, width, height);
+  paintBlurRegions(ctx, blur, width, height);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("The browser could not encode the frame as a PNG");
+  const blurred = blurSummary(blur);
   return {
     blob,
     filename: frameFileName(sourceName, frame),
     mime: "image/png",
-    encoding: "canvas.toBlob(image/png), decoded frame without pose overlay",
+    encoding: `canvas.toBlob(image/png), decoded frame without pose overlay${blurred ? `, ${blurred}` : ""}`,
   };
 }
 
@@ -227,6 +234,8 @@ export interface ExtractOverlayParams {
   width: number;
   height: number;
   sourceName: string;
+  /** Areas blurred into every frame, in source pixels. */
+  blur?: BlurRegion[];
   onProgress?: ExtractProgress;
 }
 
@@ -237,7 +246,7 @@ export interface ExtractOverlayParams {
  * neither depends on which codecs the browser itself can encode.
  */
 export async function extractOverlay(params: ExtractOverlayParams): Promise<ExtractedMedia> {
-  const { backend, frameOrder, pose, mode, inFrame, outFrame, fps, width, height, sourceName, onProgress } = params;
+  const { backend, frameOrder, pose, mode, inFrame, outFrame, fps, width, height, sourceName, blur = [], onProgress } = params;
   const entities: AssetEntities = { sourceName, mode, inFrame, outFrame };
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -250,19 +259,23 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
     if (!decoded) throw new Error(`Frame ${frame} could not be decoded`);
     ctx!.clearRect(0, 0, width, height);
     drawVideoFrame(decoded, ctx!, width, height);
+    // Before the pose, so the skeleton stays legible on top of the blur rather than being smeared
+    // by it — and so no blurred area is left readable under a gap in the drawing.
+    paintBlurRegions(ctx!, blur, width, height);
     drawPose(ctx!, pose.byFrame.get(frame), pose.skeleton, width);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
     if (!blob) throw new Error("The browser could not encode the overlay frame as a PNG");
     return blob;
   }
 
+  const blurred = blurSummary(blur);
   if (mode === "frame") {
     onProgress?.(`Drawing the overlay on frame ${inFrame}…`);
     return {
       blob: await renderOverlayFrame(inFrame),
       filename: overlayFileName(entities),
       mime: "image/png",
-      encoding: "canvas.toBlob(image/png), decoded frame with the pose overlay drawn in",
+      encoding: `canvas.toBlob(image/png), decoded frame with the pose overlay drawn in${blurred ? `, ${blurred}` : ""}`,
     };
   }
 
@@ -307,7 +320,14 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
     const data = await ff.readFile(outName);
     const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
     if (!blob.size) throw new Error("ffmpeg produced an empty overlay clip");
-    return { blob, filename: overlayFileName(entities), mime: "video/mp4", encoding: command };
+    // The blur is in the PNG sequence rather than in this command, so it is named alongside it: the
+    // encoding line is what the provenance record quotes as how the file was produced.
+    return {
+      blob,
+      filename: overlayFileName(entities),
+      mime: "video/mp4",
+      encoding: blurred ? `${command} (frames drawn with ${blurred})` : command,
+    };
   } finally {
     for (const name of [...written, outName]) {
       try {

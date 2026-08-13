@@ -598,6 +598,12 @@ input[type="checkbox"] {
   width: 100%;
   height: auto;
   max-height: 62vh;
+  /* The element's box is not always the video's shape: `width: 100%` holds the width while
+     `max-height` clamps the height, and a canvas fills its box by default — which stretches the
+     frame, and with it turns a circular blur area into an ellipse. `contain` letterboxes the frame
+     inside the box instead, so what is on screen is the video's own proportions. main.ts maps
+     pointers and blur rings through the same fit (see frameFit in lib/blur.ts). */
+  object-fit: contain;
 }
 #overlayInfo {
   position: absolute;
@@ -616,6 +622,84 @@ input[type="checkbox"] {
   font-size: 0.9rem;
   text-align: center;
   padding: 40px 16px;
+}
+
+/* Blur tool: rings laid over the canvas, and the row of controls under it. The blurred pixels are
+   painted into the canvas itself (see lib/blur.ts), so these are only the handles for placing them
+   — hence a layer that lets every pointer through except where a ring actually is. */
+.blur-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.blur-layer.locked {
+  /* Held still while an extraction is reading the areas it is burning in. */
+  visibility: hidden;
+}
+.blur-handle {
+  position: absolute;
+  border: 2px dashed rgb(255 255 255 / 0.9);
+  /* A dark companion outline, so the ring stays visible over a pale frame as well as a dark one. */
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.6),
+    inset 0 0 0 1px rgb(0 0 0 / 0.6);
+  border-radius: 50%;
+  pointer-events: auto;
+  cursor: grab;
+  /* The drag is handled by pointer capture, so the browser must not claim the gesture for panning. */
+  touch-action: none;
+}
+.blur-handle.selected {
+  border-style: solid;
+  border-color: var(--accent);
+}
+.blur-handle.dragging {
+  cursor: grabbing;
+}
+.blur-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* While the tool is waiting for a click that says where the next area goes. */
+#stage.placing #view {
+  cursor: crosshair;
+}
+.blur-tools {
+  margin-top: 0.75rem;
+}
+.blur-tools-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+}
+.blur-add-btn.armed {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.blur-radius {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+.blur-radius input[type="range"] {
+  width: 8rem;
+}
+.blur-radius input[type="number"] {
+  width: 4.5rem;
+  font: inherit;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+.blur-tools > .hint {
+  text-align: center;
+  margin: 0.5rem 0 0;
 }
 
 /* Timeline */
@@ -995,6 +1079,57 @@ textarea {
   background: var(--err-soft);
   color: var(--err);
   font-size: 0.9rem;
+}
+
+/* Deliberately the loudest block on the page, and the same one bbqs-uploader raises: a compliance
+   warning for a dataset flagged as holding human-subjects data, gating the Upload button until it
+   is confirmed (see main.ts). */
+.human-subjects-banner {
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  border: 2px solid var(--err);
+  border-radius: 12px;
+  background: var(--err-soft);
+}
+
+/* One warning symbol on each side of the centred heading, so the banner reads symmetrically. */
+.human-subjects-heading {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  color: var(--err);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.human-subjects-body {
+  margin: 0 0 0.5rem;
+  font-size: 0.92rem;
+}
+
+ul.human-subjects-body {
+  padding-left: 1.25rem;
+}
+
+.human-subjects-controls {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.human-subjects-confirm-btn {
+  background: var(--err);
+  border-color: var(--err);
+  color: #fff;
+  font-weight: 700;
+}
+
+.human-subjects-confirmed {
+  margin: 0;
+  color: var(--ok);
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
 /* The "also upload the original" recommendation, centred directly under the delivery toggle */

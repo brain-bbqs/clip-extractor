@@ -209,6 +209,37 @@ describe("buildProvenance", () => {
     expect(doc.annotations?.checksum?.value).toBe(`${"c".repeat(32)}-1`);
   });
 
+  it("records no blur when nothing was blurred", () => {
+    expect(buildProvenance(base).blur).toBeNull();
+    expect(buildProvenance({ ...base, blur: [] }).blur).toBeNull();
+  });
+
+  it("records what was blurred out of every file, in source pixels", () => {
+    const doc = buildProvenance({
+      ...base,
+      blur: [
+        { x: 320, y: 240, radius: 60 },
+        { x: 100, y: 50, radius: 30 },
+      ],
+      blurSigma: 20,
+    });
+    expect(doc.blur).toEqual({
+      method: "gaussian",
+      sigma: 20,
+      regions: [
+        { x: 320, y: 240, radius: 60 },
+        { x: 100, y: 50, radius: 30 },
+      ],
+    });
+  });
+
+  it("copies the regions, so a later edit cannot rewrite a record already written", () => {
+    const regions = [{ x: 10, y: 20, radius: 30 }];
+    const doc = buildProvenance({ ...base, blur: regions, blurSigma: 10 });
+    regions[0].x = 999;
+    expect(doc.blur?.regions[0].x).toBe(10);
+  });
+
   it("serializes to JSON without losing an unknown uploader", () => {
     const doc = buildProvenance({ ...base, user: null });
     expect(JSON.parse(JSON.stringify(doc)).uploaded_by).toBeNull();

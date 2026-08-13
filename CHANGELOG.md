@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.5
+
+#### 🚀 Enhancement
+
+- The upload pane now raises the same red human-subjects banner as [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader) when the selected dataset's draft description carries the `CONTAINS HUMAN SUBJECTS` marker, and holds the Upload button until the de-identification and IRB notice is confirmed. The warning is about a destination, so it appears only while signed in and on the Upload side, and a confirmation lasts the session per dataset ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+- That warning brings out a blur tool under the player: circular areas of a settable radius, placed by clicking the picture and then dragged over a face or anything else identifying. Each area is a focusable ring on the video, so it can be nudged with the arrow keys, resized with `+`/`−` and removed with `Delete` as well as with the buttons beside the controls ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+- The blur is burned into everything a delivery writes, not only into the preview: the player's own canvas, the extracted frame's PNG, every frame of the rendered pose overlay, and the snippet, which ffmpeg blurs in one gaussian pass blended back inside the circles. Any blur forces a re-encode, since a stream copy would hand the source's frames over untouched ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+- The original content stops travelling with a blurred selection — it still holds the pixels that were covered — so the "include the original content" switch is held off with a note saying why, and the choice comes back once the areas are cleared ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+- The provenance record now names what was blurred: each area's centre and radius in source pixels, and the strength they were blurred at, so a reader can see which parts of the frame carry no data ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+
+#### 🐛 Bug Fix
+
+- The player no longer stretches the video when the frame is taller than the room there is for it. `max-height` clamped the canvas's height while its width stayed at 100%, and a canvas fills its box, so a 4:3 recording was drawn into a 16:9 one — noticeable once a blur area, drawn as a circle, came out on screen as an ellipse. The frame is now letterboxed at its own proportions, and the blur rings and the pointer that places them are mapped through the same fit ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+
+#### 🏠 Internal
+
+- Added unit coverage for the blur's canvas painting against a recording stand-in for a 2D context, jsdom having no canvas of its own: that the blur is clipped to the circles rather than smeared over the frame, that the padded copy is drawn back past its padding, and above all that a browser without canvas filters takes the shrink-and-magnify path instead of quietly drawing the picture back unblurred ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+
 ## 0.1.4
 
 #### 🚀 Enhancement

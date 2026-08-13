@@ -1,4 +1,5 @@
 import { version as TOOL_VERSION } from "../../package.json";
+import type { BlurRegion } from "./blur";
 import type { ArchiveUser } from "./users";
 
 // A small sidecar written beside every upload, so a clip found later in the archive can be traced
@@ -76,6 +77,21 @@ export interface ProvenanceRendered {
   encoding: string;
 }
 
+/**
+ * What was blurred out of every file this delivery wrote, and how hard. Recorded because a
+ * de-identified clip is only trustworthy if what was removed from it is stated: a reader can see
+ * which parts of the frame carry no data, and nobody has to guess whether an unblurred copy exists
+ * (the original never travels with a blurred selection — see main.ts).
+ *
+ * Coordinates are in source-video pixels, with the origin at the top-left of the frame.
+ */
+export interface ProvenanceBlur {
+  method: "gaussian";
+  /** Standard deviation in pixels, applied at the same strength to every region. */
+  sigma: number;
+  regions: BlurRegion[];
+}
+
 export interface ProvenanceAnnotations {
   /** The `.slp` the annotations were read from, or null when it came from a URL rather than a local
    * file (in which case there are no local bytes to name, checksum or upload). */
@@ -123,6 +139,9 @@ export interface ProvenanceDocument {
   destination: ProvenanceDestination;
   source_video: ProvenanceSource;
   selection: ProvenanceSelection;
+  /** Null when nothing was blurred, which is the ordinary case for a dataset that holds no
+   * recordings of people. */
+  blur: ProvenanceBlur | null;
   extracted: ProvenanceExtracted;
   /** The same selection with the pose drawn into the pixels; null when no annotations were loaded,
    * since there would be nothing to draw. */
@@ -149,6 +168,10 @@ export interface ProvenanceInput {
   /** Inclusive source-frame bounds of the selection. */
   inFrame: number;
   outFrame: number;
+  /** Areas blurred into every file written, in source pixels; empty when nothing was blurred. */
+  blur?: BlurRegion[];
+  /** The strength they were blurred at, from lib/blur.ts. Ignored when `blur` is empty. */
+  blurSigma?: number;
   source: {
     filename: string;
     url: string | null;
@@ -211,6 +234,7 @@ export function buildProvenance(input: ProvenanceInput): ProvenanceDocument {
       num_frames: numFrames,
       duration_seconds: input.fps > 0 ? numFrames / input.fps : 0,
     },
+    blur: input.blur?.length ? { method: "gaussian", sigma: input.blurSigma ?? 0, regions: input.blur.map((r) => ({ ...r })) } : null,
     extracted: {
       filename: input.extracted.filename,
       asset_path: input.extracted.assetPath,

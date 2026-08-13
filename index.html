@@ -255,7 +255,29 @@
         <div id="stage">
           <div id="emptyStage">No video loaded — load one above to get started.</div>
           <canvas id="view" style="display: none"></canvas>
+          <!-- Ring outlines for the blur areas, laid over the canvas by main.ts. The blurred pixels
+               themselves are painted into the canvas, so what is on screen is what an extraction
+               writes; these are only the handles for moving and resizing them. -->
+          <div id="blurLayer" class="blur-layer" role="group" aria-label="Blur areas"></div>
           <div id="overlayInfo" style="display: none"></div>
+        </div>
+
+        <!-- Blur tool. Revealed when the upload destination is a dataset flagged as holding
+             human-subjects data (see main.ts), and kept on screen for as long as any area exists so
+             one placed under that flag can always be found and removed again. -->
+        <div id="blurTools" class="blur-tools" hidden>
+          <div class="blur-tools-row">
+            <button type="button" id="blurAddBtn" class="sec small blur-add-btn" aria-pressed="false">Add blur area</button>
+            <div class="blur-radius">
+              <label for="blurRadiusRange">Radius</label>
+              <input type="range" id="blurRadiusRange" min="4" max="100" step="1" value="40" />
+              <input type="number" id="blurRadiusValue" min="4" max="100" step="1" value="40" aria-label="Blur radius in pixels" />
+              <span class="hint">px</span>
+            </div>
+            <button type="button" id="blurRemoveBtn" class="ghost small" disabled>Remove area</button>
+            <button type="button" id="blurClearBtn" class="ghost small" disabled>Clear all</button>
+          </div>
+          <p class="hint" id="blurHint"></p>
         </div>
 
         <!-- One timeline. The In and Out markers point down onto the track from above; the playhead
@@ -423,6 +445,10 @@ Note anything that went wrong in it, or any other details you want to share alon
         <p class="hint upload-original-note" id="uploadOriginalNote" hidden>
           The original is streamed from a remote URL, so it is not sent back — only the extracted selection is.
         </p>
+        <p class="hint upload-original-note" id="blurOriginalNote" hidden>
+          The original still holds the pixels you blurred, so it does not travel with a blurred selection. Clear the blur areas to send it
+          along.
+        </p>
 
         <div id="downloadPane">
           <p class="hint deliver-hint" id="downloadHint">Saves the current selection to your computer.</p>
@@ -446,6 +472,38 @@ Note anything that went wrong in it, or any other details you want to share alon
           <p id="dandisetEmbargoError" class="dandiset-embargo-error" hidden>
             This dataset is not embargoed. Direct uploads are only allowed to embargoed dandisets; contact EMBER/BBQS admins.
           </p>
+
+          <!-- The same warning bbqs-uploader raises for a dataset flagged as holding human-subjects
+               data, shown here beside the destination it describes and gating the Upload button
+               until it is confirmed. -->
+          <div id="humanSubjectsBanner" class="human-subjects-banner" role="alert" hidden>
+            <p class="human-subjects-heading">
+              <span aria-hidden="true">⚠️</span>
+              <span>This dataset has been flagged as being intended for HUMAN SUBJECTS</span>
+              <span aria-hidden="true">⚠️</span>
+            </p>
+            <p class="human-subjects-body">
+              The blur tool under the player can be used to cover a face or anything else identifying, in whatever you extract: the blurred
+              pixels are burned into the snippet, the frame and the pose overlay alike, before any of them leave this page.
+            </p>
+            <div id="humanSubjectsUnconfirmed">
+              <p class="human-subjects-body">Uploads to this dataset are disabled until you confirm both of the following:</p>
+              <ul class="human-subjects-body">
+                <li>
+                  Every file you upload has been properly <strong>de-identified</strong>: no names, faces, voices, dates of birth, or any
+                  other personally identifiable information beyond what your approval explicitly permits.
+                </li>
+                <li>Collection and sharing of this data is covered by your institution's <strong>IRB approval</strong>.</li>
+              </ul>
+              <div class="human-subjects-controls">
+                <button type="button" id="humanSubjectsConfirmBtn" class="human-subjects-confirm-btn">I confirm</button>
+              </div>
+            </div>
+            <p id="humanSubjectsConfirmed" class="human-subjects-confirmed" hidden>
+              ✓ Confirmed: data is de-identified and covered by your institution's IRB approval. Uploads are enabled.
+            </p>
+          </div>
+
           <div class="action-bar">
             <button type="button" id="btnUpload" class="primary upload-btn" disabled>Upload</button>
             <span class="hint" id="uploadStatus">Sign in and load a video to upload a selection.</span>
