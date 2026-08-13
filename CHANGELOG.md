@@ -6,7 +6,7 @@
 
 - The SLEAP card now refuses a `.slp` that was labeled against a different video, listing the frame count, frame size or labeled frame range that does not fit and asking for another file, instead of overlaying a pose that lands on the wrong pixels ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
 - The same check runs when a video is loaded under an already-loaded `.slp`, so swapping either side of the pair is caught ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
-- A `.slp` labeled against a differently named video is refused as well, since the name is the only identifier the format always carries and the one check that still fires on a file that recorded no frame count or frame size. A differing extension alone is not enough, so a re-encoded `mice.avi` still pairs with `mice.mp4` ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
+- A `.slp` whose recorded video name is not the loaded video now gets an amber notice on the card rather than a red refusal: it still loads and draws, with what looked off named next to it. The name is the only identifier the format always carries (there is no checksum of the video in a `.slp`), but copies get renamed and re-encoded between machines, so it is a prompt to look rather than grounds to refuse. A differing fps and a multi-video `.slp` are flagged there too, instead of only in the console ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
 - A `.slp` that cannot be read at all now says so on the card too, instead of failing silently to the console ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
 
 ## 0.1.2

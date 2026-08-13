@@ -247,21 +247,37 @@ function clearPose(): void {
   poseGeneration++;
   clearDeliveryOutcomes();
   els.slpStatus.hidden = true;
+  // Nothing is loaded, so there is no pair left to caution anyone about.
+  els.slpWarning.hidden = true;
 }
 
-/** Puts the card into its refused state: nothing loaded, a headline, and a line per reason. */
-function showSlpError(title: string, reasons: string[]): void {
-  clearPose();
-  els.slpErrorTitle.textContent = title;
-  els.slpErrorList.replaceChildren(
+/** Fills one of the card's notice blocks with a headline and a line per reason. */
+function fillNotice(title: HTMLParagraphElement, list: HTMLUListElement, headline: string, reasons: string[]): void {
+  title.textContent = headline;
+  list.replaceChildren(
     ...reasons.map((reason) => {
       const li = document.createElement("li");
       li.textContent = reason;
       return li;
     }),
   );
+}
+
+/** Puts the card into its refused state: nothing loaded, and the reasons why. */
+function showSlpError(headline: string, reasons: string[]): void {
+  clearPose();
+  fillNotice(els.slpErrorTitle, els.slpErrorList, headline, reasons);
   els.slpError.hidden = false;
   renderFrame();
+}
+
+/** Flags differences that did not stop the `.slp` loading — the pose is on screen, and this says
+ * what about the pair is worth a second look before anything is extracted from it. */
+function showSlpWarnings(name: string, video: LoadedVideoMeta, warnings: string[]): void {
+  els.slpWarning.hidden = warnings.length === 0;
+  if (!warnings.length) return;
+  fillNotice(els.slpWarningTitle, els.slpWarningList, `"${name}" may not be the annotations for "${video.name}".`, warnings);
+  for (const w of warnings) log(`SLP/video difference: ${w}`, "warn");
 }
 
 /** Refuses a `.slp` that describes a different recording, naming every field that disagrees: a pose
@@ -277,14 +293,15 @@ function rejectSlp(name: string, video: LoadedVideoMeta, mismatches: MetadataMis
 /** Re-runs the comparison after a video is opened under an already-loaded `.slp` — the pair can be
  * assembled in either order, and swapping the video out is just as able to break the match. */
 function recheckPose(): void {
-  // Any mismatch still on the card was reported against the video that just went away, so it is
+  // Any notice still on the card was raised against the video that just went away, so both are
   // cleared before the new pairing is judged on its own terms.
   els.slpError.hidden = true;
+  els.slpWarning.hidden = true;
   const video = loadedVideoMeta();
   if (!state.slpMeta || !state.slpName || !video) return;
   const mismatches = slpVideoMismatches(state.slpMeta, video);
   if (mismatches.length) rejectSlp(state.slpName, video, mismatches);
-  else for (const w of slpVideoWarnings(state.slpMeta, video)) log(`SLP/video difference: ${w}`, "warn");
+  else showSlpWarnings(state.slpName, video, slpVideoWarnings(state.slpMeta, video));
 }
 
 async function loadSlp(source: File | string, name: string): Promise<void> {
@@ -305,7 +322,6 @@ async function loadSlp(source: File | string, name: string): Promise<void> {
         rejectSlp(name, video, mismatches);
         return;
       }
-      for (const w of slpVideoWarnings(meta, video)) log(`SLP/video difference: ${w}`, "warn");
     }
     state.pose = labelsToPose(labels);
     state.slpMeta = meta;
@@ -321,6 +337,9 @@ async function loadSlp(source: File | string, name: string): Promise<void> {
     els.slpBadge.className = "badge ok";
     els.slpError.hidden = true;
     els.slpStatus.hidden = false;
+    // Raised after the load rather than instead of it: the pose is on screen either way.
+    if (video) showSlpWarnings(name, video, slpVideoWarnings(meta, video));
+    else els.slpWarning.hidden = true;
     renderFrame();
   } catch (e) {
     // A file that could not be read has to say so on the card too: the console is not where someone

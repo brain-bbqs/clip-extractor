@@ -93,18 +93,13 @@ describe("slpVideoMismatches", () => {
   it("reports every field that differs", () => {
     const meta = slpSourceMeta(labels({ filename: "other.mp4", shape: [900, 480, 640, 1] }));
 
-    expect(slpVideoMismatches(meta, VIDEO).map((m) => m.field)).toEqual(["Video file", "Frame count", "Frame size"]);
+    expect(slpVideoMismatches(meta, VIDEO).map((m) => m.field)).toEqual(["Frame count", "Frame size"]);
   });
 
-  it("refuses a .slp labeled against a differently named video, its only recorded metadata", () => {
-    // The case the numeric checks cannot see: no shape stored, and labels that happen to fit.
+  it("does not refuse a .slp over its recorded video name alone", () => {
+    // A name is not evidence enough to refuse — a copy gets renamed between machines — so this is
+    // left to the warnings below.
     const meta = slpSourceMeta(labels({ filename: "some_other_recording.mp4" }, [7]));
-
-    expect(slpVideoMismatches(meta, VIDEO)).toEqual([{ field: "Video file", slp: '"some_other_recording.mp4"', video: '"mice.mp4"' }]);
-  });
-
-  it("ignores the directory the .slp was labeled in", () => {
-    const meta = slpSourceMeta(labels({ filename: "/some/other/machine/mice.mp4" }));
 
     expect(slpVideoMismatches(meta, VIDEO)).toEqual([]);
   });
@@ -152,15 +147,28 @@ describe("slpVideoWarnings", () => {
   it("warns about an fps that differs outright", () => {
     const meta = slpSourceMeta(labels({ filename: "mice.mp4", fps: 60 }));
 
-    expect(slpVideoWarnings(meta, VIDEO)).toEqual(["the .slp records 60.00 fps, the video reports 30.00 fps"]);
+    expect(slpVideoWarnings(meta, VIDEO)).toEqual(["The .slp records 60.00 fps; the video reports 30.00 fps."]);
   });
 
-  it("warns about a re-encoded video without refusing it", () => {
-    // Same recording, different container: the name a lab keeps across a convert.
-    const meta = slpSourceMeta(labels({ filename: "/data/mice.avi", shape: [1100, 768, 1024, 1] }));
+  it("warns about a differently named video without refusing it", () => {
+    const meta = slpSourceMeta(labels({ filename: "/data/some_other_recording.mp4", shape: [1100, 768, 1024, 1] }));
 
-    expect(slpVideoWarnings(meta, VIDEO)).toEqual(['the .slp was labeled against "mice.avi", the loaded video is "mice.mp4"']);
+    expect(slpVideoWarnings(meta, VIDEO)).toEqual([
+      'The .slp was labeled against "some_other_recording.mp4", but the loaded video is "mice.mp4".',
+    ]);
     expect(slpVideoMismatches(meta, VIDEO)).toEqual([]);
+  });
+
+  it("warns about a re-encode too, since the container is part of the name", () => {
+    const meta = slpSourceMeta(labels({ filename: "mice.avi" }));
+
+    expect(slpVideoWarnings(meta, VIDEO)).toEqual(['The .slp was labeled against "mice.avi", but the loaded video is "mice.mp4".']);
+  });
+
+  it("ignores the directory the .slp was labeled in", () => {
+    const meta = slpSourceMeta(labels({ filename: "/some/other/machine/mice.mp4" }));
+
+    expect(slpVideoWarnings(meta, VIDEO)).toEqual([]);
   });
 
   it("notes that a multi-video .slp was checked against one of its videos", () => {
@@ -173,7 +181,7 @@ describe("slpVideoWarnings", () => {
     };
 
     expect(slpVideoWarnings(slpSourceMeta(twoVideos), VIDEO)).toEqual([
-      "the .slp references 2 videos; it was checked against the one its labels belong to",
+      "The .slp references 2 videos; it was checked against the one its labels belong to.",
     ]);
   });
 });

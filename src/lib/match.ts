@@ -3,8 +3,13 @@ import type { SleapLabels, SleapVideo } from "./types";
 // Does a loaded `.slp` actually describe the video sitting in the player? A `.slp` records the
 // video it was labeled against — its frame count, frame size, fps and filename — so the pair can be
 // checked before any of it is drawn, extracted, or uploaded. Overlaying pose from one recording onto
-// another produces annotations that look plausible and are wrong everywhere, which is worth
-// refusing rather than warning about.
+// another produces annotations that look plausible and are wrong everywhere.
+//
+// The answer comes in two tiers, because the recorded facts are not equally telling. A frame count
+// or frame size that disagrees is proof of a different recording, and {@link slpVideoMismatches}
+// refuses the pair on it. A name that disagrees is only a suggestion — copies get renamed and
+// re-encoded on the way between machines — so it goes to {@link slpVideoWarnings}, which the card
+// shows alongside a `.slp` it loaded anyway.
 
 /** What a `.slp` says about the video it was labeled against. Every field is nullable: a `.slp`
  * carries whatever its writer stored, and older/hand-built files often record only a filename. */
@@ -56,14 +61,6 @@ function baseName(filename: string | string[] | undefined): string | null {
   return name || null;
 }
 
-/** A filename reduced to what survives a re-encode: no directory, no extension, case-folded. The
- * `.slp` records an absolute path from whichever machine labeled it, and a lab's copy of the same
- * recording is routinely `mice.avi` next to `mice.mp4`, so the container is not identifying. */
-function stem(name: string): string {
-  const dot = name.lastIndexOf(".");
-  return (dot > 0 ? name.slice(0, dot) : name).toLowerCase();
-}
-
 /** The video a `.slp`'s labels belong to: the one its labeled frames point at, falling back to the
  * first video it lists (which is the only one, in the single-video files this app is given). */
 function labeledVideo(labels: SleapLabels): SleapVideo | null {
@@ -100,14 +97,6 @@ export function slpSourceMeta(labels: SleapLabels): SlpSourceMeta {
  */
 export function slpVideoMismatches(slp: SlpSourceMeta, video: LoadedVideoMeta): MetadataMismatch[] {
   const mismatches: MetadataMismatch[] = [];
-  // The name is the only identifier a `.slp` always carries — the format records no checksum of the
-  // video, so there is nothing stronger to compare. It is also the only check that fires on a file
-  // that stored no shape at all, which is exactly the file most able to be paired with the wrong
-  // video unnoticed.
-  const name = baseName(video.name);
-  if (name && slp.filename && stem(name) !== stem(slp.filename)) {
-    mismatches.push({ field: "Video file", slp: `"${slp.filename}"`, video: `"${name}"` });
-  }
   const frames = positive(video.frames);
   if (frames !== null && slp.frames !== null && slp.frames !== frames) {
     mismatches.push({ field: "Frame count", slp: `${slp.frames} frames`, video: `${frames} frames` });
@@ -129,20 +118,25 @@ export function slpVideoMismatches(slp: SlpSourceMeta, video: LoadedVideoMeta): 
 }
 
 /**
- * Differences worth reporting but not worth refusing: none of them can misplace a pose on a frame,
- * and all are routine for a video that was re-encoded after it was labeled.
+ * Differences worth flagging but not worth refusing: none of them can put a pose on the wrong frame
+ * or the wrong pixel, and a renamed or re-encoded video is routine. Written as whole sentences,
+ * since the card shows them to the reader as they are.
  */
 export function slpVideoWarnings(slp: SlpSourceMeta, video: LoadedVideoMeta): string[] {
   const warnings: string[] = [];
+  // A name is the weakest of the identifiers (the format records no checksum of the video, and a
+  // copy gets renamed on the way between machines), so a difference here is a prompt to look rather
+  // than grounds to refuse: the frame count and frame size are what actually decide the pairing.
+  const name = baseName(video.name);
+  if (name && slp.filename && name.toLowerCase() !== slp.filename.toLowerCase()) {
+    warnings.push(`The .slp was labeled against "${slp.filename}", but the loaded video is "${name}".`);
+  }
   const fps = positive(video.fps);
   if (fps !== null && slp.fps !== null && Math.abs(slp.fps - fps) / fps > FPS_TOLERANCE) {
-    warnings.push(`the .slp records ${slp.fps.toFixed(2)} fps, the video reports ${fps.toFixed(2)} fps`);
+    warnings.push(`The .slp records ${slp.fps.toFixed(2)} fps; the video reports ${fps.toFixed(2)} fps.`);
   }
-  const name = baseName(video.name);
-  if (name && slp.filename && name.toLowerCase() !== slp.filename.toLowerCase() && stem(name) === stem(slp.filename)) {
-    warnings.push(`the .slp was labeled against "${slp.filename}", the loaded video is "${name}"`);
+  if (slp.videoCount > 1) {
+    warnings.push(`The .slp references ${slp.videoCount} videos; it was checked against the one its labels belong to.`);
   }
-  if (slp.videoCount > 1)
-    warnings.push(`the .slp references ${slp.videoCount} videos; it was checked against the one its labels belong to`);
   return warnings;
 }

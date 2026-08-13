@@ -225,9 +225,16 @@
         <!-- Shown instead of the status row when the dropped .slp describes a different recording
              than the one in the player: nothing is loaded, so the only way on is another file. -->
         <div class="slp-error" id="slpError" role="alert" hidden>
-          <p class="slp-error-title" id="slpErrorTitle"></p>
-          <ul class="slp-error-list" id="slpErrorList"></ul>
-          <p class="slp-error-action">Select another <code>.slp</code>, or load the video it was labeled against.</p>
+          <p class="slp-notice-title" id="slpErrorTitle"></p>
+          <ul class="slp-notice-list" id="slpErrorList"></ul>
+          <p class="slp-notice-action">Select another <code>.slp</code>, or load the video it was labeled against.</p>
+        </div>
+        <!-- Shown alongside a loaded .slp when something about the pair is worth a look but cannot
+             misplace a pose: a renamed video, a different fps, more than one video in the file. -->
+        <div class="slp-warning" id="slpWarning" hidden>
+          <p class="slp-notice-title" id="slpWarningTitle"></p>
+          <ul class="slp-notice-list" id="slpWarningList"></ul>
+          <p class="slp-notice-action">The pose is loaded. Check that this is the pair you meant before extracting.</p>
         </div>
         <div class="slp-status" id="slpStatus" hidden>
           <span class="badge" id="slpBadge"></span>
