@@ -1708,7 +1708,12 @@ function setStatus(el: HTMLElement, message: string, cls: "" | "ok" | "err" = ""
 /** Same, followed by a link — so an outcome can hand over somewhere to go next. */
 function setStatusLink(el: HTMLElement, message: string, href: string, linkText: string, cls: "" | "ok" | "err" = ""): void {
   const link = document.createElement("a");
-  link.href = href;
+  try {
+    const url = new URL(href, window.location.origin);
+    link.href = url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "about:blank";
+  } catch {
+    link.href = "about:blank";
+  }
   link.target = "_blank";
   link.rel = "noopener";
   link.textContent = linkText;
