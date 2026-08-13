@@ -34,9 +34,10 @@ function isGroup(entity: H5Entity | null | undefined): entity is H5Entity & { ke
 /** NWB stamps every container with the type it is; the walk follows that rather than guessing from
  * names, since the group names are the track and node names. */
 function neurodataType(entity: H5Entity | null | undefined): string | null {
-  const raw = entity?.attrs?.neurodata_type?.value;
-  // h5wasm hands a scalar string attribute back either bare or as a one-element array.
-  const value = Array.isArray(raw) ? raw[0] : raw;
+  const raw: unknown = entity?.attrs?.neurodata_type?.value;
+  // h5wasm hands a scalar string attribute back either bare or as a one-element array. The cast is
+  // what keeps the element `unknown`: narrowing an `unknown` with Array.isArray() gives `any[]`.
+  const value: unknown = Array.isArray(raw) ? (raw as unknown[])[0] : raw;
   return typeof value === "string" ? value : null;
 }
 
