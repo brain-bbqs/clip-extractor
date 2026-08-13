@@ -89,6 +89,8 @@ export interface SleapVideoBackend {
   // depends on that being a real possibility as far as the type checker is concerned.
   getFrameTimes?(): Promise<number[] | null | undefined>;
   prefetch?(startIndex: number, endIndex: number): Promise<void>;
+  /** Releases decoded frames and any reads still in flight. Optional: not every backend has one. */
+  close?(): void;
 }
 
 /** A decoded frame as returned by {@link SleapVideoBackend.getFrame} — sleap-io.js backends may

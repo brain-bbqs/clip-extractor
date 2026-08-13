@@ -3,6 +3,7 @@ import * as sio from "@talmolab/sleap-io.js";
 import { getElements } from "./ui/elements";
 import { bytes, fmtTime } from "./lib/format";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
+import { openStreamingBlob, openStreamingUrl } from "./lib/streaming";
 import { drawPose, labelsToPose } from "./lib/pose";
 import {
   slpSourceMeta,
@@ -189,28 +190,57 @@ interface OpenedSource {
 // heap alongside it pushes the tab into thrashing. 32 still covers the read-ahead window below.
 const FRAME_CACHE_SIZE = 32;
 
+// Opening a long recording means reading its container index, which for a multi-gigabyte file is
+// itself tens of megabytes over the network. That is a wait worth reporting rather than sitting
+// through in silence, so the read is logged as it goes, no more often than this.
+const INDEX_PROGRESS_MS = 2000;
+
+/** A throttled reporter for how much of `name` has been read while it is being opened. */
+function indexProgress(name: string): (bytesRead: number) => void {
+  let last = 0;
+  return (bytesRead) => {
+    const now = Date.now();
+    if (now - last < INDEX_PROGRESS_MS) return;
+    last = now;
+    log(`Reading ${name}'s index… ${bytes(bytesRead)} so far`);
+  };
+}
+
+/** Opens bytes already in hand, falling back through sleap-io.js's backends: its MediaBunny one
+ * reads the whole file to index it (see lib/streaming.ts), which is slow but not wrong, and its
+ * mp4box one covers files MediaBunny will not open at all. */
+async function openLocalBackend(file: File, name: string): Promise<SleapVideoBackend> {
+  try {
+    return await openStreamingBlob(file, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
+  } catch (e) {
+    log(`Streaming open failed (${(e as Error).message}); indexing the whole file…`, "warn");
+  }
+  try {
+    return await sio.MediaBunnyVideoBackend.fromBlob(file, name, { cacheSize: FRAME_CACHE_SIZE });
+  } catch (e) {
+    log(`MediaBunny failed (${(e as Error).message}); trying mp4box…`, "warn");
+    const vb = await sio.createVideoBackend(file, { backend: "mp4box" });
+    const maybeReady = (vb as { ready?: Promise<unknown> }).ready;
+    if (maybeReady) await maybeReady;
+    return vb;
+  }
+}
+
 async function openVideoBackend(source: File | string, name: string): Promise<OpenedSource> {
   if (typeof source === "string") {
     try {
-      return { backend: await sio.MediaBunnyVideoBackend.fromUrl(source, { cacheSize: FRAME_CACHE_SIZE }), file: null };
+      const backend = await openStreamingUrl(source, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
+      return { backend, file: null };
     } catch (e) {
       log(`Range/stream open failed (${(e as Error).message}); downloading full file…`, "warn");
       const resp = await fetch(source);
       if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching video`);
       const blob = await resp.blob();
       const file = new File([blob], name, { type: blob.type || "video/mp4" });
-      return { backend: await sio.MediaBunnyVideoBackend.fromBlob(file, name, { cacheSize: FRAME_CACHE_SIZE }), file };
+      return { backend: await openLocalBackend(file, name), file };
     }
   }
-  try {
-    return { backend: await sio.MediaBunnyVideoBackend.fromBlob(source, name, { cacheSize: FRAME_CACHE_SIZE }), file: source };
-  } catch (e) {
-    log(`MediaBunny failed (${(e as Error).message}); trying mp4box…`, "warn");
-    const vb = await sio.createVideoBackend(source, { backend: "mp4box" });
-    const maybeReady = (vb as { ready?: Promise<unknown> }).ready;
-    if (maybeReady) await maybeReady;
-    return { backend: vb, file: source };
-  }
+  return { backend: await openLocalBackend(source, name), file: source };
 }
 
 async function loadVideo(source: File | string, name: string, url: string | null = null): Promise<void> {
@@ -218,6 +248,12 @@ async function loadVideo(source: File | string, name: string, url: string | null
   log(`Loading video: ${name}…`);
   try {
     const { backend, file } = await openVideoBackend(source, name);
+    // Dropping the reference to the outgoing backend frees neither its decoded frames — ImageBitmaps
+    // hold memory the collector does not account for — nor, for a streamed URL, the requests its
+    // source still has in flight. Closed only once the replacement is open, so a load that fails
+    // leaves the video that was on screen playable.
+    state.backend?.close?.();
+    state.curBitmap = null;
     state.backend = backend;
     state.frameOrder = await buildFrameOrder(backend);
     const shape = backend.shape ?? [];

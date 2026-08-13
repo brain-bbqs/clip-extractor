@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.7
+
+#### 🐛 Bug Fix
+
+- A video named by URL now streams instead of downloading whole. The player opened one through sleap-io.js's MediaBunny backend, which lists every packet's timestamp to build its frame index and, at the settings it asks for, loads each packet's data along with its metadata — over a URL that is the entire file before the first frame appears. The same index is in the container's own tables, which opening the video has already read, so the player now builds it from those: a 10.6 GB recording on the EMBER bucket opens after about 71 MB, and every byte after that is a frame somebody looked at ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A seek into a range the read-ahead is still decoding is served as soon as that one frame lands, rather than after the whole range: the frame asked for is usually the first the decoder reaches, and waiting for the other twenty-nine was most of what made scrubbing over a fresh stretch of video feel stuck ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Opening a second video releases the first. Its decoded frames are ImageBitmaps, which hold memory the garbage collector does not account for, and a streamed URL leaves reads in flight; neither was freed by dropping the reference to it ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Opening a large recording now reports how much of its index has been read as it goes, since even a streamed multi-gigabyte file takes long enough that silence reads as a stall ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+
+#### 🏠 Internal
+
+- Added `src/lib/streaming.ts`, a frame-indexed video backend on mediabunny directly, and with it `mediabunny` as a direct dependency. It was already in the bundle behind sleap-io.js, which is built on it, so this costs a dependency entry rather than download weight. sleap-io.js's own backends stay as the fallbacks: its MediaBunny one for a file this cannot open, and its mp4box one for a file neither will ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A video backend may now offer a `close()`, which the streaming one uses to drop its frames and cancel its reads ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Added unit coverage for the new backend against a stand-in for mediabunny — above all that it asks for packet metadata alone, which is the whole of the fix and the one thing a later refactor could quietly undo — alongside its frame cache, its window arithmetic and the seek that overtakes a read-ahead ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+
 ## 0.1.5
 
 #### 🚀 Enhancement
