@@ -4,9 +4,9 @@
 
 #### 🐛 Bug Fix
 
-- The snippet encode's progress now measures the snippet rather than the recording it was cut out of. ffmpeg reports how far into the source's own duration it has written, so a three-second selection taken out of a half-minute video crawled to a tenth of the bar and then jumped to full when the process exited, whatever the encode had done in between. The fraction is now taken from the output timestamp against the length of the selection, so the bar spans the encode from end to end, and the placeholder timestamp ffmpeg sends before the first frame is muxed no longer reads as a finished encode and flashes the bar full at the start ([#22](https://github.com/brain-bbqs/clip-extractor/pull/22))
-- The step before that encode says what it is doing. A frame-exact cut is a filter over the frames, so ffmpeg decodes the source from its start up to the selection before any of the snippet exists, and there is nothing to measure while it does: the status line now names that step instead of leaving the bar at 0% for it ([#22](https://github.com/brain-bbqs/clip-extractor/pull/22))
-- The rendered pose overlay's own encode reports progress at all. It re-wired ffmpeg with a log handler alone, which unregistered the progress one that the snippet encode had left in place, so the bar sat at 0% from the first frame to the last ([#22](https://github.com/brain-bbqs/clip-extractor/pull/22))
+- The snippet encode's progress now measures the snippet rather than the recording it was cut out of, so the bar spans the encode instead of creeping to a fraction of itself and then jumping to full ([#22](https://github.com/brain-bbqs/clip-extractor/pull/22))
+- A frame-exact cut decodes the source up to the selection before it can encode anything, and the status line now names that step rather than holding the bar at 0% through it ([#22](https://github.com/brain-bbqs/clip-extractor/pull/22))
+- The rendered pose overlay's encode reports progress at all, having sat at 0% from the first frame to the last ([#22](https://github.com/brain-bbqs/clip-extractor/pull/22))
 
 ## 0.1.5
 
