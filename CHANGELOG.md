@@ -4,47 +4,56 @@
 
 #### 🐛 Bug Fix
 
-- A video named by URL now streams instead of downloading whole. The player opened one through sleap-io.js's MediaBunny backend, which lists every packet's timestamp to build its frame index and, at the settings it asks for, loads each packet's data along with its metadata — over a URL that is the entire file before the first frame appears. The same index is in the container's own tables, which opening the video has already read, so the player now builds it from those: a 10.6 GB recording on the EMBER bucket opens after about 71 MB, and every byte after that is a frame somebody looked at ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
-- A seek into a range the read-ahead is still decoding is served as soon as that one frame lands, rather than after the whole range: the frame asked for is usually the first the decoder reaches, and waiting for the other twenty-nine was most of what made scrubbing over a fresh stretch of video feel stuck ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
-- Opening a second video releases the first. Its decoded frames are ImageBitmaps, which hold memory the garbage collector does not account for, and a streamed URL leaves reads in flight; neither was freed by dropping the reference to it ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
-- Opening a large recording now reports how much of its index has been read as it goes, since even a streamed multi-gigabyte file takes long enough that silence reads as a stall ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A video named by URL now streams over range requests instead of being downloaded whole before it can play: a 10.6 GB recording on the EMBER bucket opens after about 71 MB ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A seek into a stretch the read-ahead is still decoding is now served as soon as that frame lands rather than after the whole window, so scrubbing over fresh video no longer feels stuck ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Opening a second video now releases the first, whose decoded frames and in-flight reads were left behind ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Opening a long recording now reports how much of its index has been read, rather than looking stalled while it is ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 
 #### 🏠 Internal
 
-- Added `src/lib/streaming.ts`, a frame-indexed video backend on mediabunny directly, and with it `mediabunny` as a direct dependency. It was already in the bundle behind sleap-io.js, which is built on it, so this costs a dependency entry rather than download weight. sleap-io.js's own backends stay as the fallbacks: its MediaBunny one for a file this cannot open, and its mp4box one for a file neither will ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Added `src/lib/streaming.ts`, a frame-indexed video backend built on mediabunny directly, with sleap-io.js's own backends kept as the fallbacks ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Added `mediabunny` as a direct dependency, at the cost of a dependency entry rather than download weight, since sleap-io.js already brings it into the bundle ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - A video backend may now offer a `close()`, which the streaming one uses to drop its frames and cancel its reads ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
-- Added unit coverage for the new backend against a stand-in for mediabunny — above all that it asks for packet metadata alone, which is the whole of the fix and the one thing a later refactor could quietly undo — alongside its frame cache, its window arithmetic and the seek that overtakes a read-ahead ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Added unit coverage for the new backend against a stand-in for mediabunny, above all that it indexes packet metadata alone ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+
+## 0.1.6
+
+#### 🐛 Bug Fix
+
+- The snippet encode's progress now measures the snippet rather than the recording it was cut out of, so the bar spans the encode instead of creeping to a fraction of itself and then jumping to full ([#22](https://github.com/brain-bbqs/clip-extractor/pull/22))
+- A frame-exact cut decodes the source up to the selection before it can encode anything, and the status line now names that step rather than holding the bar at 0% through it ([#22](https://github.com/brain-bbqs/clip-extractor/pull/22))
+- The rendered pose overlay's encode reports progress at all, having sat at 0% from the first frame to the last ([#22](https://github.com/brain-bbqs/clip-extractor/pull/22))
 
 ## 0.1.5
 
 #### 🚀 Enhancement
 
-- The upload pane now raises the same red human-subjects banner as [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader) when the selected dataset's draft description carries the `CONTAINS HUMAN SUBJECTS` marker, and holds the Upload button until the de-identification and IRB notice is confirmed. The warning is about a destination, so it appears only while signed in and on the Upload side, and a confirmation lasts the session per dataset ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
-- That warning brings out a blur tool under the player: circular areas of a settable radius, placed by clicking the picture and then dragged over a face or anything else identifying. Each area is a focusable ring on the video, so it can be nudged with the arrow keys, resized with `+`/`−` and removed with `Delete` as well as with the buttons beside the controls ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
-- The blur is burned into everything a delivery writes, not only into the preview: the player's own canvas, the extracted frame's PNG, every frame of the rendered pose overlay, and the snippet, which ffmpeg blurs in one gaussian pass blended back inside the circles. Any blur forces a re-encode, since a stream copy would hand the source's frames over untouched ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
-- The original content stops travelling with a blurred selection — it still holds the pixels that were covered — so the "include the original content" switch is held off with a note saying why, and the choice comes back once the areas are cleared ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
-- The provenance record now names what was blurred: each area's centre and radius in source pixels, and the strength they were blurred at, so a reader can see which parts of the frame carry no data ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+- The upload pane now raises the same red human-subjects banner as [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader) when the selected dataset's draft description carries the `CONTAINS HUMAN SUBJECTS` marker, holding the Upload button until the de-identification and IRB notice is confirmed ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+- That warning brings out a blur tool under the player: circular areas dragged over a face or anything else identifying, each a focusable ring that can be nudged, resized and removed from the keyboard as well as from the buttons beside the controls ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+- The blur is burned into everything a delivery writes rather than only the preview: the extracted frame, every frame of the rendered pose overlay, and the snippet, which any blur forces to be re-encoded ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+- The original content no longer travels with a blurred selection, since it still holds the pixels that were covered, and the switch offering it comes back once the areas are cleared ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+- The provenance record now names each blurred area's centre, radius and strength, so a reader can see which parts of the frame carry no data ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
 
 #### 🐛 Bug Fix
 
-- The player no longer stretches the video when the frame is taller than the room there is for it. `max-height` clamped the canvas's height while its width stayed at 100%, and a canvas fills its box, so a 4:3 recording was drawn into a 16:9 one — noticeable once a blur area, drawn as a circle, came out on screen as an ellipse. The frame is now letterboxed at its own proportions, and the blur rings and the pointer that places them are mapped through the same fit ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+- The player no longer stretches a video whose frame is taller than the room there is for it: the frame is letterboxed at its own proportions, and the blur rings and the pointer that places them are mapped through the same fit ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
 
 #### 🏠 Internal
 
-- Added unit coverage for the blur's canvas painting against a recording stand-in for a 2D context, jsdom having no canvas of its own: that the blur is clipped to the circles rather than smeared over the frame, that the padded copy is drawn back past its padding, and above all that a browser without canvas filters takes the shrink-and-magnify path instead of quietly drawing the picture back unblurred ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
+- Added unit coverage for the blur's canvas painting against a recording stand-in for a 2D context, jsdom having no canvas of its own ([#20](https://github.com/brain-bbqs/clip-extractor/pull/20))
 
 ## 0.1.4
 
 #### 🚀 Enhancement
 
-- The annotations card now takes an ndx-pose `.nwb` as well as a SLEAP `.slp`, reading both flavors of the format (`PoseEstimation` predictions and `PoseTraining` annotations) through sleap-io.js's `loadNwb`. Both formats land in the same pose model, so the overlay, the annotations sidecar, the rendered overlay copy and the provenance record treat them alike ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
-- An `.nwb`'s pose series is measured off its data array, which is what a predictions file has instead of a recorded frame count: it names its original video and nothing else about it. More samples than the video has frames refuses the pair; fewer says on the card how much of the video the file covers ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
-- A dense `.nwb` series is re-indexed by sample order when its timestamps were read as spread-out frame indices, which happens to real-seconds timestamps slower than about 1 fps. A series exactly as long as the video is one sample per frame whatever its timestamps said ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
+- The annotations card now takes an ndx-pose `.nwb` as well as a SLEAP `.slp`, reading both `PoseEstimation` predictions and `PoseTraining` annotations into the same pose model, so the overlay, the sidecar and the provenance record treat the two formats alike ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
+- An `.nwb`'s pose series is measured off its data array, a predictions file having no recorded frame count: more samples than the video has frames refuses the pair, and fewer says on the card how much of the video the file covers ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
+- A dense `.nwb` series is re-indexed by sample order when its real-seconds timestamps were read as spread-out frame indices, which happens below about 1 fps ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
 - Card notices now name the format in hand rather than always saying `.slp`, and `?pose=` joins `?slp=` as the URL parameter for either format ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
 
 #### 🏠 Internal
 
-- Added `h5wasm` as a direct dependency, for the shallow HDF5 walk that measures the pose series. It was already in the bundle behind sleap-io.js, which loads it to read `.slp` and `.nwb` alike, so this costs a dependency entry rather than download weight ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
+- Added `h5wasm` as a direct dependency for the shallow HDF5 walk that measures the pose series, at the cost of a dependency entry rather than download weight, since sleap-io.js already brings it into the bundle ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
 - Moved `@talmolab/sleap-io.js` to `^0.5.9`, the first release exporting the NWB readers ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
 - Added `tests/fixtures/make_nwb_fixtures.py`, which regenerates the committed `.nwb` fixtures from a minimal hand-built ndx-pose layout ([#19](https://github.com/brain-bbqs/clip-extractor/pull/19))
 
@@ -54,7 +63,7 @@
 
 - The SLEAP card now refuses a `.slp` that was labeled against a different video, listing the frame count, frame size or labeled frame range that does not fit and asking for another file, instead of overlaying a pose that lands on the wrong pixels ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
 - The same check runs when a video is loaded under an already-loaded `.slp`, so swapping either side of the pair is caught ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
-- A `.slp` whose recorded video name is not the loaded video now gets an amber notice on the card rather than a red refusal: it still loads and draws, with what looked off named next to it. The name is the only identifier the format always carries (there is no checksum of the video in a `.slp`), but copies get renamed and re-encoded between machines, so it is a prompt to look rather than grounds to refuse. A differing fps and a multi-video `.slp` are flagged there too, instead of only in the console ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
+- A `.slp` whose recorded video name is not the loaded video now gets an amber notice rather than a red refusal, names being a prompt to look rather than grounds to refuse, and a differing fps or a multi-video `.slp` is flagged there too instead of only in the console ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
 - A `.slp` that cannot be read at all now says so on the card too, instead of failing silently to the console ([#18](https://github.com/brain-bbqs/clip-extractor/pull/18))
 
 ## 0.1.2

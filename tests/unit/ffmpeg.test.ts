@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ffmpegArgs } from "../../src/lib/ffmpeg";
+import { encodedFraction, ffmpegArgs } from "../../src/lib/ffmpeg";
 
 describe("ffmpegArgs", () => {
   it("builds a frame-exact trim filter in precise mode", () => {
@@ -30,5 +30,31 @@ describe("ffmpegArgs", () => {
     expect(args).not.toContain("copy");
     expect(args).toContain("-filter_complex");
     expect(args).toContain("libx264");
+  });
+});
+
+describe("encodedFraction", () => {
+  // The numbers here are what ffmpeg.wasm reported while cutting a three-second snippet out of a
+  // sixty-second recording: its own `progress` never passes 0.05, since that is all of the source
+  // the snippet covers.
+  it("measures the clip being written rather than the source it came out of", () => {
+    expect(encodedFraction({ progress: 0.0242, time: 1450000 }, 3)).toBeCloseTo(0.4833, 4);
+    expect(encodedFraction({ progress: 0.0483, time: 2900065 }, 3)).toBeCloseTo(0.9667, 4);
+  });
+
+  it("has nothing to report until the first frame is muxed", () => {
+    // AV_NOPTS_VALUE, which arrives while ffmpeg is still decoding its way up to the selection.
+    expect(encodedFraction({ progress: 153722867280.9, time: 9223372036854776000 }, 3)).toBe(null);
+    expect(encodedFraction({ progress: 0, time: Number.NaN }, 3)).toBe(null);
+    expect(encodedFraction({ progress: 0, time: -1000 }, 3)).toBe(null);
+  });
+
+  it("refuses to divide by a selection with no duration", () => {
+    expect(encodedFraction({ progress: 0.5, time: 1000 }, 0)).toBe(null);
+    expect(encodedFraction({ progress: 0.5, time: 1000 }, Number.NaN)).toBe(null);
+  });
+
+  it("holds at full rather than overshooting it", () => {
+    expect(encodedFraction({ progress: 1, time: 3100000 }, 3)).toBe(1);
   });
 });

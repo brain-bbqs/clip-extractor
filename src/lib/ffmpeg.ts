@@ -32,7 +32,7 @@ export function ffmpegArgs(
 ): string[] {
   const start = lo / fps;
   const dur = (hi - lo + 1) / fps;
-  if (trim === "fast" && !blur.length) {
+  if (streamCopies(trim, blur)) {
     return ["-ss", start.toFixed(4), "-i", inName, "-t", dur.toFixed(4), "-c", "copy", "-avoid_negative_ts", "make_zero", outName];
   }
   const trimChain = `trim=start_frame=${lo}:end_frame=${hi + 1},setpts=PTS-STARTPTS`;
@@ -42,9 +42,39 @@ export function ffmpegArgs(
   return ["-i", inName, "-filter_complex", `[0:v]${trimChain},${blurFilterChain(blur)}`, "-map", "[blurout]", ...ENCODE_ARGS, outName];
 }
 
+/** Whether the trim can be served by copying the source's own frames rather than re-encoding them:
+ * only when the cut is allowed to land on a keyframe and nothing has to be drawn into the picture.
+ * A stream copy skips straight to the selection, where a re-encode reads the source up to it. */
+export function streamCopies(trim: TrimMode, blur: BlurRegion[]): boolean {
+  return trim === "fast" && !blur.length;
+}
+
+/** One report from ffmpeg's progress line: `time` is the output timestamp it has reached, in
+ * microseconds. */
+export interface FfmpegProgress {
+  progress: number;
+  time: number;
+}
+
+/** Re-derives a 0..1 fraction of the file being written from one of those reports, or null while
+ * there is nothing to measure yet.
+ *
+ * ffmpeg's own `progress` number is that output timestamp over the *input's* duration, which is the
+ * fraction of the source the cut covers rather than the fraction of the cut that is done: a three
+ * second snippet taken out of a half-minute recording climbs to a tenth and then jumps to 1 when the
+ * process exits, however long the encode took. Only `time` follows the encode itself, so the
+ * fraction is taken from it against the duration this command is expected to write. Until the first
+ * frame is muxed `time` arrives as AV_NOPTS_VALUE (INT64_MAX, well past the largest integer a double
+ * holds exactly), which is a placeholder rather than a measurement of anything. */
+export function encodedFraction({ time }: FfmpegProgress, outputSeconds: number): number | null {
+  if (!Number.isFinite(time) || time < 0 || time > Number.MAX_SAFE_INTEGER) return null;
+  if (!(outputSeconds > 0)) return null;
+  return Math.min(1, time / 1e6 / outputSeconds);
+}
+
 export interface EnsureFfmpegHandlers {
   onLog?: (message: string) => void;
-  onProgress?: (progress: number) => void;
+  onProgress?: (progress: FfmpegProgress) => void;
 }
 
 /** Lazily loads and returns a shared ffmpeg.wasm instance, (re-)wiring log/progress callbacks on
@@ -54,7 +84,7 @@ export async function ensureFfmpeg(handlers: EnsureFfmpegHandlers = {}): Promise
   if (!ffmpegInstance) {
     const ff = new FFmpeg();
     ff.on("log", ({ message }) => currentHandlers.onLog?.(message));
-    ff.on("progress", ({ progress }) => currentHandlers.onProgress?.(progress));
+    ff.on("progress", (event) => currentHandlers.onProgress?.(event));
     ffmpegInstance = ff;
   }
   const ff = ffmpegInstance;
