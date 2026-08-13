@@ -1,4 +1,4 @@
-import { ensureFfmpeg, ffmpegArgs } from "./ffmpeg";
+import { encodedFraction, ensureFfmpeg, ffmpegArgs, streamCopies } from "./ffmpeg";
 import { decodeIndex, drawVideoFrame } from "./video";
 import { drawPose } from "./pose";
 import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
@@ -143,11 +143,14 @@ export async function extractClip(params: ExtractClipParams): Promise<ExtractedM
   const inName = `in${ext}`;
   const outName = "clip.mp4";
 
+  const clipSeconds = (hi - lo + 1) / fps;
+
   onProgress?.("Loading ffmpeg.wasm…");
   const ff = await ensureFfmpeg({
     onLog: (m) => console.debug("[ffmpeg]", m),
-    onProgress: (r) => {
-      const done = Math.min(1, Math.max(0, r));
+    onProgress: (event) => {
+      const done = encodedFraction(event, clipSeconds);
+      if (done === null) return;
       onProgress?.(`Encoding snippet… ${(done * 100).toFixed(0)}%`, done);
     },
   });
@@ -171,9 +174,16 @@ export async function extractClip(params: ExtractClipParams): Promise<ExtractedM
   const args = ffmpegArgs(inName, outName, lo, hi, fps, trim, blur);
   const command = `ffmpeg ${args.join(" ")}`;
   console.info(`$ ${command}`);
-  onProgress?.("Encoding snippet…", 0);
+  // A re-encode runs the frames through a filter, so ffmpeg decodes the source from its start up to
+  // the selection before a single frame of the snippet exists, and it has nothing to report for as
+  // long as that takes. Naming the step beats leaving a bar at 0% through it.
+  const readsUpToSelection = !streamCopies(trim, blur) && lo > 0;
+  onProgress?.(readsUpToSelection ? `Decoding the source up to frame ${lo}…` : "Encoding snippet…", 0);
   try {
     await ff.exec(args);
+    // ffmpeg's last report lands on the final frame's timestamp, which is a frame short of the whole
+    // duration. The encode is over once exec returns, so say so rather than stopping just under it.
+    onProgress?.("Encoding snippet… 100%", 1);
     const data = await ff.readFile(outName);
     const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
     if (!blob.size) throw new Error("ffmpeg produced an empty clip — try a different selection");
@@ -283,7 +293,14 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
   const outName = "overlay.mp4";
   const written: string[] = [];
   onProgress?.("Loading ffmpeg.wasm…");
-  const ff = await ensureFfmpeg({ onLog: (m) => console.debug("[ffmpeg]", m) });
+  const ff = await ensureFfmpeg({
+    onLog: (m) => console.debug("[ffmpeg]", m),
+    onProgress: (event) => {
+      const done = encodedFraction(event, total / fps);
+      if (done === null) return;
+      onProgress?.(`Encoding the overlay snippet… ${(done * 100).toFixed(0)}%`, done);
+    },
+  });
   try {
     for (let i = 0; i < total; i++) {
       const png = await renderOverlayFrame(inFrame + i);
@@ -317,6 +334,7 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
     console.info(`$ ${command}`);
     onProgress?.("Encoding the overlay snippet…", 0);
     await ff.exec(args);
+    onProgress?.("Encoding the overlay snippet… 100%", 1);
     const data = await ff.readFile(outName);
     const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
     if (!blob.size) throw new Error("ffmpeg produced an empty overlay clip");
