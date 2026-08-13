@@ -18,7 +18,16 @@ describe("slpSourceMeta", () => {
   it("reads the source video's shape, fps and basename", () => {
     const meta = slpSourceMeta(labels({ filename: "/data/lab/mice.mp4", shape: [1100, 768, 1024, 1], fps: 30 }));
 
-    expect(meta).toEqual({ filename: "mice.mp4", frames: 1100, height: 768, width: 1024, fps: 30, maxLabeledFrame: 0, videoCount: 1 });
+    expect(meta).toEqual({
+      filename: "mice.mp4",
+      frames: 1100,
+      height: 768,
+      width: 1024,
+      fps: 30,
+      maxLabeledFrame: 0,
+      videoCount: 1,
+      seriesLength: null,
+    });
   });
 
   it("takes the basename of a Windows path and of an image sequence", () => {
@@ -37,6 +46,7 @@ describe("slpSourceMeta", () => {
       fps: null,
       maxLabeledFrame: null,
       videoCount: 1,
+      seriesLength: null,
     });
   });
 
@@ -129,6 +139,28 @@ describe("slpVideoMismatches", () => {
 
     expect(slpVideoMismatches(meta, { name: "mice.mp4", frames: 0, width: 0, height: 0, fps: 0 })).toEqual([]);
   });
+
+  it("refuses an .nwb whose pose series is longer than the video", () => {
+    // ndx-pose samples once per frame, so samples the video has no frames for are samples of some
+    // other, longer recording.
+    const meta = slpSourceMeta(labels({ filename: "mice.mp4" }, [0]), 2000);
+
+    expect(slpVideoMismatches(meta, VIDEO)).toEqual([{ field: "Pose samples", slp: "2000 samples", video: "1100 frames" }]);
+  });
+
+  it("passes an .nwb whose pose series is exactly as long as the video", () => {
+    const meta = slpSourceMeta(labels({ filename: "mice.mp4" }, [0, 1099]), 1100);
+
+    expect(slpVideoMismatches(meta, VIDEO)).toEqual([]);
+  });
+
+  it("does not refuse an .nwb whose pose series is shorter than the video", () => {
+    // Could be pose for part of the video rather than pose for a different one — warned about
+    // instead, below.
+    const meta = slpSourceMeta(labels({ filename: "mice.mp4" }, [0]), 300);
+
+    expect(slpVideoMismatches(meta, VIDEO)).toEqual([]);
+  });
 });
 
 describe("slpVideoWarnings", () => {
@@ -183,5 +215,25 @@ describe("slpVideoWarnings", () => {
     expect(slpVideoWarnings(slpSourceMeta(twoVideos), VIDEO)).toEqual([
       "The .slp references 2 videos; it was checked against the one its labels belong to.",
     ]);
+  });
+
+  it("names the format the reader actually dropped", () => {
+    const meta = slpSourceMeta(labels({ filename: "some_other_recording.mp4" }));
+
+    expect(slpVideoWarnings(meta, VIDEO, ".nwb")).toEqual([
+      'The .nwb was labeled against "some_other_recording.mp4", but the loaded video is "mice.mp4".',
+    ]);
+  });
+
+  it("says so when an .nwb's pose series does not cover the whole video", () => {
+    const meta = slpSourceMeta(labels({ filename: "mice.mp4" }, [0]), 300);
+
+    expect(slpVideoWarnings(meta, VIDEO, ".nwb")).toEqual(["The .nwb holds 300 pose samples for a video of 1100 frames."]);
+  });
+
+  it("says nothing about a pose series that covers the video exactly", () => {
+    const meta = slpSourceMeta(labels({ filename: "mice.mp4" }, [0]), 1100);
+
+    expect(slpVideoWarnings(meta, VIDEO, ".nwb")).toEqual([]);
   });
 });

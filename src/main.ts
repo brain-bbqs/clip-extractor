@@ -10,8 +10,10 @@ import {
   slpVideoWarnings,
   type LoadedVideoMeta,
   type MetadataMismatch,
+  type PoseFileKind,
   type SlpSourceMeta,
 } from "./lib/match";
+import { alignDenseFrames, probeNwbSeriesLength } from "./lib/nwb";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
@@ -107,13 +109,16 @@ interface AppState {
   playing: boolean;
   speed: number;
   pose: PoseModel | null;
-  /** The `.slp` behind `pose`, when it came from a local file — kept so it can ride along with an
-   * upload. Null for a `.slp` fetched from a URL, whose bytes were never held locally. */
+  /** The pose file behind `pose`, when it came from a local file — kept so it can ride along with
+   * an upload. Null for one fetched from a URL, whose bytes were never held locally. */
   slpFile: File | null;
-  /** Display name of the loaded `.slp`, including one loaded from a URL, so a later mismatch can
+  /** Display name of the loaded pose file, including one loaded from a URL, so a later mismatch can
    * name it. Null whenever `pose` is null. */
   slpName: string | null;
-  /** What the loaded `.slp` says about the video it was labeled against, re-checked whenever a
+  /** Which format `pose` was read from, so the card's notices name the file the reader dropped.
+   * Null whenever `pose` is null. */
+  slpKind: PoseFileKind | null;
+  /** What the loaded pose file says about the video it was labeled against, re-checked whenever a
    * different video is opened underneath it. Null whenever `pose` is null. */
   slpMeta: SlpSourceMeta | null;
   mode: SelectorMode;
@@ -138,6 +143,7 @@ const state: AppState = {
   pose: null,
   slpFile: null,
   slpName: null,
+  slpKind: null,
   slpMeta: null,
   mode: "video",
   curBitmap: null,
@@ -238,11 +244,12 @@ function loadedVideoMeta(): LoadedVideoMeta | null {
   return { name: state.sourceName, frames: state.totalFrames, width: state.width, height: state.height, fps: state.fps };
 }
 
-/** Drops whatever `.slp` was loaded, leaving the card free to report why. */
+/** Drops whatever pose file was loaded, leaving the card free to report why. */
 function clearPose(): void {
   state.pose = null;
   state.slpFile = null;
   state.slpName = null;
+  state.slpKind = null;
   state.slpMeta = null;
   poseGeneration++;
   clearDeliveryOutcomes();
@@ -280,38 +287,81 @@ function showSlpWarnings(name: string, video: LoadedVideoMeta, warnings: string[
   for (const w of warnings) log(`SLP/video difference: ${w}`, "warn");
 }
 
-/** Refuses a `.slp` that describes a different recording, naming every field that disagrees: a pose
- * overlaid on the wrong video is wrong in a way that still looks like an annotation. */
-function rejectSlp(name: string, video: LoadedVideoMeta, mismatches: MetadataMismatch[]): void {
+/** Refuses a pose file that describes a different recording, naming every field that disagrees: a
+ * pose overlaid on the wrong video is wrong in a way that still looks like an annotation. */
+function rejectSlp(name: string, kind: PoseFileKind, video: LoadedVideoMeta, mismatches: MetadataMismatch[]): void {
   showSlpError(
     `"${name}" does not match "${video.name}".`,
-    mismatches.map((m) => `${m.field}: ${m.slp} in the .slp, ${m.video} in the video.`),
+    mismatches.map((m) => `${m.field}: ${m.slp} in the ${kind}, ${m.video} in the video.`),
   );
   log(`SLP mismatch: ${name} does not match ${video.name} (${mismatches.map((m) => m.field.toLowerCase()).join(", ")})`, "err");
 }
 
-/** Re-runs the comparison after a video is opened under an already-loaded `.slp` — the pair can be
- * assembled in either order, and swapping the video out is just as able to break the match. */
+/** Re-runs the comparison after a video is opened under an already-loaded pose file — the pair can
+ * be assembled in either order, and swapping the video out is just as able to break the match. */
 function recheckPose(): void {
   // Any notice still on the card was raised against the video that just went away, so both are
   // cleared before the new pairing is judged on its own terms.
   els.slpError.hidden = true;
   els.slpWarning.hidden = true;
   const video = loadedVideoMeta();
-  if (!state.slpMeta || !state.slpName || !video) return;
+  if (!state.slpMeta || !state.slpName || !state.slpKind || !video) return;
   const mismatches = slpVideoMismatches(state.slpMeta, video);
-  if (mismatches.length) rejectSlp(state.slpName, video, mismatches);
-  else showSlpWarnings(state.slpName, video, slpVideoWarnings(state.slpMeta, video));
+  if (mismatches.length) {
+    rejectSlp(state.slpName, state.slpKind, video, mismatches);
+    return;
+  }
+  // An `.nwb`'s frame indices can only be trusted against a known video length, so the alignment
+  // that could not run at load time runs now. It is a no-op on anything already aligned.
+  if (state.pose) {
+    const aligned = alignDenseFrames(state.pose, state.slpMeta.seriesLength, video.frames);
+    if (aligned !== state.pose) {
+      state.pose = aligned;
+      poseGeneration++;
+      clearDeliveryOutcomes();
+      log("NWB pose samples re-indexed onto the video's frames", "warn");
+    }
+  }
+  showSlpWarnings(state.slpName, video, slpVideoWarnings(state.slpMeta, video, state.slpKind));
 }
 
-async function loadSlp(source: File | string, name: string): Promise<void> {
-  // A .slp can arrive via the main dropzone or a URL param while the annotations step is still
+/** Which reader a pose file goes to. NWB is HDF5 underneath just as a `.slp` is, so nothing but the
+ * extension separates them here; `.h5`/`.hdf5` stay with SLEAP, where they have always meant a
+ * `.slp` under a different name. */
+function poseFileKind(name: string): PoseFileKind {
+  return /\.nwb$/i.test(name) ? ".nwb" : ".slp";
+}
+
+/** An `.nwb`'s bytes, whether it was dropped in or named by a URL. Unlike the `.slp` path — where
+ * sleap-io.js streams a remote file over range requests — the whole file is pulled down, because
+ * the labels and the pose series length are read from it separately and both readers want the
+ * bytes; fetching once and handing the same buffer to each is cheaper than opening it twice. */
+async function nwbBytes(source: File | string): Promise<ArrayBuffer> {
+  if (source instanceof File) return source.arrayBuffer();
+  const res = await fetch(source);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.arrayBuffer();
+}
+
+async function loadPoseFile(source: File | string, name: string): Promise<void> {
+  // A pose file can arrive via the main dropzone or a URL param while the annotations step is still
   // toggled off — reveal the step so the load has somewhere visible to land.
   enableSlpStep();
-  log(`Parsing SLP: ${name}…`);
+  const kind = poseFileKind(name);
+  log(`Parsing ${kind === ".nwb" ? "NWB" : "SLP"}: ${name}…`);
   try {
-    const labels = (await sio.loadSlp(source, { openVideos: false })) as unknown as SleapLabels;
-    const meta = slpSourceMeta(labels);
+    let labels: SleapLabels;
+    // Only ndx-pose predictions have a series to measure, and only they need it: everything else
+    // records the video's shape where lib/match.ts can already find it.
+    let seriesLength: number | null = null;
+    if (kind === ".nwb") {
+      const bytes = await nwbBytes(source);
+      labels = await sio.loadNwb(bytes);
+      seriesLength = await probeNwbSeriesLength(bytes);
+    } else {
+      labels = await sio.loadSlp(source, { openVideos: false });
+    }
+    const meta = slpSourceMeta(labels, seriesLength);
     const video = loadedVideoMeta();
     // Checked before anything is kept, so a mismatched file never reaches the overlay, the
     // annotations sidecar or an upload. With no video open yet there is nothing to check against;
@@ -319,33 +369,39 @@ async function loadSlp(source: File | string, name: string): Promise<void> {
     if (video) {
       const mismatches = slpVideoMismatches(meta, video);
       if (mismatches.length) {
-        rejectSlp(name, video, mismatches);
+        rejectSlp(name, kind, video, mismatches);
         return;
       }
     }
-    state.pose = labelsToPose(labels);
+    const parsed = labelsToPose(labels);
+    // With no video open the series length has nothing to be dense against, so this waits for
+    // recheckPose() to run it once one is.
+    state.pose = alignDenseFrames(parsed, seriesLength, video?.frames ?? null);
+    if (state.pose !== parsed) log("NWB pose samples re-indexed onto the video's frames", "warn");
     state.slpMeta = meta;
     state.slpName = name;
+    state.slpKind = kind;
     // Only after a successful parse: a file this app could not read is not one to hand to the
     // archive.
     state.slpFile = source instanceof File ? source : null;
     poseGeneration++;
     clearDeliveryOutcomes();
     const nFrames = state.pose.byFrame.size;
-    log(`SLP loaded: ${state.pose.skeleton.nodes.length} nodes, ${state.pose.tracks.length} tracks, ${nFrames} labeled frames`, "ok");
+    log(`Pose loaded: ${state.pose.skeleton.nodes.length} nodes, ${state.pose.tracks.length} tracks, ${nFrames} labeled frames`, "ok");
     els.slpBadge.textContent = `${nFrames} frames`;
     els.slpBadge.className = "badge ok";
     els.slpError.hidden = true;
     els.slpStatus.hidden = false;
     // Raised after the load rather than instead of it: the pose is on screen either way.
-    if (video) showSlpWarnings(name, video, slpVideoWarnings(meta, video));
+    if (video) showSlpWarnings(name, video, slpVideoWarnings(meta, video, kind));
     else els.slpWarning.hidden = true;
     renderFrame();
   } catch (e) {
     // A file that could not be read has to say so on the card too: the console is not where someone
-    // dropping a `.slp` is looking, and a silent failure is indistinguishable from a check that
+    // dropping a pose file is looking, and a silent failure is indistinguishable from a check that
     // never ran.
-    showSlpError(`"${name}" could not be read as a SLEAP labels file.`, [friendlyError(e)]);
+    const expected = kind === ".nwb" ? "an NWB pose file" : "a SLEAP labels file";
+    showSlpError(`"${name}" could not be read as ${expected}.`, [friendlyError(e)]);
     log(`SLP error: ${(e as Error).message}`, "err");
     console.error(e);
   }
@@ -961,7 +1017,7 @@ window.addEventListener("keydown", (e) => {
 // File loading (dropzone mirrors bbqs-uploader's picker)
 // ============================================================
 function loadDroppedFile(f: File): void {
-  if (/\.(slp|h5|hdf5)$/i.test(f.name)) void loadSlp(f, f.name);
+  if (/\.(slp|nwb|h5|hdf5)$/i.test(f.name)) void loadPoseFile(f, f.name);
   else void loadVideo(f, f.name);
 }
 
@@ -1007,7 +1063,7 @@ els.videoFile.addEventListener("change", () => {
 });
 els.slpFile.addEventListener("change", () => {
   const f = els.slpFile.files?.[0];
-  if (f) void loadSlp(f, f.name);
+  if (f) void loadPoseFile(f, f.name);
   els.slpFile.value = "";
 });
 // Prevent the browser from navigating away when a file misses the dropzone.
@@ -1019,7 +1075,7 @@ async function loadSample(): Promise<void> {
   const base = new URL("..", location.href).href; // repo root
   log("Loading sample from slp-viewer/…");
   await loadVideo(`${base}slp-viewer/mice.mp4`, "mice.mp4", `${base}slp-viewer/mice.mp4`);
-  await loadSlp(`${base}slp-viewer/mice.tracked.slp`, "mice.tracked.slp");
+  await loadPoseFile(`${base}slp-viewer/mice.tracked.slp`, "mice.tracked.slp");
 }
 
 // ============================================================
@@ -1794,7 +1850,7 @@ renderAuthUI();
 applyDeliveryMode();
 void initEmberAuth();
 
-// URL params: ?url=<video>&slp=<slp>
+// URL params: ?url=<video>&pose=<.slp or .nwb> (?slp= is the older spelling of the same thing)
 function initFromUrlParams(): void {
   const p = new URLSearchParams(location.search);
   const url = p.get("url");
@@ -1805,8 +1861,8 @@ function initFromUrlParams(): void {
     els.emberUrl.value = url;
     void loadVideo(url, url.split("/").pop() || "video.mp4", url);
   }
-  const slp = p.get("slp");
-  if (slp) setTimeout(() => void loadSlp(slp, slp.split("/").pop() || "labels.slp"), 600);
+  const pose = p.get("pose") ?? p.get("slp");
+  if (pose) setTimeout(() => void loadPoseFile(pose, pose.split("/").pop() || "labels.slp"), 600);
 }
 initFromUrlParams();
 

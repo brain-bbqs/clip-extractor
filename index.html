@@ -181,7 +181,7 @@
             <button type="button" data-src="ember" aria-pressed="false">Stream from EMBER</button>
           </div>
           <label class="hint slp-toggle">
-            <span>SLEAP annotations (<code>.slp</code>)</span>
+            <span>Pose annotations (<code>.slp</code> / <code>.nwb</code>)</span>
             <input type="checkbox" id="slpToggle" class="switch" role="switch" />
           </label>
         </div>
@@ -206,10 +206,10 @@
           </p>
         </div>
         <input type="file" id="videoFile" accept="video/*,.mp4,.avi,.mov,.mkv" hidden />
-        <input type="file" id="slpFile" accept=".slp,.h5,.hdf5" hidden />
+        <input type="file" id="slpFile" accept=".slp,.nwb,.h5,.hdf5" hidden />
       </section>
 
-      <!-- SLEAP annotations (revealed by the toggle switch on the load card) -->
+      <!-- Pose annotations (revealed by the toggle switch on the load card) -->
       <section class="card" id="slpCard" hidden>
         <div id="slpDropzone" class="dropzone compact">
           <div class="dz-inner">
@@ -217,19 +217,20 @@
               <img class="dz-logo" src="/src/assets/sleap-logo.png" alt="SLEAP" width="40" height="40" />
             </div>
             <p>
-              Drop a SLEAP <code>.slp</code> here, or click to browse
+              Drop a SLEAP <code>.slp</code> or ndx-pose <code>.nwb</code> here, or click to browse
               <button type="button" id="browseSlpBtn" class="dz-browse">files</button>.
             </p>
           </div>
         </div>
-        <!-- Shown instead of the status row when the dropped .slp describes a different recording
-             than the one in the player: nothing is loaded, so the only way on is another file. -->
+        <!-- Shown instead of the status row when the dropped pose file describes a different
+             recording than the one in the player: nothing is loaded, so the only way on is
+             another file. -->
         <div class="slp-error" id="slpError" role="alert" hidden>
           <p class="slp-notice-title" id="slpErrorTitle"></p>
           <ul class="slp-notice-list" id="slpErrorList"></ul>
-          <p class="slp-notice-action">Select another <code>.slp</code>, or load the video it was labeled against.</p>
+          <p class="slp-notice-action">Select another pose file, or load the video it was labeled against.</p>
         </div>
-        <!-- Shown alongside a loaded .slp when something about the pair is worth a look but cannot
+        <!-- Shown alongside a loaded pose file when something about the pair is worth a look but cannot
              misplace a pose: a renamed video, a different fps, more than one video in the file. -->
         <div class="slp-warning" id="slpWarning" hidden>
           <p class="slp-notice-title" id="slpWarningTitle"></p>
