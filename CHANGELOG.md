@@ -2,6 +2,10 @@
 
 ## 0.1.7
 
+#### 🚀 Enhancement
+
+- Dropped two hints from the cards: the line under the Stream box describing what it does, and the note saying a streamed original is not sent back with the selection ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+
 #### 🐛 Bug Fix
 
 - A video named by URL now streams over range requests instead of being downloaded whole before it can play: a 10.6 GB recording on the EMBER bucket opens after about 71 MB ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))

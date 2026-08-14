@@ -1797,18 +1797,17 @@ function updateDeliveryCopy(kind: SelectionKind): void {
   els.selectionDescription.placeholder = `What event does this ${kind} showcase?\n\nNote anything that went wrong in it, or any other details you want to share along with the clip.`;
 }
 
-/** The "include the original content" switch, and the two notes explaining the cases where it is
- * not on offer: a streamed source has no local bytes to send, and a blurred selection must not
- * travel beside an original that still holds the pixels the blur was placed over. The switch is
- * held off and disabled rather than hidden in that second case, so it is clear the original is
- * being withheld and why. */
-function updateOriginalContentRow(hasVideo: boolean): void {
+/** The "include the original content" switch, and the note explaining the case where it is on offer
+ * but withheld: a blurred selection must not travel beside an original that still holds the pixels
+ * the blur was placed over. The switch is held off and disabled rather than hidden there, so it is
+ * clear the original is being withheld and why. A source with no local bytes to send simply does
+ * not raise the row at all. */
+function updateOriginalContentRow(): void {
   // Original content can only ride along when its bytes are already in the browser; a range-streamed
   // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
   const canSendOriginal = state.sourceFile !== null || state.slpFile !== null;
   const blurred = state.blurRegions.length > 0;
   els.uploadOriginalRow.hidden = !canSendOriginal;
-  els.uploadOriginalNote.hidden = canSendOriginal || !hasVideo;
   els.uploadOriginal.disabled = blurred;
   els.uploadOriginal.checked = !blurred && includeOriginal;
   els.blurOriginalNote.hidden = !blurred || !canSendOriginal;
@@ -1831,7 +1830,7 @@ function updateDeliveryGate(): void {
   els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !described || !cfg.dandisetId || notEmbargoed || unconfirmed;
   els.btnUpload.hidden = uploadSubmitted;
   updateDeliveryCopy(kind);
-  updateOriginalContentRow(hasVideo);
+  updateOriginalContentRow();
   if (deliveryBusy) return;
   updateDeliveryPreview();
   // Only ever says why the button is unavailable; a ready button needs no caption.
