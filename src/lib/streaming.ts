@@ -5,18 +5,40 @@ import type { SleapVideoBackend } from "./types";
 // A frame-indexed video backend built straight on mediabunny, used in place of sleap-io.js's
 // MediaBunnyVideoBackend.
 //
-// Both open a file the same way — read the container index, list every packet's timestamp, then
-// decode single frames or short runs on demand — but sleap-io.js builds that timestamp list with
-// `EncodedPacketSink.packets()` at its default settings, which loads each packet's *data* as well as
-// its metadata. Over a URL that is the whole file: opening a 10.6 GB recording pulled all 10.6 GB
-// down before the first frame appeared, which is the "it downloads instead of streaming" this
-// replaces. Asking for `metadataOnly` reads the same timestamps out of the container index that
-// opening the track already parsed, so the same file opens after ~71 MB of index and every later
-// byte is a frame somebody actually looked at.
+// The app addresses video by frame number, so opening a file means learning how many frames it has
+// and where each one sits in time. sleap-io.js's backend answers that by walking every packet in
+// the container and keeping its timestamp, at settings that load each packet's *data* along with
+// its metadata — over a URL, the whole file before the first frame appears.
+//
+// Walking the packets at all is the deeper problem. A 16-hour recording holds 1.76 million of them,
+// and nothing in that walk waits on the network once the container index is in memory, so it runs
+// as one uninterrupted flood: minutes during which the tab cannot paint, scroll or open a console,
+// and tens of megabytes of timestamps at the end of it. Almost every recording runs at a constant
+// frame rate, and a container records that rate and its duration in its header, which together say
+// exactly the same thing as the walk: frame `i` is at `first + i / fps`. So that is what is read,
+// and it is checked against frames spread through the file before it is trusted. Only a file the
+// check refuses is enumerated, and that walk now yields to the event loop as it goes.
 
 /** How many decoded frames a backend keeps. Each is an ImageBitmap costing width*height*4 bytes of
  * (non-JS-heap) memory, so the number is small on purpose — see FRAME_CACHE_SIZE in main.ts. */
 const DEFAULT_CACHE_SIZE = 32;
+
+/** Packets the frame rate is measured over. The rate is a property of the container, not of the
+ * sample, so this only has to be long enough to span a group of pictures. */
+const RATE_PROBE_PACKETS = 600;
+
+/** Where through the file the constant-rate model is checked. A rate read from a header is a claim
+ * about the whole recording, and a file that drops or repeats frames somewhere in the middle would
+ * put every frame index after that point on the wrong picture. */
+const PROBE_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
+
+/** How far the frame count derived from the duration may sit from a whole number of frames before
+ * the rate is judged not to describe the file. */
+const COUNT_TOLERANCE = 0.5;
+
+/** Packets enumerated between yields back to the event loop. Large enough that the yields cost
+ * nothing on a normal clip, small enough that a long one stays interactive while it is read. */
+const YIELD_EVERY = 20_000;
 
 export interface StreamingBackendOptions {
   /** Decoded frames to keep. Defaults to {@link DEFAULT_CACHE_SIZE}. */
@@ -83,6 +105,23 @@ export class FrameCache<T extends Closable> {
   }
 }
 
+/** What the backend knows about a track's frames: how many there are, and where each one sits in
+ * time. Either derived from the container's recorded rate or enumerated packet by packet. */
+export interface FrameIndex {
+  readonly count: number;
+  readonly fps: number;
+  /** The presentation timestamp of a frame. */
+  time(index: number): number;
+  /** The timestamp window covering frames `lo..hi`, as mediabunny's sample iterators take it: the
+   * end is exclusive, so it runs half a frame past the last one. */
+  window(lo: number, hi: number): { start: number; end: number };
+  /** The frame within `lo..hi` a decoded sample belongs to, or null when none of them does. */
+  indexAt(timestamp: number, lo: number, hi: number): number | null;
+  /** Every frame's timestamp in the order they are indexed, or null when the rate describes them.
+   * A caller uses this to tell decode order from display order; null means the two agree. */
+  times(): number[] | null;
+}
+
 /** The frame rate implied by `count` frames spread over `span` seconds, or null when there is not
  * enough of either to tell. `count - 1` because the span is measured between the first and last
  * frame, which is one interval short of the frame count. */
@@ -91,36 +130,64 @@ export function fpsFromSpan(count: number, span: number): number | null {
   return (count - 1) / span;
 }
 
-/** The timestamp range covering frames `startIndex..endIndex` of `times`, as the half-open window
- * mediabunny's sample iterators take: `end` is exclusive, so it is nudged past the last frame by
- * half a frame, which would otherwise be decoded and dropped.
- *
- * `times` is in decode order and a file with B-frames has that differ from display order, so the
- * bounds are the smallest and largest timestamp across the range rather than its endpoints. */
-export function decodeWindow(
-  times: number[],
-  startIndex: number,
-  endIndex: number,
-  frameDuration: number,
-): { start: number; end: number } | null {
-  const lo = Math.max(0, Math.min(startIndex, endIndex));
-  const hi = Math.min(times.length - 1, Math.max(startIndex, endIndex));
-  if (lo > hi || hi < 0) return null;
-  let start = Infinity;
-  let end = -Infinity;
-  for (let i = lo; i <= hi; i++) {
-    const t = times[i];
-    if (t < start) start = t;
-    if (t > end) end = t;
+/** Frames at a fixed interval: frame `i` is at `first + i / fps`, and no list of them is kept. */
+export function constantRateIndex(first: number, fps: number, count: number): FrameIndex {
+  const time = (index: number): number => first + index / fps;
+  return {
+    count,
+    fps,
+    time,
+    window: (lo, hi) => ({ start: time(lo), end: time(hi) + 1 / (2 * fps) }),
+    indexAt: (timestamp, lo, hi) => {
+      const index = Math.round((timestamp - first) * fps);
+      return index >= lo && index <= hi ? index : null;
+    },
+    // Frames are indexed in presentation order here, so decode order has nothing left to say.
+    times: () => null,
+  };
+}
+
+/** Frames listed one by one, in the decode order the container stores them in. The fallback for a
+ * file whose rate does not describe it: variable frame rate, or frames dropped mid-recording. */
+export function enumeratedIndex(times: number[]): FrameIndex {
+  let first = Infinity;
+  let last = -Infinity;
+  for (const t of times) {
+    if (t < first) first = t;
+    if (t > last) last = t;
   }
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-  const nudge = Number.isFinite(frameDuration) && frameDuration > 0 ? frameDuration / 2 : 1e-6;
-  return { start, end: end + nudge };
+  const fps = fpsFromSpan(times.length, last - first) ?? 0;
+  // Only used to end a window past its last frame; a file with no measurable rate gets an epsilon.
+  const nudge = fps > 0 ? 1 / (2 * fps) : 1e-6;
+  return {
+    count: times.length,
+    fps,
+    time: (index) => times[index],
+    window: (lo, hi) => {
+      let start = Infinity;
+      let end = -Infinity;
+      // Decode order and display order differ on a file with B-frames, so the window is bounded by
+      // the smallest and largest timestamp across the range rather than by its endpoints.
+      for (let i = lo; i <= hi; i++) {
+        if (times[i] < start) start = times[i];
+        if (times[i] > end) end = times[i];
+      }
+      return { start, end: end + nudge };
+    },
+    indexAt: (timestamp, lo, hi) => {
+      for (let i = lo; i <= hi; i++) {
+        if (times[i] === timestamp) return i;
+      }
+      // Decoders are entitled to hand back a timestamp that does not match the container's to the
+      // last decimal, and a frame put under the wrong index is worse than one not cached at all.
+      return nearestIndex(times, lo, hi, timestamp);
+    },
+    times: () => [...times],
+  };
 }
 
 /** The frame in `times[lo..hi]` whose timestamp is nearest `timestamp`, or null when the range is
- * empty. Decoders are entitled to hand back a timestamp that does not match the container's to the
- * last decimal, and a frame put under the wrong index is worse than one not cached at all. */
+ * empty. */
 export function nearestIndex(times: number[], lo: number, hi: number, timestamp: number): number | null {
   let best: number | null = null;
   let bestDiff = Infinity;
@@ -132,6 +199,58 @@ export function nearestIndex(times: number[], lo: number, hi: number, timestamp:
     }
   }
   return best;
+}
+
+/** Hands the event loop a turn. Used to break up work that never awaits anything else. */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Checks a constant-rate model against frames spread through the file, including one frame past
+ * its end, which has to land back on the last frame or the count is wrong. */
+export async function modelHolds(
+  packetAt: (timestamp: number) => Promise<{ timestamp: number } | null>,
+  index: FrameIndex,
+): Promise<boolean> {
+  const tolerance = 1 / (2 * index.fps);
+  for (const fraction of PROBE_FRACTIONS) {
+    const frame = Math.round((index.count - 1) * fraction);
+    const want = index.time(frame);
+    const packet = await packetAt(want);
+    if (!packet || Math.abs(packet.timestamp - want) > tolerance) return false;
+  }
+  const past = await packetAt(index.time(index.count));
+  return !!past && Math.abs(past.timestamp - index.time(index.count - 1)) <= tolerance;
+}
+
+/** The constant-rate model for a track, or null when the container does not describe one or the
+ * file does not hold to it. */
+async function constantRateFor(track: InputVideoTrack, packets: EncodedPacketSink): Promise<FrameIndex | null> {
+  const duration = await track.getDurationFromMetadata();
+  if (duration === null || !Number.isFinite(duration) || duration <= 0) return null;
+  const { averagePacketRate: fps } = await track.computePacketStats(RATE_PROBE_PACKETS);
+  if (!Number.isFinite(fps) || fps <= 0) return null;
+  const firstPacket = await packets.getFirstPacket({ metadataOnly: true });
+  if (!firstPacket) return null;
+  const span = duration - firstPacket.timestamp;
+  const count = Math.round(span * fps);
+  // The rate has to account for the whole span, not just the prefix it was measured over.
+  if (count < 1 || Math.abs(span * fps - count) > COUNT_TOLERANCE) return null;
+  const index = constantRateIndex(firstPacket.timestamp, fps, count);
+  const holds = await modelHolds((timestamp) => packets.getPacket(timestamp, { metadataOnly: true }), index);
+  return holds ? index : null;
+}
+
+/** Every packet's timestamp, in decode order, yielding to the event loop as it goes. */
+async function enumerateFrameTimes(packets: EncodedPacketSink): Promise<number[]> {
+  const times: number[] = [];
+  for await (const packet of packets.packets(undefined, undefined, { metadataOnly: true })) {
+    times.push(packet.timestamp);
+    // Nothing in this loop waits on the network once the container index is in memory, so without
+    // a yield it drains as one uninterrupted flood and the tab goes unresponsive until it ends.
+    if (times.length % YIELD_EVERY === 0) await yieldToEventLoop();
+  }
+  return times;
 }
 
 /** A range decode in flight, so a seek landing inside one can wait for its own frame instead of
@@ -158,21 +277,19 @@ export class StreamingVideoBackend implements SleapVideoBackend {
   private constructor(
     private readonly input: Input,
     track: InputVideoTrack,
-    /** Packet timestamps in decode order, one per frame. Indices throughout are into this. */
-    private readonly frameTimes: number[],
-    span: number,
+    private readonly index: FrameIndex,
     cacheSize: number,
   ) {
     this.sink = new VideoSampleSink(track);
     this.cache = new FrameCache<ImageBitmap>(Math.max(1, cacheSize));
     this.width = track.displayWidth;
     this.height = track.displayHeight;
-    this.fps = fpsFromSpan(frameTimes.length, span) ?? 0;
-    this.shape = [frameTimes.length, this.height, this.width, 3];
+    this.fps = index.fps;
+    this.shape = [index.count, this.height, this.width, 3];
   }
 
   get numFrames(): number {
-    return this.frameTimes.length;
+    return this.index.count;
   }
 
   /** Opens `source`, reading only as much of it as the container index takes. */
@@ -191,17 +308,10 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       // Asked before any frame is wanted, so an unsupported codec falls to another backend at open
       // time rather than as a blank player.
       if (!(await track.canDecode())) throw new Error(`Cannot decode video codec ${track.codec ?? "unknown"}`);
-      const frameTimes: number[] = [];
-      let first = Infinity;
-      let last = -Infinity;
-      // metadataOnly is the whole point: see the note at the top of this file.
-      for await (const packet of new EncodedPacketSink(track).packets(undefined, undefined, { metadataOnly: true })) {
-        frameTimes.push(packet.timestamp);
-        if (packet.timestamp < first) first = packet.timestamp;
-        if (packet.timestamp > last) last = packet.timestamp;
-      }
-      if (!frameTimes.length) throw new Error("No frames found in video track");
-      return new StreamingVideoBackend(input, track, frameTimes, last - first, options.cacheSize ?? DEFAULT_CACHE_SIZE);
+      const packets = new EncodedPacketSink(track);
+      const index = (await constantRateFor(track, packets)) ?? enumeratedIndex(await enumerateFrameTimes(packets));
+      if (!index.count) throw new Error("No frames found in video track");
+      return new StreamingVideoBackend(input, track, index, options.cacheSize ?? DEFAULT_CACHE_SIZE);
     } catch (e) {
       // Nothing was handed back, so nothing else can dispose the input or the requests behind it.
       input.dispose();
@@ -211,13 +321,14 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     }
   }
 
-  /** A copy, so a caller sorting or trimming it cannot disturb the index every frame lookup uses. */
-  getFrameTimes(): Promise<number[]> {
-    return Promise.resolve([...this.frameTimes]);
+  /** Frame timestamps in the order they are indexed, or null when the rate describes them and
+   * decode order is already display order. */
+  getFrameTimes(): Promise<number[] | null> {
+    return Promise.resolve(this.index.times());
   }
 
   async getFrame(index: number): Promise<ImageBitmap | null> {
-    if (this.closed || index < 0 || index >= this.frameTimes.length) return null;
+    if (this.closed || index < 0 || index >= this.index.count) return null;
     const cached = this.cache.get(index);
     if (cached) return cached;
     const pending = this.pending;
@@ -236,7 +347,7 @@ export class StreamingVideoBackend implements SleapVideoBackend {
   async prefetch(startIndex: number, endIndex: number): Promise<void> {
     if (this.closed) return;
     const lo = Math.max(0, Math.min(startIndex, endIndex));
-    const hi = Math.min(this.frameTimes.length - 1, Math.max(startIndex, endIndex));
+    const hi = Math.min(this.index.count - 1, Math.max(startIndex, endIndex));
     if (lo > hi) return;
     // Everything already in hand: the decode would evict frames to re-cache frames.
     let missing = false;
@@ -267,7 +378,7 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     // Reached either directly or after waiting on a read-ahead, which is long enough for the video
     // to have been closed out from under it.
     if (this.closed) return null;
-    const sample = await this.sink.getSample(this.frameTimes[index]);
+    const sample = await this.sink.getSample(this.index.time(index));
     if (!sample) return null;
     try {
       return this.keep(index, sample);
@@ -277,14 +388,12 @@ export class StreamingVideoBackend implements SleapVideoBackend {
   }
 
   private async decodeRange(lo: number, hi: number): Promise<void> {
-    const window = decodeWindow(this.frameTimes, lo, hi, this.fps > 0 ? 1 / this.fps : 0);
-    if (!window) return;
-    // Only the requested range's timestamps, so a sample landing outside it is matched to the frame
-    // it belongs to rather than to the nearest one anybody asked for.
+    const window = this.index.window(lo, hi);
+    if (!Number.isFinite(window.start) || !Number.isFinite(window.end)) return;
     for await (const sample of this.sink.samples(window.start, window.end)) {
       try {
         if (this.closed) return;
-        const index = this.frameIndexAt(sample.timestamp, lo, hi);
+        const index = this.index.indexAt(sample.timestamp, lo, hi);
         if (index === null || this.cache.has(index)) continue;
         await this.keep(index, sample);
       } finally {
@@ -310,15 +419,6 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     }
     // set() keeps whichever bitmap was already there, so read back rather than assume.
     return this.cache.get(index) ?? bitmap;
-  }
-
-  /** The frame index `timestamp` belongs to: the exact match the container recorded, or the nearest
-   * frame in `lo..hi` when the decoder's timestamp differs in the last decimals. */
-  private frameIndexAt(timestamp: number, lo: number, hi: number): number | null {
-    for (let i = lo; i <= hi; i++) {
-      if (this.frameTimes[i] === timestamp) return i;
-    }
-    return nearestIndex(this.frameTimes, lo, hi, timestamp);
   }
 
   /** Settles once `index` is cached or `until` does, whichever comes first, leaving no waiter

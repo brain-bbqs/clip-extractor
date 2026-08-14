@@ -5,6 +5,8 @@
 #### 🐛 Bug Fix
 
 - A video named by URL now streams over range requests instead of being downloaded whole before it can play: a 10.6 GB recording on the EMBER bucket opens after about 71 MB ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A long recording no longer locks the tab up while it opens: the frame index is taken from the rate the container records rather than by walking every packet, which for a 16-hour file meant 1.76 million of them with nothing yielding to the browser in between ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- The timeline ruler now carries a recording that runs for hours, with gradations up to twelve-hourly and an hours field in its labels, instead of hundreds of ticks under a smear of overlapping ones ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - A seek into a stretch the read-ahead is still decoding is now served as soon as that frame lands rather than after the whole window, so scrubbing over fresh video no longer feels stuck ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - Opening a second video now releases the first, whose decoded frames and in-flight reads were left behind ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - Opening a long recording now reports how much of its index has been read, rather than looking stalled while it is ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
@@ -13,8 +15,10 @@
 
 - Added `src/lib/streaming.ts`, a frame-indexed video backend built on mediabunny directly, with sleap-io.js's own backends kept as the fallbacks ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - Added `mediabunny` as a direct dependency, at the cost of a dependency entry rather than download weight, since sleap-io.js already brings it into the bundle ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A file whose frames do not sit at the rate its header records is still indexed packet by packet, and that walk now yields to the event loop as it goes ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - A video backend may now offer a `close()`, which the streaming one uses to drop its frames and cancel its reads ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
-- Added unit coverage for the new backend against a stand-in for mediabunny, above all that it indexes packet metadata alone ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Moved the ruler's gradation and label arithmetic into `lib/format.ts`, where it is unit tested ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Added unit coverage for the new backend against a stand-in for mediabunny, above all that a constant-rate file is opened without walking a single packet ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 
 ## 0.1.6
 
