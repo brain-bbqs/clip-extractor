@@ -1010,24 +1010,26 @@ input[type="checkbox"] {
   min-width: 3.5rem;
 }
 /* The two settings that flank the transport: what the timeline covers, and how fast playback runs.
-   Neither drives playback, so both are set apart from the buttons that do — and each is centred in
-   the space its own side of the transport leaves, rather than pushed out to the card's edge, so the
-   row reads as two clusters either side of the play button. An empty side (a recording short enough
-   to want no window control) leaves the transport where it already was. */
+   Neither drives playback, so both are set apart from the buttons that do, one pinned to each end of
+   the row. Against the card's own edges they line up with the readouts and the track above rather
+   than floating at some measured-looking distance from the play button, and the gap between each of
+   them and the transport is what keeps a setting from being pressed while reaching for it. An empty
+   side (a recording short enough to want no window control) leaves the transport where it was. */
 .transport-side {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  justify-self: center;
 }
 .transport-side[hidden] {
   display: none;
 }
 #windowGroup {
   grid-column: 1;
+  justify-self: start;
 }
 #speedGroup {
   grid-column: 3;
+  justify-self: end;
 }
 .transport-label {
   font-size: 0.68rem;
@@ -1049,9 +1051,11 @@ input[type="checkbox"] {
     grid-column: 1;
     grid-row: 1;
   }
+  /* Stacked, there are no ends to pin them to: they go back to the row's own centring. */
   #speedGroup,
   #windowGroup {
     grid-column: 1;
+    justify-self: center;
   }
 }
 .seltimes {
