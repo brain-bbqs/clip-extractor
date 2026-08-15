@@ -8,6 +8,7 @@
 
 #### 🐛 Bug Fix
 
+- No snippet this app writes carries audio any more. Every route but one already dropped it; a fast trim stream-copied the source's tracks straight through, so a recording being de-identified could send voices to the archive in a track nobody was shown ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - Extracting a selection from a streamed video no longer downloads the whole recording first: it is cut straight out of the stream, so a five second clip an hour into a 10.6 GB file reads about 1.5 MB rather than all 10.6 GB, which never finished ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - A video named by URL now streams over range requests instead of being downloaded whole before it can play: a 10.6 GB recording on the EMBER bucket opens after about 71 MB ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - A long recording no longer locks the tab up while it opens: the frame index is taken from the rate the container records rather than by walking every packet, which for a 16-hour file meant 1.76 million of them with nothing yielding to the browser in between ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
@@ -20,7 +21,6 @@
 
 - Added `src/lib/streaming.ts`, a frame-indexed video backend built on mediabunny directly, with sleap-io.js's own backends kept as the fallbacks ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - A streamed selection is trimmed by mediabunny rather than ffmpeg.wasm, which copies the frames over untouched when the cut may start on a key frame and re-encodes when it must be frame-exact or carry a blur ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
-- A snippet cut from a stream drops audio, as the frame-exact ffmpeg path already did ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - Added `mediabunny` as a direct dependency, at the cost of a dependency entry rather than download weight, since sleap-io.js already brings it into the bundle ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - A file whose frames do not sit at the rate its header records is still indexed packet by packet, and that walk now yields to the event loop as it goes ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
 - A video backend may now offer a `close()`, which the streaming one uses to drop its frames and cancel its reads ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))

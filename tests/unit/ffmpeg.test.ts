@@ -12,7 +12,30 @@ describe("ffmpegArgs", () => {
 
   it("builds a keyframe-aligned stream copy in fast mode", () => {
     const args = ffmpegArgs("in.mp4", "clip.mp4", 30, 89, 30, "fast");
-    expect(args).toEqual(["-ss", "1.0000", "-i", "in.mp4", "-t", "2.0000", "-c", "copy", "-avoid_negative_ts", "make_zero", "clip.mp4"]);
+    expect(args).toEqual([
+      "-ss",
+      "1.0000",
+      "-i",
+      "in.mp4",
+      "-t",
+      "2.0000",
+      "-c",
+      "copy",
+      "-an",
+      "-avoid_negative_ts",
+      "make_zero",
+      "clip.mp4",
+    ]);
+  });
+
+  it("drops audio on every route out, a stream copy included", () => {
+    const blur = [{ x: 10, y: 10, radius: 20 }];
+    // `-c copy` would otherwise carry the source's audio straight through, which is the one route
+    // that ever did.
+    expect(ffmpegArgs("in.mp4", "clip.mp4", 30, 89, 30, "fast")).toContain("-an");
+    expect(ffmpegArgs("in.mp4", "clip.mp4", 10, 40, 30, "precise")).toContain("-an");
+    expect(ffmpegArgs("in.mp4", "clip.mp4", 30, 89, 30, "fast", blur)).toContain("-an");
+    expect(ffmpegArgs("in.mp4", "clip.mp4", 10, 40, 30, "precise", blur)).toContain("-an");
   });
 
   it("trims and blurs in one graph, mapping the label the blur ends on", () => {
