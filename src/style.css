@@ -893,24 +893,11 @@ input[type="checkbox"] {
   padding-top: 0.85rem;
   border-top: 1px dashed var(--border);
 }
-.overview-head {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.55rem;
-  margin-bottom: 0.5rem;
-}
-.overview-label {
-  font-size: 0.68rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-/* The window control sits under a track rather than in a card's own row, so it is scaled down to
-   sit beside the gradations instead of competing with them. */
+/* Both side controls are scaled down against the transport they flank: the play button is the one
+   thing on the row worth reaching for without looking. */
 .seg.small button {
   font-size: 0.75rem;
-  padding: 0.2rem 0.55rem;
+  padding: 0.25rem 0.6rem;
   font-variant-numeric: tabular-nums;
 }
 #overbar {
@@ -1004,7 +991,7 @@ input[type="checkbox"] {
 
 /* Equal-width outer columns are what centre the middle one, so the transport lands on the card's
    centre line — the same one the mode toggle and the Current readout sit on — and stays there
-   whatever the speed control beside it is doing. */
+   whatever the controls beside it are doing. */
 .transport {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -1022,31 +1009,49 @@ input[type="checkbox"] {
 .transport-main .primary {
   min-width: 3.5rem;
 }
-/* Set apart from the transport: it changes how playback runs rather than driving it. */
-.speed-seg {
+/* The two settings that flank the transport: what the timeline covers, and how fast playback runs.
+   Neither drives playback, so both are set apart from the buttons that do — and each is centred in
+   the space its own side of the transport leaves, rather than pushed out to the card's edge, so the
+   row reads as two clusters either side of the play button. An empty side (a recording short enough
+   to want no window control) leaves the transport where it already was. */
+.transport-side {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-self: center;
+}
+.transport-side[hidden] {
+  display: none;
+}
+#windowGroup {
+  grid-column: 1;
+}
+#speedGroup {
   grid-column: 3;
-  justify-self: start;
-  margin-left: 0.9rem;
 }
-.speed-seg button {
-  padding: 0.35rem 0.7rem;
-  font-variant-numeric: tabular-nums;
+.transport-label {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
 }
-/* Too narrow to hold both on one line: stack them, each centred, rather than letting the grid
-   squeeze the speed control into a column it does not fit. */
+/* Too narrow to hold all three on one line: stack them, each centred, rather than letting the grid
+   squeeze the side controls into columns they do not fit. The transport leads, since it is the part
+   being reached for; the settings follow it. */
 @media (max-width: 560px) {
   .transport {
     grid-template-columns: 1fr;
     justify-items: center;
     gap: 0.5rem;
   }
-  .transport-main,
-  .speed-seg {
+  .transport-main {
     grid-column: 1;
+    grid-row: 1;
   }
-  .speed-seg {
-    justify-self: center;
-    margin-left: 0;
+  #speedGroup,
+  #windowGroup {
+    grid-column: 1;
   }
 }
 .seltimes {

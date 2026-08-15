@@ -45,6 +45,13 @@ export function usesWindow(totalFrames: number, halfFrames: number): boolean {
   return totalFrames > halfFrames * 2;
 }
 
+/** Whether the width control is worth offering: true once the narrowest width on offer would put a
+ * window inside the recording. Deliberately not tied to the width currently picked, or choosing one
+ * wide enough to cover the whole video would take the control that chose it off the screen. */
+export function offersWindowChoice(totalFrames: number, fps: number): boolean {
+  return usesWindow(totalFrames, windowHalfFrames(WINDOW_HALF_CHOICES[0], fps));
+}
+
 /** The window centred on `center`, clamped inside the recording. Never resized to fit: at either
  * end the window stops while the centre keeps going, the way a page stops scrolling at its end —
  * shrinking it instead would change the scale of the track under a drag. */

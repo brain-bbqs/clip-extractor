@@ -3,6 +3,7 @@ import {
   frameAt,
   fractionOf,
   hourMarks,
+  offersWindowChoice,
   rulerMarks,
   usesWindow,
   windowFor,
@@ -62,6 +63,23 @@ describe("usesWindow", () => {
 
   it("puts that threshold at an hour of recording, for the default width", () => {
     expect(2 * HALF).toBe(HOUR);
+  });
+});
+
+describe("offersWindowChoice", () => {
+  it("offers the width control once the narrowest width would window the recording", () => {
+    const narrowest = 2 * windowHalfFrames(WINDOW_HALF_CHOICES[0], FPS);
+    expect(offersWindowChoice(narrowest, FPS)).toBe(false);
+    expect(offersWindowChoice(narrowest + 1, FPS)).toBe(true);
+  });
+
+  it("keeps the control up for a recording the widest choice would swallow whole", () => {
+    // Picking a width wider than the recording hides the overview, since there is then nothing to
+    // slide. The control has to outlive it, or nothing on screen could narrow the width again.
+    const widest = 2 * windowHalfFrames(WINDOW_HALF_CHOICES[WINDOW_HALF_CHOICES.length - 1], FPS);
+    const recording = Math.round(widest / 2);
+    expect(usesWindow(recording, windowHalfFrames(WINDOW_HALF_CHOICES.at(-1)!, FPS))).toBe(false);
+    expect(offersWindowChoice(recording, FPS)).toBe(true);
   });
 });
 

@@ -340,21 +340,6 @@
                goes wherever it is pointed, so a snippet straddling an hour boundary is never split
                across two of them. -->
           <div id="overviewWrap" class="overview" hidden>
-            <!-- How much of the recording the track above covers. Inside the overview block, so it
-                 goes away with it on anything short enough that the track already holds the lot. -->
-            <div class="overview-head">
-              <span class="overview-label" id="windowSegLabel">Window</span>
-              <div class="seg small" id="windowSeg" role="group" aria-labelledby="windowSegLabel">
-                <button type="button" data-half="900" title="The timeline covers 15 minutes either side of the window">
-                  &plusmn;15 min
-                </button>
-                <button type="button" data-half="1800" title="The timeline covers 30 minutes either side of the window">
-                  &plusmn;30 min
-                </button>
-                <button type="button" data-half="3600" title="The timeline covers an hour either side of the window">&plusmn;1 h</button>
-                <button type="button" data-half="7200" title="The timeline covers two hours either side of the window">&plusmn;2 h</button>
-              </div>
-            </div>
             <div
               id="overbar"
               role="slider"
@@ -376,8 +361,24 @@
 
         <!-- The transport triple is its own group inside a three-column grid, so it lands on the
              same centre line as the mode toggle above and the Current readout below rather than
-             being pushed off it by the speed control sharing the row. -->
+             being pushed off it by the controls sharing the row. Those two sit one per side and are
+             centred in the space the transport leaves them, so the row reads as a pair of clusters
+             either side of the play button rather than as three things pushed to three edges. -->
         <div class="transport">
+          <!-- How much of a long recording the timeline covers. Beside the speed control because
+               both are settings for the track rather than commands to it, and main.ts shows it only
+               for a recording longer than the window (see lib/timeline.ts). -->
+          <div class="transport-side" id="windowGroup" hidden>
+            <span class="transport-label" id="windowSegLabel">Window</span>
+            <div class="seg small" id="windowSeg" role="group" aria-labelledby="windowSegLabel">
+              <button type="button" data-half="900" title="The timeline covers 15 minutes either side of the window">&plusmn;15 min</button>
+              <button type="button" data-half="1800" title="The timeline covers 30 minutes either side of the window">
+                &plusmn;30 min
+              </button>
+              <button type="button" data-half="3600" title="The timeline covers an hour either side of the window">&plusmn;1 h</button>
+              <button type="button" data-half="7200" title="The timeline covers two hours either side of the window">&plusmn;2 h</button>
+            </div>
+          </div>
           <!-- The step buttons carry the arrow keys they are bound to rather than triangles: a
                triangle here is the play glyph at a smaller size, which leaves fill colour as the
                only thing separating "advance one frame" from "start playing". The arrows also put
@@ -393,10 +394,13 @@
           <!-- Three speeds rather than a dropdown: with the list this short, the current speed is
                worth showing rather than hiding behind a click, and it matches the segmented controls
                the rest of the page uses. -->
-          <div class="seg speed-seg" id="speedSeg" role="group" aria-label="Playback speed">
-            <button type="button" data-speed="0.5" aria-pressed="false">0.5&times;</button>
-            <button type="button" data-speed="1" class="active" aria-pressed="true">1&times;</button>
-            <button type="button" data-speed="2" aria-pressed="false">2&times;</button>
+          <div class="transport-side" id="speedGroup">
+            <span class="transport-label" id="speedSegLabel">Speed</span>
+            <div class="seg small" id="speedSeg" role="group" aria-labelledby="speedSegLabel">
+              <button type="button" data-speed="0.5" aria-pressed="false">0.5&times;</button>
+              <button type="button" data-speed="1" class="active" aria-pressed="true">1&times;</button>
+              <button type="button" data-speed="2" aria-pressed="false">2&times;</button>
+            </div>
           </div>
         </div>
 

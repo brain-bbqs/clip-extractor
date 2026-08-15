@@ -6,6 +6,7 @@ import {
   frameAt,
   fractionOf,
   hourMarks,
+  offersWindowChoice,
   rulerMarks,
   usesWindow,
   windowFor,
@@ -1090,9 +1091,15 @@ function buildRuler(): void {
 
 /** Shows or hides the overview, and lays out its gradations for what it now spans. The bar is only
  * there for a recording longer than the stretch the track covers: below that the track already
- * spans the whole video, and this would be a slider with nowhere to slide. */
+ * spans the whole video, and this would be a slider with nowhere to slide. Its width control goes
+ * with it, from the transport row, since a width means nothing without something to move. */
 function refreshOverview(): void {
-  els.overviewWrap.hidden = !state.backend || !usesWindow(state.totalFrames, halfFrames());
+  const loaded = !!state.backend;
+  els.overviewWrap.hidden = !loaded || !usesWindow(state.totalFrames, halfFrames());
+  // The control outlives the bar by one step: it stays for as long as any width on offer would
+  // still window this recording, so picking one wide enough to cover the whole thing does not take
+  // away the control that would narrow it again.
+  els.windowGroup.hidden = !loaded || !offersWindowChoice(state.totalFrames, state.fps);
   buildOverviewRuler();
 }
 
