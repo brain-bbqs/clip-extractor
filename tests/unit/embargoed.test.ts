@@ -18,33 +18,71 @@ afterEach(() => {
 });
 
 describe("listOwnedEmbargoedDandisets", () => {
-  function stub(results: unknown[]): ReturnType<typeof vi.fn> {
-    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ results })));
+  /** Stubs the dandiset listing and, per dandiset, the owner list the result is checked against. */
+  function stub(results: unknown[], owners: Record<string, string[] | "error"> = {}): ReturnType<typeof vi.fn> {
+    const fetchMock = vi.fn((input: string) => {
+      const url = String(input);
+      const match = /\/dandisets\/(\d+)\/users\//.exec(url);
+      if (match) {
+        const listed = owners[match[1]] ?? [];
+        if (listed === "error") return Promise.resolve(jsonResponse({}, false, 500));
+        return Promise.resolve(jsonResponse(listed.map((username) => ({ username }))));
+      }
+      return Promise.resolve(jsonResponse({ results }));
+    });
     vi.stubGlobal("fetch", fetchMock);
     return fetchMock;
   }
 
-  it("keeps only the embargoed ones, named and ordered by identifier", async () => {
-    stub([
-      { identifier: "000900", embargo_status: "EMBARGOED", draft_version: { name: "Incoming: Test Lab" } },
-      { identifier: "000265", embargo_status: "OPEN", draft_version: { name: "Already public" } },
-      { identifier: "000800", embargo_status: "EMBARGOED", draft_version: { name: "Staging" } },
-    ]);
-    expect(await listOwnedEmbargoedDandisets(cfg)).toEqual([
+  it("keeps only the embargoed ones the visitor is listed against, ordered by identifier", async () => {
+    stub(
+      [
+        { identifier: "000900", embargo_status: "EMBARGOED", draft_version: { name: "Incoming: Test Lab" } },
+        { identifier: "000265", embargo_status: "OPEN", draft_version: { name: "Already public" } },
+        { identifier: "000800", embargo_status: "EMBARGOED", draft_version: { name: "Staging" } },
+      ],
+      { "000900": ["ada"], "000800": ["ada", "grace"] },
+    );
+    expect(await listOwnedEmbargoedDandisets(cfg, "ada")).toEqual([
       { id: "000800", version: "draft", manifestBytes: 0, embargoed: true, name: "Staging" },
       { id: "000900", version: "draft", manifestBytes: 0, embargoed: true, name: "Incoming: Test Lab" },
     ]);
   });
 
+  // The archive resolves `?user=me` through object permissions, which a superuser holds globally,
+  // so an admin's listing comes back holding the whole archive's embargoed datasets.
+  it("drops an embargoed dataset the visitor is not listed against, however it was returned", async () => {
+    stub(
+      [
+        { identifier: "000900", embargo_status: "EMBARGOED", draft_version: { name: "Mine" } },
+        { identifier: "000901", embargo_status: "EMBARGOED", draft_version: { name: "Somebody else's" } },
+      ],
+      { "000900": ["ada"], "000901": ["grace"] },
+    );
+    expect((await listOwnedEmbargoedDandisets(cfg, "ada")).map((d) => d.id)).toEqual(["000900"]);
+  });
+
+  it("drops a dataset whose owner list cannot be read, rather than guessing it is yours", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    stub([{ identifier: "000900", embargo_status: "EMBARGOED", draft_version: { name: "Mine" } }], { "000900": "error" });
+    expect(await listOwnedEmbargoedDandisets(cfg, "ada")).toEqual([]);
+  });
+
+  it("offers nothing when there is no signed-in account to check against", async () => {
+    const fetchMock = stub([{ identifier: "000900", embargo_status: "EMBARGOED", draft_version: { name: "Mine" } }], { "000900": ["ada"] });
+    expect(await listOwnedEmbargoedDandisets(cfg, "")).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("asks only for the datasets the signed-in visitor owns", async () => {
     const fetchMock = stub([]);
-    await listOwnedEmbargoedDandisets(cfg);
+    await listOwnedEmbargoedDandisets(cfg, "ada");
     expect(String(fetchMock.mock.calls[0][0])).toBe("https://api.example.org/api/dandisets/?user=me&embargoed=true&page_size=1000");
   });
 
   it("has nothing to offer when the visitor owns nothing embargoed", async () => {
     stub([{ identifier: "000265", embargo_status: "OPEN", draft_version: { name: "Public" } }]);
-    expect(await listOwnedEmbargoedDandisets(cfg)).toEqual([]);
+    expect(await listOwnedEmbargoedDandisets(cfg, "ada")).toEqual([]);
   });
 });
 

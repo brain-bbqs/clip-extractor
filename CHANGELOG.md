@@ -6,8 +6,9 @@
 
 - A new **Browse EMBER** source pane finds an existing video in the archive and streams it, so a clip can be pulled out of an archived recording without first knowing its URL ([#26](https://github.com/brain-bbqs/clip-extractor/pull/26))
 - Public datasets are read from EMBER's public S3 manifests rather than its API, so browsing what is public needs no sign-in and no token ([#26](https://github.com/brain-bbqs/clip-extractor/pull/26))
-- Signing in adds the embargoed datasets you own to the same list, marked `embargoed`, and opens a video in one through a signed link the archive hands out on demand ([#26](https://github.com/brain-bbqs/clip-extractor/pull/26))
-- The pane opens showing only the datasets that actually hold video, with a switch to see the rest ([#26](https://github.com/brain-bbqs/clip-extractor/pull/26))
+- Signing in adds the embargoed datasets you are listed as an owner of to the same list, marked `embargoed`, and opens a video in one through a signed link the archive hands out on demand ([#26](https://github.com/brain-bbqs/clip-extractor/pull/26))
+- Each video source is now marked by an icon on the source picker, and the pose annotations switch names the formats it accepts on their own line ([#26](https://github.com/brain-bbqs/clip-extractor/pull/26))
+- The pane lists only the datasets that actually hold video, so nothing offered in it is a dead end ([#26](https://github.com/brain-bbqs/clip-extractor/pull/26))
 - The filter box matches a dataset by its number, its title or the name of a file inside it, and public titles are cached between visits so it works straight away on a return ([#26](https://github.com/brain-bbqs/clip-extractor/pull/26))
 - A video chosen from the archive records the archive's own asset URL as its source, rather than the content-addressed bucket URL its frames are actually read from ([#26](https://github.com/brain-bbqs/clip-extractor/pull/26))
 - Renamed the URL pane from **Stream from EMBER** to **Stream from a URL**, which is what it has always accepted ([#26](https://github.com/brain-bbqs/clip-extractor/pull/26))

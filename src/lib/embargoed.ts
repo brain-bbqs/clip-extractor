@@ -22,17 +22,39 @@ interface DandisetListResponse {
   results?: DandisetListItem[];
 }
 
+interface DandisetOwner {
+  username?: string;
+}
+
 /**
- * The embargoed datasets the signed-in visitor is listed as an owner of.
+ * Whether `username` appears in the dandiset's own owner list.
  *
- * `page_size=1000` is the archive's maximum and comfortably covers any one person's owned
- * datasets, so further pages are never followed — the same call and the same reasoning as the
- * upload destination list in lib/dandisets.ts, minus that list's "Incoming: " and admin-owner
- * gates. Those gate where an upload may *go*; this only asks what its owner may already read.
+ * `?user=me` is not enough to answer this. The archive resolves it through object permissions, and
+ * a superuser holds those globally — so an EMBER or BBQS admin gets back every embargoed dataset in
+ * the archive, not the ones they are actually listed against. The owner list is the archive's own
+ * record of who a dataset belongs to, so that is what is read.
  */
-export async function listOwnedEmbargoedDandisets(cfg: ArchiveConfig): Promise<ArchiveDandiset[]> {
+async function isListedOwner(cfg: ArchiveConfig, identifier: string, username: string): Promise<boolean> {
+  const owners = await apiFetch<DandisetOwner[]>(cfg, `/dandisets/${identifier}/users/`);
+  return (owners ?? []).some((owner) => owner.username === username);
+}
+
+/**
+ * The embargoed datasets `username` is listed as an owner of.
+ *
+ * `page_size=1000` is the archive's maximum and comfortably covers any one person's datasets, so
+ * further pages are never followed — the same call as the upload destination list in
+ * lib/dandisets.ts, minus that list's "Incoming: " and admin-owner gates. Those gate where an
+ * upload may *go*; this only asks what its owner may already read.
+ *
+ * Fails closed throughout: with no username to check against, and for any dataset whose owner list
+ * cannot be read, nothing is offered. Someone else's embargoed data is not a thing to show on a
+ * guess.
+ */
+export async function listOwnedEmbargoedDandisets(cfg: ArchiveConfig, username: string): Promise<ArchiveDandiset[]> {
+  if (!username) return [];
   const resp = await apiFetch<DandisetListResponse>(cfg, "/dandisets/?user=me&embargoed=true&page_size=1000");
-  return (resp?.results ?? [])
+  const candidates = (resp?.results ?? [])
     .filter((d) => d.embargo_status === "EMBARGOED")
     .map((d) => ({
       id: d.identifier,
@@ -42,8 +64,17 @@ export async function listOwnedEmbargoedDandisets(cfg: ArchiveConfig): Promise<A
       manifestBytes: 0,
       embargoed: true,
       name: d.most_recent_published_version?.name ?? d.draft_version?.name ?? "",
-    }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+    }));
+
+  const owned = await Promise.all(
+    candidates.map((d) =>
+      isListedOwner(cfg, d.id, username).catch((e: unknown) => {
+        console.warn(`Could not read the owners of dandiset ${d.id}:`, e);
+        return false;
+      }),
+    ),
+  );
+  return candidates.filter((_, i) => owned[i]).sort((a, b) => a.id.localeCompare(b.id));
 }
 
 interface AssetListItem {

@@ -1688,7 +1688,6 @@ async function refreshBrowse(): Promise<void> {
   };
   browse = current;
   const signal = current.abort.signal;
-  els.browseVideosOnlyRow.hidden = true;
   els.browseDandisetLink.hidden = true;
   els.browseVideoHeading.textContent = "Videos";
   browseEmpty(els.browseVideos, "Choose a dataset to see the videos in it.");
@@ -1722,8 +1721,12 @@ async function refreshBrowse(): Promise<void> {
  * failed lookup is reported and the public half of the pane carries on without them. */
 async function listOwnedEmbargoed(signal: AbortSignal): Promise<ArchiveDandiset[]> {
   if (!oauthTokens) return [];
+  const cfg = browseConfig();
   try {
-    return await listOwnedEmbargoedDandisets(browseConfig());
+    // Which datasets are the visitor's own is settled against their username, not against the
+    // archive's `?user=me` filter — see listOwnedEmbargoedDandisets.
+    currentUser ??= await fetchArchiveUser(cfg);
+    return await listOwnedEmbargoedDandisets(cfg, currentUser?.username ?? "");
   } catch (e) {
     if (signal.aborted) throw e;
     log(`Could not list your embargoed datasets: ${(e as Error).message}`, "warn");
@@ -1790,9 +1793,9 @@ async function sweepVideos(current: BrowseState, generation: number): Promise<vo
   );
   if (generation !== browseGeneration) return;
   current.swept = true;
-  const withVideo = current.datasets.filter((d) => (current.videos.get(d.id)?.length ?? 0) > 0).length;
-  els.browseVideosOnlyRow.hidden = false;
-  browseSay(`${withVideo} of ${current.datasets.length} EMBER datasets hold video.`);
+  // Nothing left to report: the list itself is now the answer, and it holds only what can be
+  // opened. The line stays clear until something is loading or has gone wrong.
+  browseSay("");
   renderDandisetList();
 }
 
@@ -1801,13 +1804,17 @@ function videoCountLabel(count: number): string {
   return count === 1 ? "1 video" : `${count} videos`;
 }
 
-/** The datasets the filter box and the "with video only" switch leave visible. */
+/**
+ * The datasets left visible. A dataset holding no video is never shown: this pane exists to pick a
+ * video out of one, and a dataset that cannot offer one is a dead end. That is only knowable once
+ * the sweep has read every file list, so before then — and on an archive too large to sweep at all
+ * — every dataset is listed and a video-less one answers for itself when it is opened.
+ */
 function visibleDandisets(current: BrowseState): ArchiveDandiset[] {
   const query = els.browseFilter.value.trim().toLowerCase();
-  const videosOnly = current.swept && els.browseVideosOnly.checked;
   return current.datasets.filter((d) => {
     const videos = current.videos.get(d.id);
-    if (videosOnly && !videos?.length) return false;
+    if (current.swept && !videos?.length) return false;
     if (!query) return true;
     if (d.id.includes(query)) return true;
     if (browseName(current, d).toLowerCase().includes(query)) return true;
@@ -1954,7 +1961,7 @@ async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
       browseSay(`${name} could not be opened: ${friendlyError(e)}`, "err");
       return;
     }
-    browseSay(browse ? browseCountLine(browse) : "");
+    browseSay("");
   }
   // Streamed from the bucket, which answers range requests cross-origin without a redirect, but
   // recorded against the archive's own asset URL: that is the one naming the file rather than its
@@ -1975,7 +1982,6 @@ els.browseFilter.addEventListener("input", () => {
   clearTimeout(browseFilterTimer);
   browseFilterTimer = setTimeout(renderDandisetList, 150);
 });
-els.browseVideosOnly.addEventListener("change", renderDandisetList);
 
 // SLEAP annotations step: hidden until the toggle above the player is switched on.
 function enableSlpStep(): void {

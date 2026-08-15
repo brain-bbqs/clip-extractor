@@ -20,7 +20,8 @@ interface StubDataset {
 
 const PUBLIC_DATASETS: StubDataset[] = [
   { id: "000265", name: "Mouse open field", paths: ["sub-1/mice.mp4", "sub-1/sub-1_behavior.nwb"] },
-  { id: "000299", name: "Gerbil vocalizations", paths: ["sub-G1/sub-G1_behavior.nwb"] },
+  { id: "000299", name: "Gerbil vocalizations", paths: ["sub-G1/calls.mp4", "sub-G1/sub-G1_behavior.nwb"] },
+  { id: "000005", name: "Ephys only", paths: ["sub-E/sub-E_ecephys.nwb"] },
 ];
 
 /** Owned, embargoed, and so invisible in the bucket: its manifests are listed there but refuse to
@@ -82,9 +83,14 @@ async function stubSignedIn(page: Page): Promise<void> {
           { identifier: OWNED_DATASET.id, embargo_status: "EMBARGOED", draft_version: { name: OWNED_DATASET.name } },
           // Owned but already public, so the bucket already covers it and it is not listed twice.
           { identifier: "000265", embargo_status: "OPEN", draft_version: { name: "Mouse open field" } },
+          { identifier: "000901", embargo_status: "EMBARGOED", draft_version: { name: "Somebody else's lab" } },
         ],
       });
     }
+    if (url.includes(`/dandisets/${OWNED_DATASET.id}/users/`)) return json([{ username: "ada-lovelace" }]);
+    // Returned by the listing but owned by somebody else — an admin's `?user=me` comes back
+    // holding the whole archive's embargoed datasets, so the owner list is what settles it.
+    if (url.includes("/dandisets/000901/users/")) return json([{ username: "grace-hopper" }]);
     if (url.includes(`/dandisets/${OWNED_DATASET.id}/versions/draft/assets/`)) {
       return json({ results: [{ asset_id: "held-1", path: OWNED_DATASET.paths[0], size: 4096 }], next: null });
     }
@@ -99,7 +105,7 @@ async function stubSignedIn(page: Page): Promise<void> {
   });
 }
 
-test("browsing EMBER lists its datasets, marks which hold video, and narrows to them", async ({ page }) => {
+test("browsing EMBER lists only the datasets that hold video, and says nothing once it has", async ({ page }) => {
   await stubBucket(page);
   await page.goto("/");
 
@@ -108,28 +114,25 @@ test("browsing EMBER lists its datasets, marks which hold video, and narrows to 
   await expect(page.locator("#dropzone")).toBeHidden();
 
   // EMBER's manifests are small enough to read wholesale, so every dataset is scanned for video up
-  // front and the "with video only" switch appears once that finishes. The embargoed dataset is in
-  // the bucket listing but unreadable, so signed out it counts as holding nothing.
-  await expect(page.locator("#browseStatus")).toHaveText("1 of 3 EMBER datasets hold video.");
-  await expect(page.locator("#browseVideosOnlyRow")).toBeVisible();
+  // front and the ones holding none drop out. The ephys-only dataset is one of those; the embargoed
+  // one is in the bucket listing but unreadable, so signed out it counts as holding nothing either.
   const rows = page.locator("#browseDandisets .browse-item");
-  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Mouse open field");
   await expect(rows.first()).toContainText("1 video");
-
-  await page.locator("#browseVideosOnly").uncheck();
-  await expect(rows).toHaveCount(3);
-  await expect(rows.nth(1)).toContainText("no video");
+  await expect(page.locator("#browseDandisets")).not.toContainText("Ephys only");
+  await expect(page.locator("#browseDandisets")).not.toContainText("000900");
+  // The list is the answer, so the status line has nothing left to add.
+  await expect(page.locator("#browseStatus")).toHaveText("");
 });
 
 test("the filter matches a dataset by number, by title and by the files in it", async ({ page }) => {
   await stubBucket(page);
   await page.goto("/");
   await page.locator('#srcSeg button[data-src="browse"]').click();
-  await expect(page.locator("#browseVideosOnlyRow")).toBeVisible();
-  await page.locator("#browseVideosOnly").uncheck();
-
   const rows = page.locator("#browseDandisets .browse-item");
+  await expect(rows).toHaveCount(2);
+
   await page.locator("#browseFilter").fill("000299");
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText("Gerbil vocalizations");
@@ -167,14 +170,35 @@ test("choosing a dataset lists only its videos, and choosing one streams it onto
   await expect(page.locator("#btnPlay")).toBeEnabled();
 });
 
-test("a dataset holding no video says so instead of leaving an empty list", async ({ page }) => {
-  await stubBucket(page);
+test("an archive too large to scan wholesale lists everything and reads a file list on demand", async ({ page }) => {
+  // Manifests well past the sweep budget, so no dataset is scanned up front. Nothing is then known
+  // about which hold video, so every one is listed — and a video-less one answers for itself.
+  await page.route(`${BUCKET}/**`, (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("list-type") === "2") {
+      const contents = PUBLIC_DATASETS.flatMap((d) => [
+        `<Contents><Key>dandisets/${d.id}/draft/assets.jsonld</Key><Size>${64 * 1024 * 1024}</Size></Contents>`,
+        `<Contents><Key>dandisets/${d.id}/draft/dandiset.jsonld</Key><Size>1200</Size></Contents>`,
+      ]).join("");
+      const body = `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>b</Name><IsTruncated>false</IsTruncated>${contents}</ListBucketResult>`;
+      return route.fulfill({ status: 200, contentType: "application/xml", body });
+    }
+    const dataset = PUBLIC_DATASETS.find((d) => url.pathname.startsWith(`/dandisets/${d.id}/`));
+    if (!dataset) return route.continue();
+    const json = (body: string) => route.fulfill({ status: 200, contentType: "application/json", body });
+    if (url.pathname.endsWith("/dandiset.jsonld")) return json(JSON.stringify({ name: dataset.name }));
+    if (url.pathname.endsWith("/assets.jsonld")) return json(assetsJson(dataset.paths));
+    return route.continue();
+  });
   await page.goto("/");
   await page.locator('#srcSeg button[data-src="browse"]').click();
-  await expect(page.locator("#browseVideosOnlyRow")).toBeVisible();
-  await page.locator("#browseVideosOnly").uncheck();
 
-  await page.locator('#browseDandisets .browse-item:has-text("000299")').click();
+  const rows = page.locator("#browseDandisets .browse-item");
+  await expect(rows).toHaveCount(3);
+  // Unscanned, so a row reports what opening it would cost rather than a video count.
+  await expect(rows.first()).toContainText("64.00 MB");
+
+  await page.locator('#browseDandisets .browse-item:has-text("000005")').click();
   await expect(page.locator("#browseVideos .browse-empty")).toContainText("no video files");
 });
 
@@ -186,14 +210,16 @@ test("signing in adds the embargoed datasets you own, marked as such", async ({ 
 
   // The embargoed dataset is unreadable in the bucket, so it is only seen at all because the API
   // listed it — and it now counts among the datasets that hold video.
-  await expect(page.locator("#browseStatus")).toHaveText("2 of 3 EMBER datasets hold video.");
   const rows = page.locator("#browseDandisets .browse-item");
-  await expect(rows).toHaveCount(2);
+  await expect(rows).toHaveCount(3);
   const owned = page.locator('#browseDandisets .browse-item:has-text("000900")');
   await expect(owned).toContainText("Incoming: Test Lab");
   await expect(owned.locator(".badge")).toHaveText("embargoed");
   // Owned but already public: listed once, from the bucket, without an embargoed badge.
   await expect(page.locator('#browseDandisets .browse-item:has-text("000265") .badge')).toHaveCount(0);
+  // Returned by the archive's listing but owned by somebody else, so it is not offered — an admin
+  // gets every embargoed dataset back from `?user=me`, and only the owner list settles it.
+  await expect(page.locator("#browseDandisets")).not.toContainText("000901");
 });
 
 // Opening an embargoed video asks the archive for a short-lived signed link and streams from
