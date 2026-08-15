@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   bidsLabel,
   bundleFileName,
@@ -6,8 +6,23 @@ import {
   frameFileName,
   overlayFileName,
   provenanceFileName,
+  extractClip,
   sourceBaseName,
 } from "../../src/lib/extract";
+import type { StreamingVideoBackend } from "../../src/lib/streaming";
+
+// A streamed source must never reach ffmpeg: it works out of a virtual filesystem, so it would
+// need the whole container downloaded into memory first. The stub fails loudly if it is asked for.
+const ffmpeg = vi.hoisted(() => ({ loaded: 0 }));
+vi.mock("../../src/lib/ffmpeg", () => ({
+  ensureFfmpeg: () => {
+    ffmpeg.loaded++;
+    return Promise.reject(new Error("ffmpeg stub"));
+  },
+  ffmpegArgs: () => [],
+  streamCopies: () => false,
+  encodedFraction: () => null,
+}));
 
 describe("sourceBaseName", () => {
   it("drops the extension", () => {
@@ -118,5 +133,54 @@ describe("bundleFileName", () => {
     expect(bundleFileName({ sourceName: "mice.mp4", mode: "frame", inFrame: 42, outFrame: 42 })).toBe(
       "name-mice_index-42_type-frame_bundle.tar.gz",
     );
+  });
+});
+
+describe("extractClip, on a streamed source", () => {
+  function streamingBackend() {
+    return {
+      width: 320,
+      height: 240,
+      extractRange: vi.fn(() => Promise.resolve({ blob: new Blob(["clip"], { type: "video/mp4" }), transcoded: true, start: 20, end: 25 })),
+    } as unknown as StreamingVideoBackend;
+  }
+
+  const selection = { sourceUrl: "https://example.test/v.mp4", sourceName: "v.mp4", lo: 600, hi: 749, fps: 30 };
+
+  it("cuts the selection out of the stream, without ever loading ffmpeg", async () => {
+    ffmpeg.loaded = 0;
+    const backend = streamingBackend();
+    const media = await extractClip({ ...selection, sourceFile: null, backend });
+    expect(ffmpeg.loaded).toBe(0);
+    expect(backend.extractRange).toHaveBeenCalledWith(600, 749, expect.objectContaining({ precise: true }));
+    expect(media.filename).toBe("name-v_range-600+749_type-snippet_video.mp4");
+    expect(media.mime).toBe("video/mp4");
+  });
+
+  it("records how the cut was made, for the provenance sidecar", async () => {
+    const media = await extractClip({ ...selection, sourceFile: null, backend: streamingBackend() });
+    expect(media.encoding).toContain("20.000s–25.000s");
+    expect(media.encoding).toContain("re-encoded");
+    expect(media.encoding).toContain("audio dropped");
+  });
+
+  it("asks for a copy rather than a frame-exact cut in fast trim mode", async () => {
+    const backend = streamingBackend();
+    await extractClip({ ...selection, sourceFile: null, backend, trim: "fast" });
+    expect(backend.extractRange).toHaveBeenCalledWith(600, 749, expect.objectContaining({ precise: false }));
+  });
+
+  it("draws nothing into the frames when there is no blur to draw", async () => {
+    const backend = streamingBackend();
+    await extractClip({ ...selection, sourceFile: null, backend });
+    expect(vi.mocked(backend.extractRange).mock.calls[0][2].process).toBeUndefined();
+  });
+
+  it("goes to ffmpeg instead when the bytes are already in the browser", async () => {
+    ffmpeg.loaded = 0;
+    const backend = streamingBackend();
+    await expect(extractClip({ ...selection, sourceFile: new File(["bytes"], "v.mp4"), backend })).rejects.toThrow(/ffmpeg stub/);
+    expect(ffmpeg.loaded).toBe(1);
+    expect(backend.extractRange).not.toHaveBeenCalled();
   });
 });

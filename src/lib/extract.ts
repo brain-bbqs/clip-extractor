@@ -1,7 +1,9 @@
+import { VideoSample } from "mediabunny";
 import { encodedFraction, ensureFfmpeg, ffmpegArgs, streamCopies } from "./ffmpeg";
 import { decodeIndex, drawVideoFrame } from "./video";
 import { drawPose } from "./pose";
 import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
+import type { StreamingVideoBackend } from "./streaming";
 import type { SelectionKind } from "./delivery";
 import type { PoseModel, SleapVideoBackend, TrimMode } from "./types";
 
@@ -123,6 +125,9 @@ export interface ExtractClipParams {
    * download). Preferred over `sourceUrl`, which has to be fetched in full for ffmpeg. */
   sourceFile: File | null;
   sourceUrl: string | null;
+  /** The open video, when it is one being streamed. With no local bytes this is what the selection
+   * is cut out of, over the same range requests that play it. */
+  backend?: StreamingVideoBackend | null;
   sourceName: string;
   /** Inclusive selected frame range. */
   lo: number;
@@ -136,9 +141,53 @@ export interface ExtractClipParams {
   onProgress?: ExtractProgress;
 }
 
-/** Trims [lo, hi] out of the source video with ffmpeg.wasm and returns it as an MP4. */
+/** Draws each frame onto a canvas, paints the blur into it, and hands it back to the muxer. */
+function blurProcessor(width: number, height: number, blur: BlurRegion[]): (sample: VideoSample) => VideoSample {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas 2D context unavailable");
+  return (sample) => {
+    ctx.clearRect(0, 0, width, height);
+    sample.draw(ctx, 0, 0);
+    paintBlurRegions(ctx, blur, width, height);
+    // A fresh sample per frame rather than the canvas itself: the canvas is reused, and handing it
+    // over would let the next frame paint over one the encoder had not read yet.
+    return new VideoSample(canvas, { timestamp: sample.timestamp, duration: sample.duration });
+  };
+}
+
+/** Trims [lo, hi] straight out of a streamed source, reading only the bytes that range needs. */
+async function extractStreamedClip(params: ExtractClipParams & { backend: StreamingVideoBackend }): Promise<ExtractedMedia> {
+  const { backend, sourceName, lo, hi, trim = "precise", blur = [], onProgress } = params;
+  onProgress?.("Trimming the selection out of the stream…", 0);
+  const { blob, transcoded, start, end } = await backend.extractRange(lo, hi, {
+    precise: trim === "precise",
+    process: blur.length ? blurProcessor(backend.width, backend.height, blur) : undefined,
+    onProgress: (fraction) => onProgress?.(`Trimming the selection… ${(fraction * 100).toFixed(0)}%`, fraction),
+  });
+  onProgress?.("Trimming the selection… 100%", 1);
+  const blurred = blurSummary(blur);
+  const how = transcoded ? "frames re-encoded" : "frames copied over untouched";
+  return {
+    blob,
+    filename: clipFileName(sourceName, lo, hi),
+    mime: "video/mp4",
+    encoding: `mediabunny trim ${start.toFixed(3)}s–${end.toFixed(3)}s out of the streamed source, ${how}, audio dropped${
+      blurred ? `, ${blurred}` : ""
+    }`,
+  };
+}
+
+/** Trims [lo, hi] out of the source video and returns it as an MP4: straight out of the stream when
+ * that is what is open, and through ffmpeg.wasm when the bytes are already in the browser. */
 export async function extractClip(params: ExtractClipParams): Promise<ExtractedMedia> {
-  const { sourceFile, sourceUrl, sourceName, lo, hi, fps, trim = "precise", blur = [], onProgress } = params;
+  const { sourceFile, sourceUrl, backend, sourceName, lo, hi, fps, trim = "precise", blur = [], onProgress } = params;
+  // Checked before ffmpeg is even loaded: it works out of a virtual filesystem, so it would need
+  // the whole container written into memory first, which for a streamed recording means downloading
+  // all of it however few frames were selected.
+  if (!sourceFile && backend) return extractStreamedClip({ ...params, backend });
   const ext = (/\.[a-z0-9]+$/i.exec(sourceName) ?? [".mp4"])[0];
   const inName = `in${ext}`;
   const outName = "clip.mp4";

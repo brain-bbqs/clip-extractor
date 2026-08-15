@@ -1,5 +1,16 @@
-import { ALL_FORMATS, BlobSource, EncodedPacketSink, Input, UrlSource, VideoSampleSink } from "mediabunny";
-import type { InputVideoTrack, Source } from "mediabunny";
+import {
+  ALL_FORMATS,
+  BlobSource,
+  BufferTarget,
+  Conversion,
+  EncodedPacketSink,
+  Input,
+  Mp4OutputFormat,
+  Output,
+  UrlSource,
+  VideoSampleSink,
+} from "mediabunny";
+import type { InputVideoTrack, Source, VideoSample } from "mediabunny";
 import type { SleapVideoBackend } from "./types";
 
 // A frame-indexed video backend built straight on mediabunny, used in place of sleap-io.js's
@@ -253,6 +264,27 @@ async function enumerateFrameTimes(packets: EncodedPacketSink): Promise<number[]
   return times;
 }
 
+export interface RangeExtractOptions {
+  /** Frame-exact: the cut starts on `lo` itself, re-encoding from the key frame before it when it
+   * has to. Otherwise it starts at that key frame, which copies the frames over untouched but may
+   * carry a few leading ones. */
+  precise: boolean;
+  /** Draws into each frame on its way out. Anything drawn forces a re-encode. */
+  process?: (sample: VideoSample) => VideoSample;
+  /** 0..1 through the selection. */
+  onProgress?: (fraction: number) => void;
+}
+
+export interface ExtractedRange {
+  blob: Blob;
+  /** Whether the frames were re-encoded rather than copied over untouched. */
+  transcoded: boolean;
+  /** The timestamps the cut actually spans. `start` is rounded back to a key frame when the cut is
+   * not frame-exact, so it is not always the selection's first frame. */
+  start: number;
+  end: number;
+}
+
 /** A range decode in flight, so a seek landing inside one can wait for its own frame instead of
  * starting a second decoder over the same packets. */
 interface PendingRange {
@@ -276,7 +308,7 @@ export class StreamingVideoBackend implements SleapVideoBackend {
 
   private constructor(
     private readonly input: Input,
-    track: InputVideoTrack,
+    private readonly track: InputVideoTrack,
     private readonly index: FrameIndex,
     cacheSize: number,
   ) {
@@ -361,6 +393,49 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       // Only if it is still this one: a later window may have replaced it while this was decoding.
       if (this.pending === range) this.pending = null;
     }
+  }
+
+  /** Trims frames `lo..hi` into an MP4, reading only the bytes that range needs.
+   *
+   * This is what a streamed source is extracted with instead of ffmpeg.wasm, which needs the whole
+   * container in its virtual filesystem: for a remote recording that means downloading all of it —
+   * hours for a large one, and more than a 32-bit address space can hold besides, however small the
+   * selection is. Here the same range requests that play the video also cut it. */
+  async extractRange(lo: number, hi: number, options: RangeExtractOptions): Promise<ExtractedRange> {
+    if (this.closed) throw new Error("The video was closed before the selection could be extracted");
+    const first = Math.max(0, Math.min(lo, hi));
+    const last = Math.min(this.index.count - 1, Math.max(lo, hi));
+    if (first > last) throw new Error("There is nothing selected to extract");
+    // Frames can only be copied over untouched from a point the decoder can start at; anything else
+    // — a frame-exact cut, or a blur to draw in — has to be re-encoded.
+    const transcoded = options.precise || !!options.process;
+    const wanted = this.index.time(first);
+    const keyPacket = transcoded ? null : await new EncodedPacketSink(this.track).getKeyPacket(wanted, { metadataOnly: true });
+    const start = keyPacket?.timestamp ?? wanted;
+    const end = this.index.window(last, last).end;
+
+    const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
+    const conversion = await Conversion.init({
+      input: this.input,
+      output,
+      // The player is video-only, and a recording this app exists to de-identify should not carry
+      // voices out of it in a track nobody was shown. The frame-exact cut has always dropped audio;
+      // this drops it whichever way the cut is made.
+      audio: { discard: true },
+      video: { forceTranscode: transcoded, process: options.process },
+      trim: { start, end },
+      showWarnings: false,
+    });
+    if (!conversion.isValid) {
+      const reasons = [...new Set(conversion.discardedTracks.map((track) => track.reason))].join(", ");
+      throw new Error(`This video cannot be trimmed in the browser (${reasons || "unsupported source"})`);
+    }
+    const report = options.onProgress;
+    if (report) conversion.onProgress = (fraction) => report(fraction);
+    await conversion.execute();
+    const buffer = output.target.buffer;
+    if (!buffer?.byteLength) throw new Error("Trimming produced an empty clip — try a different selection");
+    return { blob: new Blob([buffer], { type: "video/mp4" }), transcoded, start, end };
   }
 
   /** Drops every decoded frame and cancels whatever the source still has in flight. */

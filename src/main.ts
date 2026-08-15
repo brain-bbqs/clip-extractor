@@ -3,7 +3,7 @@ import * as sio from "@talmolab/sleap-io.js";
 import { getElements } from "./ui/elements";
 import { bytes, fmtTime, rulerLabel, rulerStep } from "./lib/format";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
-import { openStreamingBlob, openStreamingUrl } from "./lib/streaming";
+import { openStreamingBlob, openStreamingUrl, StreamingVideoBackend } from "./lib/streaming";
 import { drawPose, labelsToPose } from "./lib/pose";
 import {
   slpSourceMeta,
@@ -1903,6 +1903,9 @@ async function extractSelection(
   return extractClip({
     sourceFile: state.sourceFile,
     sourceUrl: state.sourceUrl,
+    // Only the streaming backend can cut a selection out of a source it never downloaded; the
+    // sleap-io.js fallbacks hold no such thing, and fall through to ffmpeg as before.
+    backend: backend instanceof StreamingVideoBackend ? backend : null,
     sourceName: entities.sourceName,
     lo: entities.inFrame,
     hi: entities.outFrame,
