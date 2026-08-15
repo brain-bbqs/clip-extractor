@@ -709,6 +709,27 @@ input[type="checkbox"] {
   border-radius: 0;
   border-right: 1px solid var(--border);
 }
+/* Only the source picker's buttons carry a mark, so only they lay out as a row. The other
+   segmented controls (selector mode, speed, window width, delivery) are left as they were. */
+#srcSeg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+/* The mark naming a source, sized off the label beside it so the two stay in proportion at any
+   text size. `height` alone for the image: the flame is taller than it is wide, and letting the
+   width follow keeps it from being squashed. */
+.seg-icon {
+  flex-shrink: 0;
+  height: 1em;
+  width: auto;
+  line-height: 1;
+}
+/* The flame is narrower than an emoji glyph of the same height, so it is set a little taller to
+   carry the same weight in the row. */
+img.seg-icon {
+  height: 1.15em;
+}
 .seg button:last-child {
   border-right: none;
 }
