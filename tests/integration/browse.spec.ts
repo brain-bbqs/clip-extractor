@@ -36,7 +36,10 @@ function assetsJson(bucket: string, paths: string[]): string {
       encodingFormat: path.endsWith(".mp4") ? "video/mp4" : "application/x-nwb",
       // The bucket URL has to be the one the asset's own archive serves, or the pane is right to
       // leave the asset out — which is why this follows `bucket` rather than a fixed host.
-      contentUrl: [`https://api.example.org/api/assets/asset-${i}/download/`, `${bucket}/blobs/${path.endsWith(".mp4") ? "f16/d2f/f16d2f83" : `a/b/${i}`}`],
+      contentUrl: [
+        `https://api.example.org/api/assets/asset-${i}/download/`,
+        `${bucket}/blobs/${path.endsWith(".mp4") ? "f16/d2f/f16d2f83" : `a/b/${i}`}`,
+      ],
     })),
   );
 }
@@ -144,7 +147,9 @@ test("an archive too large to scan wholesale reads a dataset's file list only wh
   await stubBucket(page, EMBER_BUCKET, EMBER_DATASETS);
   // A manifest well past the sweep budget, so DANDI behaves the way the real archive's gigabyte of
   // manifests makes it behave: no up-front scan, no "with video only" switch.
-  await stubBucket(page, DANDI_BUCKET, [{ id: "000003", name: "Somewhere else entirely", paths: ["sub-Y/clip.mp4"], manifestBytes: 64 * 1024 * 1024 }]);
+  await stubBucket(page, DANDI_BUCKET, [
+    { id: "000003", name: "Somewhere else entirely", paths: ["sub-Y/clip.mp4"], manifestBytes: 64 * 1024 * 1024 },
+  ]);
   await page.goto("/");
   await page.locator('#srcSeg button[data-src="browse"]').click();
   await page.locator('#archiveSeg button[data-archive="dandi"]').click();

@@ -260,7 +260,11 @@ function isBucketUrl(url: string, bucket: string): boolean {
 }
 
 /** Every video in one dataset. */
-export async function fetchDandisetVideos(archive: PublicArchive, dandiset: ArchiveDandiset, signal?: AbortSignal): Promise<ArchiveVideo[]> {
+export async function fetchDandisetVideos(
+  archive: PublicArchive,
+  dandiset: ArchiveDandiset,
+  signal?: AbortSignal,
+): Promise<ArchiveVideo[]> {
   const manifest = await fetchManifest(manifestUrl(archive, dandiset, ASSETS_MANIFEST), signal);
   return selectVideoAssets(archive, dandiset.id, manifest);
 }
