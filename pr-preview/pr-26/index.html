@@ -93,8 +93,8 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-Bwy4keaU.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-C0GZot14.css">
+    <script type="module" crossorigin src="./assets/index-DvUspwVP.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-C0ePEPbG.css">
   </head>
   <body>
     <a class="brand-watermark-link" href="https://brain-bbqs.org" target="_blank" rel="noopener" aria-label="BBQS" title="BBQS">
@@ -192,8 +192,14 @@
               <span class="seg-icon" aria-hidden="true">🔗</span>Stream from a URL
             </button>
           </div>
+          <!-- The formats sit on their own line under the name rather than in a parenthesis after
+               it: the source picker beside this takes most of the row, and the one-line version
+               wrapped mid-parenthesis in the space that leaves. -->
           <label class="hint slp-toggle">
-            <span>Pose annotations (<code>.slp</code> / <code>.nwb</code>)</span>
+            <span class="slp-toggle-label">
+              <span>Pose annotations</span>
+              <span class="slp-toggle-formats"><code>.slp</code> <code>.nwb</code></span>
+            </span>
             <input type="checkbox" id="slpToggle" class="switch" role="switch" />
           </label>
         </div>
@@ -220,10 +226,6 @@
               placeholder="Filter by dataset number, title or file name"
               aria-label="Filter datasets"
             />
-            <label class="hint browse-toggle" id="browseVideosOnlyRow" hidden>
-              <input type="checkbox" id="browseVideosOnly" checked />
-              <span>With video only</span>
-            </label>
           </div>
           <p id="browseStatus" class="hint" role="status"></p>
           <div class="browse-columns">
