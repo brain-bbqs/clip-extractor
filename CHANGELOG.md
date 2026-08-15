@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.9
+
+#### 🚀 Enhancement
+
+- The player now says when it is waiting on video rather than sitting unchanged until the picture arrives: opening a recording names it on the stage and counts the index off as it streams in, and a seek that has to wait on a frame raises a spinner over the picture ([#25](https://github.com/brain-bbqs/clip-extractor/pull/25))
+- A URL that cannot be range-read is still downloaded whole, but that download now counts itself off against the file's size instead of showing nothing at all until it finishes ([#25](https://github.com/brain-bbqs/clip-extractor/pull/25))
+- A video that could not be loaded now says so on the stage, which previously went back to inviting a file with the reason left in the browser console ([#25](https://github.com/brain-bbqs/clip-extractor/pull/25))
+
+#### 🏠 Internal
+
+- Added `src/ui/stageStatus.ts`, holding the timing that keeps the indicator off screen for a wait that ends quickly and up for a run of slow ones, with unit and integration coverage ([#25](https://github.com/brain-bbqs/clip-extractor/pull/25))
+
 ## 0.1.8
 
 #### 🚀 Enhancement

@@ -117,6 +117,37 @@ export async function stubH5Wasm(page: Page): Promise<void> {
   );
 }
 
+/** Records a short VP8 clip in-page and hands its bytes back, so a spec can serve a real video from
+ * a stubbed URL without a binary fixture in the repository. Base64 rather than a byte array because
+ * the bridge out of the page carries it as JSON either way, and one string beats 100k numbers. */
+export async function recordClipBytes(page: Page, frames = 20): Promise<Buffer> {
+  const base64 = await page.evaluate(async (frames) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 320;
+    canvas.height = 240;
+    const ctx = canvas.getContext("2d")!;
+    const chunks: Blob[] = [];
+    const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: "video/webm;codecs=vp8" });
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.start();
+    for (let i = 0; i < frames; i++) {
+      ctx.fillStyle = `hsl(${i * 10} 80% 50%)`;
+      ctx.fillRect(0, 0, 320, 240);
+      await new Promise((r) => setTimeout(r, 33));
+    }
+    await new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+      recorder.stop();
+    });
+    const reader = new FileReader();
+    return await new Promise<string>((resolve) => {
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.readAsDataURL(new Blob(chunks, { type: "video/webm" }));
+    });
+  }, frames);
+  return Buffer.from(base64, "base64");
+}
+
 /** Records a short VP8 clip in-page and hands it to the file input, as if it had been dropped. A
  * synthesized video keeps a multi-megabyte fixture out of the repository.
  *

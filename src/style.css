@@ -619,6 +619,59 @@ input[type="checkbox"] {
   text-align: center;
   padding: 40px 16px;
 }
+/* While the stage is waiting, the indicator below is standing in for this line. */
+#stage:has(.stage-busy:not([hidden])) #emptyStage {
+  visibility: hidden;
+}
+
+/* What the stage is waiting on. Laid over the picture rather than in place of it, so the frame
+   already on screen stays visible under it and a seek does not blank the player it is scrubbing.
+   Its colours are fixed rather than themed: the scrim is dark in both themes because what is behind
+   it is a video. */
+.stage-busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  background: rgb(0 0 0 / 0.45);
+  color: #e8eaf2;
+  font-size: 0.9rem;
+  text-align: center;
+  /* Nothing here is clickable, and the picture underneath is: the blur rings sit below this. */
+  pointer-events: none;
+}
+/* `display` above would otherwise override the hidden attribute. */
+.stage-busy[hidden] {
+  display: none;
+}
+.stage-busy-detail {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #c3c9da;
+}
+.stage-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgb(255 255 255 / 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: stage-spin 0.9s linear infinite;
+}
+@keyframes stage-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The label beside it says what is happening, so the spin is decoration and can stop. */
+  .stage-spinner {
+    animation: none;
+  }
+}
 
 /* Blur tool: rings laid over the canvas, and the row of controls under it. The blurred pixels are
    painted into the canvas itself (see lib/blur.ts), so these are only the handles for placing them
