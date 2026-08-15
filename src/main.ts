@@ -1285,9 +1285,17 @@ function setSelection(lo: number, hi: number): void {
 }
 
 /** Moves one end to `frame`, stopping at the other rather than crossing it — a handle dragged past
- * its partner collapses the range instead of silently swapping the two. */
+ * its partner collapses the range instead of silently swapping the two.
+ *
+ * Moving one end also materializes the other, if nothing has been marked there yet, and it does so
+ * at the edge of what the timeline covers rather than at the edge of the recording. On a whole-video
+ * timeline those are the same frame and this is what it has always done; on a windowed one the
+ * video's end is hours past the right of the track, and seeding from it would turn the first drag of
+ * a marker into a snippet running from here to the end of the day. */
 function moveHandle(which: "in" | "out", frame: number): void {
-  const [lo, hi] = selRange();
+  const at = view();
+  const lo = state.inF ?? at.start;
+  const hi = state.outF ?? at.start + at.len - 1;
   if (which === "in") setSelection(Math.min(frame, hi), hi);
   else setSelection(lo, Math.max(frame, lo));
 }
