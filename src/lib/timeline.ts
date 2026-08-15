@@ -14,8 +14,9 @@ import { rulerStep } from "./format";
  * its surroundings; the choices below cover the rest, and the pick is remembered. */
 export const DEFAULT_WINDOW_HALF_SECONDS = 1800;
 
-/** The half-widths offered under the overview slider, narrowest first. */
-export const WINDOW_HALF_CHOICES = [900, 1800, 3600, 7200] as const;
+/** The half-widths offered beside the transport, narrowest first. All well under an hour: a wider
+ * window than this is a track nobody can trim against, which is the problem the window solves. */
+export const WINDOW_HALF_CHOICES = [300, 900, 1800] as const;
 
 /** A stored or typed half-width, held to one of the offered choices. Anything unrecognised falls
  * back to the default rather than leaving the track at a width nothing on screen can undo. */

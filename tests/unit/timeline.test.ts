@@ -29,6 +29,12 @@ describe("windowHalfSeconds", () => {
     expect(WINDOW_HALF_CHOICES).toContain(DEFAULT_WINDOW_HALF_SECONDS);
   });
 
+  it("keeps every width under an hour of recording, the point of windowing at all", () => {
+    // A window wide enough to hold hours is a track nobody can trim against, which is the thing
+    // this whole control exists to avoid.
+    expect(Math.max(...WINDOW_HALF_CHOICES) * 2).toBeLessThanOrEqual(3600);
+  });
+
   it("falls back to the default rather than leaving the track at a width nothing can undo", () => {
     // Whatever storage held: an older build's value, a hand-edited one, or nothing at all.
     expect(windowHalfSeconds(12345)).toBe(DEFAULT_WINDOW_HALF_SECONDS);
