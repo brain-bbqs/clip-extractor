@@ -74,20 +74,6 @@ export function frameAt(view: TimelineView, fraction: number, totalFrames: numbe
   return clamp(frame, 0, Math.max(0, totalFrames - 1));
 }
 
-/** How far a set of marks can travel together before the first of them would leave the recording.
- *
- * The playhead and the snippet's ends ride with the window, so they move as one piece: bounding the
- * travel rather than each mark keeps the range its own length at either end of the video, where
- * clamping the ends separately would squash it against the boundary instead of stopping it. */
-export function rigidShift(marks: readonly number[], travel: number, totalFrames: number): number {
-  if (marks.length === 0) return 0;
-  const last = Math.max(0, totalFrames - 1);
-  const shift = Math.max(-Math.min(...marks), Math.min(last - Math.max(...marks), travel));
-  // A group pressed against frame zero comes out of Math.max as -0, which is a strange thing for a
-  // frame count to be.
-  return shift === 0 ? 0 : shift;
-}
-
 /** One gradation on the trim track's ruler. */
 export interface RulerMark {
   frame: number;

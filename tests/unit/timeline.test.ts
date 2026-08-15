@@ -4,7 +4,6 @@ import {
   fractionOf,
   hourMarks,
   offersWindowChoice,
-  rigidShift,
   rulerMarks,
   usesWindow,
   windowFor,
@@ -111,28 +110,22 @@ describe("windowFor", () => {
   });
 });
 
-describe("rigidShift", () => {
-  it("moves the marks by the window's own travel when there is room", () => {
-    expect(rigidShift([5 * HOUR, 5 * HOUR + 450], 2 * HOUR, DAY)).toBe(2 * HOUR);
-    expect(rigidShift([5 * HOUR, 5 * HOUR + 450], -2 * HOUR, DAY)).toBe(-2 * HOUR);
-  });
-
-  it("stops the whole group at the start rather than squashing it against frame zero", () => {
-    // A 450-frame snippet 100 frames in: the group can only travel 100 back, and keeps its length.
-    expect(rigidShift([100, 550], -5000, DAY)).toBe(-100);
-  });
-
-  it("stops the whole group at the end of the recording", () => {
-    expect(rigidShift([DAY - 551, DAY - 101], 5000, DAY)).toBe(100);
-  });
-
-  it("does not move a group already against the boundary it is pushed into", () => {
-    expect(rigidShift([0, 450], -1, DAY)).toBe(0);
-    expect(rigidShift([DAY - 451, DAY - 1], 1, DAY)).toBe(0);
-  });
-
-  it("has nothing to move when nothing is marked and no playhead is given", () => {
-    expect(rigidShift([], 500, DAY)).toBe(0);
+describe("a mark carried by the window", () => {
+  it("stays inside the recording however far the window is pushed", () => {
+    // The property the playhead rides on. It holds its offset into the window, and the window is
+    // itself clamped to the video, so it can be carried anywhere without a clamp of its own — which
+    // is what keeps the marker on the track and the hairline on the overview naming one frame. Were
+    // that not so, the playhead would need clamping the window did not get, and the two drawings of
+    // it would drift apart.
+    const centres = [0, 1, HOUR, 13 * HOUR, DAY - HOUR, DAY - 1, DAY + 5 * HOUR, -5 * HOUR];
+    for (const centre of centres) {
+      const at = windowFor(DAY, centre, HALF);
+      for (const offset of [0, 1, Math.floor(at.len / 2), at.len - 1]) {
+        const frame = at.start + offset;
+        expect(frame).toBeGreaterThanOrEqual(0);
+        expect(frame).toBeLessThanOrEqual(DAY - 1);
+      }
+    }
   });
 });
 

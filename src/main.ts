@@ -7,7 +7,6 @@ import {
   fractionOf,
   hourMarks,
   offersWindowChoice,
-  rigidShift,
   rulerMarks,
   usesWindow,
   windowFor,
@@ -960,15 +959,24 @@ function setViewCenter(frame: number): void {
   updateSelUI();
 }
 
-/** Slides the playhead and either marked end by `travel`, as one piece. Bounded by whichever of
- * them would leave the recording first, so the range keeps its length at the ends of the video. */
+/** Slides the playhead and either marked end by the window's own travel.
+ *
+ * A mark inside the window can never leave the recording this way: the window is itself clamped to
+ * the video, so a mark at some offset into it lands inside wherever the window comes to rest. That
+ * is what keeps the playhead exactly where the window left it, and keeps its two drawings — the
+ * marker on the track and the hairline on the overview — reading the same frame.
+ *
+ * The clamp below therefore only ever bites on a mark that was already outside the window, which in
+ * practice means an end still sitting on the video's own boundary because nothing has been marked
+ * there yet. Such an end stays put while the rest travels, rather than holding the whole group
+ * back: bounding the travel by the most constrained mark would freeze the playhead against a window
+ * that kept moving, and the two drawings of it would then disagree. */
 function shiftMarkers(travel: number): void {
-  const marks = [state.cur, state.inF, state.outF].filter((m): m is number => m != null);
-  const shift = rigidShift(marks, travel, state.totalFrames);
-  if (shift === 0) return;
-  state.cur += shift;
-  if (state.inF != null) state.inF += shift;
-  if (state.outF != null) state.outF += shift;
+  const last = Math.max(0, state.totalFrames - 1);
+  const slide = (frame: number): number => Math.max(0, Math.min(last, frame + travel));
+  state.cur = slide(state.cur);
+  if (state.inF != null) state.inF = slide(state.inF);
+  if (state.outF != null) state.outF = slide(state.outF);
 }
 
 /** Ends a pan of the window. The frames the markers have come to rest on are the snippet now, and
@@ -1162,7 +1170,10 @@ function updateOverview(at: TimelineView): void {
   const den = Math.max(1, state.totalFrames - 1);
   const pos = (frame: number) => `${Math.max(0, Math.min(1, frame / den)) * 100}%`;
   els.overWin.style.left = pos(at.start);
-  els.overWin.style.width = `${(Math.min(at.len, state.totalFrames) / Math.max(1, state.totalFrames)) * 100}%`;
+  // Spans the frames it covers, first to last, on the same scale the marks below are placed on: a
+  // width taken over the frame count rather than the span between them would leave the band and the
+  // playhead inside it disagreeing about where the window ends.
+  els.overWin.style.width = `${(Math.max(0, at.len - 1) / den) * 100}%`;
   els.overBar.setAttribute("aria-valuemax", String(den));
   els.overBar.setAttribute("aria-valuenow", String(at.start));
   els.overBar.setAttribute("aria-valuetext", `frames ${at.start} to ${Math.min(den, at.start + at.len - 1)} of ${state.totalFrames}`);

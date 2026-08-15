@@ -952,11 +952,13 @@ input[type="checkbox"] {
   border-radius: 2px;
   background: color-mix(in srgb, var(--accent) 60%, transparent);
 }
-/* A hairline, against the snippet's two-pixel band: the playhead is one frame, and inside a window
-   only a few pixels wide on this bar it would otherwise read as a span of its own. */
+/* Thinner than a pixel: the playhead marks one frame, and on a bar spanning a day even a single
+   pixel of it stands for a minute or two of recording, which reads as a span of its own beside the
+   snippet's band. Half a pixel is about the floor — a display cannot draw less than one of its own,
+   so below this the line stops getting narrower and only gets fainter. */
 .over-mark.play {
-  width: 1px;
-  margin-left: -0.5px;
+  width: 0.5px;
+  margin-left: -0.25px;
   border-radius: 0;
   background: var(--ok);
 }
