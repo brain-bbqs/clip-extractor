@@ -7,6 +7,7 @@ import {
   fractionOf,
   hourMarks,
   offersWindowChoice,
+  rigidShift,
   rulerMarks,
   usesWindow,
   windowFor,
@@ -827,9 +828,11 @@ function schedulePrefetch(target: number): void {
 let shiftHeld = false;
 let shiftAnchor: number | null = null;
 
-async function seek(frame: number, force = false): Promise<void> {
+/** `extend` is what makes a shift-held seek grow the range; a seek the app makes on its own behalf
+ * (settling a panned window) passes false, since nothing was scrubbed over to include. */
+async function seek(frame: number, force = false, extend = true): Promise<void> {
   frame = Math.max(0, Math.min(state.totalFrames - 1, frame | 0));
-  if (shiftHeld && state.mode === "video") growSelection(frame);
+  if (extend && shiftHeld && state.mode === "video") growSelection(frame);
   if (frame === state.cur && !force && state.curBitmap) return;
   state.cur = frame;
   followPlayhead();
@@ -936,21 +939,47 @@ function halfFrames(): number {
 function view(): TimelineView {
   return windowFor(state.totalFrames, state.viewCenter, halfFrames());
 }
-/** Moves the window. Cheap by design: it decodes nothing, so it can run on every pointer move of a
- * drag across a day-long recording. The playhead catches up when the drag ends — see settleView. */
+/** Moves the window, carrying the playhead and the snippet's ends along with it.
+ *
+ * The markers hold their place on the track while the recording slides underneath, rather than the
+ * window sliding over markers pinned to the video: a snippet of the right length can then be pushed
+ * across a day to find the moment it belongs to, which is the way a range this short is found in a
+ * recording this long. Everything moves by the window's own travel, so a pan that runs into either
+ * end of the recording stops the whole assembly together instead of squashing the range against the
+ * boundary.
+ *
+ * Cheap by design: it moves indices and decodes nothing, so it can run on every pointer move of a
+ * drag across a day-long recording. The frame the playhead lands on is decoded once, by settleView,
+ * when the drag ends. */
 function setViewCenter(frame: number): void {
-  const next = Math.max(0, Math.min(Math.max(0, state.totalFrames - 1), Math.round(frame)));
-  if (next === state.viewCenter) return;
-  state.viewCenter = next;
+  const from = view().start;
+  state.viewCenter = Math.max(0, Math.min(Math.max(0, state.totalFrames - 1), Math.round(frame)));
+  const travel = view().start - from;
+  if (travel !== 0) shiftMarkers(travel);
   buildRuler();
   updateSelUI();
 }
-/** Called when a drag of the window ends, where the position stops being a waypoint and becomes a
- * destination: a playhead the window has left behind follows it in, at the cost of one seek. */
+
+/** Slides the playhead and either marked end by `travel`, as one piece. Bounded by whichever of
+ * them would leave the recording first, so the range keeps its length at the ends of the video. */
+function shiftMarkers(travel: number): void {
+  const marks = [state.cur, state.inF, state.outF].filter((m): m is number => m != null);
+  const shift = rigidShift(marks, travel, state.totalFrames);
+  if (shift === 0) return;
+  state.cur += shift;
+  if (state.inF != null) state.inF += shift;
+  if (state.outF != null) state.outF += shift;
+}
+
+/** Ends a pan of the window. The frames the markers have come to rest on are the snippet now, and
+ * the playhead's frame is decoded — one decode for the whole drag, rather than one per pointer
+ * move into a recording that is streamed a range request at a time. */
 function settleView(): void {
-  const { start, len } = view();
-  if (!state.backend || (state.cur >= start && state.cur < start + len)) return;
-  void seek(Math.max(start, Math.min(start + len - 1, state.viewCenter)));
+  if (!state.backend) return;
+  selectionChanged();
+  // Already on state.cur, so only a forced seek will fetch it; and never as a shift-extend, since a
+  // pan is not the shift-held scrub that grows a range.
+  void seek(state.cur, true, false);
 }
 /** Keeps a playing head inside the window by paging the window forward, rather than letting
  * playback run out through the edge of a track that then stops showing where it is. */
@@ -1155,9 +1184,10 @@ function overFrameAtClientX(clientX: number): number {
   return Math.round(t * Math.max(0, state.totalFrames - 1));
 }
 
-// Pressing the bar outside the window sends the window there — the quick way across a recording.
-// Pressing inside it keeps the grab's offset, so the window slides with the pointer instead of
-// jumping its centre under it.
+// Pressing the bar outside the window sends the window there — the quick way across a recording,
+// and it takes the snippet with it, since the window and what it holds travel together. Pressing
+// inside it keeps the grab's offset, so the window slides with the pointer instead of jumping its
+// centre under it.
 let overGrab: number | null = null;
 els.overBar.addEventListener("pointerdown", (e) => {
   if (!state.backend) return;

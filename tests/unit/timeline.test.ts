@@ -4,6 +4,7 @@ import {
   fractionOf,
   hourMarks,
   offersWindowChoice,
+  rigidShift,
   rulerMarks,
   usesWindow,
   windowFor,
@@ -107,6 +108,31 @@ describe("windowFor", () => {
 
   it("survives a video with no frames rather than returning a negative span", () => {
     expect(windowFor(0, 0, HALF)).toEqual({ start: 0, len: 1 });
+  });
+});
+
+describe("rigidShift", () => {
+  it("moves the marks by the window's own travel when there is room", () => {
+    expect(rigidShift([5 * HOUR, 5 * HOUR + 450], 2 * HOUR, DAY)).toBe(2 * HOUR);
+    expect(rigidShift([5 * HOUR, 5 * HOUR + 450], -2 * HOUR, DAY)).toBe(-2 * HOUR);
+  });
+
+  it("stops the whole group at the start rather than squashing it against frame zero", () => {
+    // A 450-frame snippet 100 frames in: the group can only travel 100 back, and keeps its length.
+    expect(rigidShift([100, 550], -5000, DAY)).toBe(-100);
+  });
+
+  it("stops the whole group at the end of the recording", () => {
+    expect(rigidShift([DAY - 551, DAY - 101], 5000, DAY)).toBe(100);
+  });
+
+  it("does not move a group already against the boundary it is pushed into", () => {
+    expect(rigidShift([0, 450], -1, DAY)).toBe(0);
+    expect(rigidShift([DAY - 451, DAY - 1], 1, DAY)).toBe(0);
+  });
+
+  it("has nothing to move when nothing is marked and no playhead is given", () => {
+    expect(rigidShift([], 500, DAY)).toBe(0);
   });
 });
 
