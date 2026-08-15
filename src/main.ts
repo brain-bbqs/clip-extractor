@@ -1828,23 +1828,28 @@ function browseRow(id: string, label: string, meta: string, onClick: () => void,
   const button = document.createElement("button");
   button.type = "button";
   button.className = "browse-item";
+  // The identifier and the badge share the row's leading column, stacked: a badge set between the
+  // identifier and the title pushes every title across by a different amount, so a column of them
+  // no longer lines up to be read down.
+  const idCol = document.createElement("span");
+  idCol.className = "browse-idcol";
   const idEl = document.createElement("span");
   idEl.className = "browse-id";
   idEl.textContent = id;
+  idCol.append(idEl);
+  if (badge) {
+    const badgeEl = document.createElement("span");
+    badgeEl.className = "badge";
+    badgeEl.textContent = badge;
+    idCol.append(badgeEl);
+  }
   const labelEl = document.createElement("span");
   labelEl.className = "browse-label";
   labelEl.textContent = label;
   const metaEl = document.createElement("span");
   metaEl.className = "browse-meta";
   metaEl.textContent = meta;
-  button.append(idEl, labelEl);
-  if (badge) {
-    const badgeEl = document.createElement("span");
-    badgeEl.className = "badge";
-    badgeEl.textContent = badge;
-    button.append(badgeEl);
-  }
-  button.append(metaEl);
+  button.append(idCol, labelEl, metaEl);
   button.addEventListener("click", onClick);
   li.append(button);
   return { li, labelEl, metaEl };
