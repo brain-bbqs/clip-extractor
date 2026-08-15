@@ -1846,7 +1846,7 @@ function browseRow(id: string, label: string, meta: string, onClick: () => void,
   idCol.append(idEl);
   if (badge) {
     const badgeEl = document.createElement("span");
-    badgeEl.className = "badge";
+    badgeEl.className = "badge restricted";
     badgeEl.textContent = badge;
     idCol.append(badgeEl);
   }

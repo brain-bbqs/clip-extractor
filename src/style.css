@@ -17,6 +17,11 @@
   --ok-soft: #e9f9ef;
   --warn: #b45309;
   --warn-soft: #fdf3e3;
+  /* Orange, for marking a dataset only its owner can see. Deliberately not the amber above: that
+     one reads as yellow in dark mode, and yellow against this indigo accent is the pair a
+     blue-yellow colour deficiency collapses. */
+  --restricted: #c2410c;
+  --restricted-soft: #fdece1;
   --err: #b91c1c;
   --err-soft: #fdecec;
   --stage-bg: #000;
@@ -36,6 +41,8 @@
     --ok-soft: #16321f;
     --warn: #fbbf24;
     --warn-soft: #3a2f14;
+    --restricted: #fb923c;
+    --restricted-soft: #3a2417;
     --err: #f87171;
     --err-soft: #3a1d1d;
   }
@@ -53,6 +60,8 @@
   --ok-soft: #16321f;
   --warn: #fbbf24;
   --warn-soft: #3a2f14;
+  --restricted: #fb923c;
+  --restricted-soft: #3a2417;
   --err: #f87171;
   --err-soft: #3a1d1d;
 }
@@ -379,6 +388,12 @@ select {
 .badge.ok {
   background: var(--ok-soft);
   color: var(--ok);
+}
+/* Marks something only the signed-in owner can see, so it has to read as distinct from the accent
+   the identifier beside it is set in. */
+.badge.restricted {
+  background: var(--restricted-soft);
+  color: var(--restricted);
 }
 
 /* Centered toggle rows (source picker and video/frame selector) */
