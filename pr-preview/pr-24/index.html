@@ -93,7 +93,7 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-DBogHXql.js"></script>
+    <script type="module" crossorigin src="./assets/index-CoaLrkJp.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-Bdhci9MM.css">
   </head>
   <body>
@@ -284,8 +284,8 @@
              indistinguishable wherever they meet. Each marker tapers to a point, so its tip names
              one frame on the ruler instead of a 14px-wide guess at which frame it is on, and each is
              a hit area holding the drawn marker — a clip-path would otherwise clip the focus ring
-             away along with the corners. The [ ] I O shortcuts still mark either end at the
-             playhead. -->
+             away along with the corners. Either end is set by dragging its marker, by arrowing it
+             once focused, or by typing a frame index into the readout below. -->
         <div id="selbarWrap" class="track-pad">
           <div id="selbar">
             <div id="selfill" class="video-only" style="display: none"></div>
@@ -334,8 +334,8 @@
           <div id="selruler" class="sel-ruler" aria-hidden="true"></div>
 
           <!-- The whole recording, under the track that trims it. Only shown once the recording runs
-               longer than the stretch the track covers (see lib/timeline.ts): below that the track
-               already spans the whole video and this would be a slider with nowhere to slide.
+               longer than half an hour (see lib/timeline.ts): below that one track holds the lot at
+               a scale that can still be aimed.
                Dragging the window carries the playhead and the snippet with it, so a range of the
                right length can be pushed across a day to find the moment it belongs to. It decodes
                nothing on the way, so crossing a day costs one seek when the drag ends rather than one
