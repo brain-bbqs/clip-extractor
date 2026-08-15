@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.1.7
+
+#### 🚀 Enhancement
+
+- Dropped two hints from the cards: the line under the Stream box describing what it does, and the note saying a streamed original is not sent back with the selection ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+
+#### 🐛 Bug Fix
+
+- No snippet this app writes carries audio any more. Every route but one already dropped it; a fast trim stream-copied the source's tracks straight through, so a recording being de-identified could send voices to the archive in a track nobody was shown ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Extracting a selection from a streamed video no longer downloads the whole recording first: it is cut straight out of the stream, so a five second clip an hour into a 10.6 GB file reads about 1.5 MB rather than all 10.6 GB, which never finished ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A video named by URL now streams over range requests instead of being downloaded whole before it can play: a 10.6 GB recording on the EMBER bucket opens after about 71 MB ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A long recording no longer locks the tab up while it opens: the frame index is taken from the rate the container records rather than by walking every packet, which for a 16-hour file meant 1.76 million of them with nothing yielding to the browser in between ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- The timeline ruler now carries a recording that runs for hours, with gradations up to twelve-hourly and an hours field in its labels, instead of hundreds of ticks under a smear of overlapping ones ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A seek into a stretch the read-ahead is still decoding is now served as soon as that frame lands rather than after the whole window, so scrubbing over fresh video no longer feels stuck ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Opening a second video now releases the first, whose decoded frames and in-flight reads were left behind ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Opening a long recording now reports how much of its index has been read, rather than looking stalled while it is ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+
+#### 🏠 Internal
+
+- Added `src/lib/streaming.ts`, a frame-indexed video backend built on mediabunny directly, with sleap-io.js's own backends kept as the fallbacks ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A streamed selection is trimmed by mediabunny rather than ffmpeg.wasm, which copies the frames over untouched when the cut may start on a key frame and re-encodes when it must be frame-exact or carry a blur ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Added `mediabunny` as a direct dependency, at the cost of a dependency entry rather than download weight, since sleap-io.js already brings it into the bundle ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A file whose frames do not sit at the rate its header records is still indexed packet by packet, and that walk now yields to the event loop as it goes ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- A video backend may now offer a `close()`, which the streaming one uses to drop its frames and cancel its reads ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Moved the ruler's gradation and label arithmetic into `lib/format.ts`, where it is unit tested ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+- Added unit coverage for the new backend against a stand-in for mediabunny, above all that a constant-rate file is opened without walking a single packet ([#23](https://github.com/brain-bbqs/clip-extractor/pull/23))
+
 ## 0.1.6
 
 #### 🐛 Bug Fix

@@ -505,10 +505,6 @@ input[type="url"] {
   background: var(--bg);
   color: var(--text);
 }
-.ember-hint {
-  margin: 0.6rem 0 0;
-}
-
 /* Player */
 input[type="checkbox"] {
   width: auto;

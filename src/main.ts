@@ -1,8 +1,9 @@
 import "./style.css";
 import * as sio from "@talmolab/sleap-io.js";
 import { getElements } from "./ui/elements";
-import { bytes, fmtTime } from "./lib/format";
+import { bytes, fmtTime, rulerLabel, rulerStep } from "./lib/format";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
+import { openStreamingBlob, openStreamingUrl, StreamingVideoBackend } from "./lib/streaming";
 import { drawPose, labelsToPose } from "./lib/pose";
 import {
   slpSourceMeta,
@@ -189,28 +190,57 @@ interface OpenedSource {
 // heap alongside it pushes the tab into thrashing. 32 still covers the read-ahead window below.
 const FRAME_CACHE_SIZE = 32;
 
+// Opening a long recording means reading its container index, which for a multi-gigabyte file is
+// itself tens of megabytes over the network. That is a wait worth reporting rather than sitting
+// through in silence, so the read is logged as it goes, no more often than this.
+const INDEX_PROGRESS_MS = 2000;
+
+/** A throttled reporter for how much of `name` has been read while it is being opened. */
+function indexProgress(name: string): (bytesRead: number) => void {
+  let last = 0;
+  return (bytesRead) => {
+    const now = Date.now();
+    if (now - last < INDEX_PROGRESS_MS) return;
+    last = now;
+    log(`Reading ${name}'s index… ${bytes(bytesRead)} so far`);
+  };
+}
+
+/** Opens bytes already in hand, falling back through sleap-io.js's backends: its MediaBunny one
+ * reads the whole file to index it (see lib/streaming.ts), which is slow but not wrong, and its
+ * mp4box one covers files MediaBunny will not open at all. */
+async function openLocalBackend(file: File, name: string): Promise<SleapVideoBackend> {
+  try {
+    return await openStreamingBlob(file, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
+  } catch (e) {
+    log(`Streaming open failed (${(e as Error).message}); indexing the whole file…`, "warn");
+  }
+  try {
+    return await sio.MediaBunnyVideoBackend.fromBlob(file, name, { cacheSize: FRAME_CACHE_SIZE });
+  } catch (e) {
+    log(`MediaBunny failed (${(e as Error).message}); trying mp4box…`, "warn");
+    const vb = await sio.createVideoBackend(file, { backend: "mp4box" });
+    const maybeReady = (vb as { ready?: Promise<unknown> }).ready;
+    if (maybeReady) await maybeReady;
+    return vb;
+  }
+}
+
 async function openVideoBackend(source: File | string, name: string): Promise<OpenedSource> {
   if (typeof source === "string") {
     try {
-      return { backend: await sio.MediaBunnyVideoBackend.fromUrl(source, { cacheSize: FRAME_CACHE_SIZE }), file: null };
+      const backend = await openStreamingUrl(source, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
+      return { backend, file: null };
     } catch (e) {
       log(`Range/stream open failed (${(e as Error).message}); downloading full file…`, "warn");
       const resp = await fetch(source);
       if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching video`);
       const blob = await resp.blob();
       const file = new File([blob], name, { type: blob.type || "video/mp4" });
-      return { backend: await sio.MediaBunnyVideoBackend.fromBlob(file, name, { cacheSize: FRAME_CACHE_SIZE }), file };
+      return { backend: await openLocalBackend(file, name), file };
     }
   }
-  try {
-    return { backend: await sio.MediaBunnyVideoBackend.fromBlob(source, name, { cacheSize: FRAME_CACHE_SIZE }), file: source };
-  } catch (e) {
-    log(`MediaBunny failed (${(e as Error).message}); trying mp4box…`, "warn");
-    const vb = await sio.createVideoBackend(source, { backend: "mp4box" });
-    const maybeReady = (vb as { ready?: Promise<unknown> }).ready;
-    if (maybeReady) await maybeReady;
-    return { backend: vb, file: source };
-  }
+  return { backend: await openLocalBackend(source, name), file: source };
 }
 
 async function loadVideo(source: File | string, name: string, url: string | null = null): Promise<void> {
@@ -218,6 +248,12 @@ async function loadVideo(source: File | string, name: string, url: string | null
   log(`Loading video: ${name}…`);
   try {
     const { backend, file } = await openVideoBackend(source, name);
+    // Dropping the reference to the outgoing backend frees neither its decoded frames — ImageBitmaps
+    // hold memory the collector does not account for — nor, for a streamed URL, the requests its
+    // source still has in flight. Closed only once the replacement is open, so a load that fails
+    // leaves the video that was on screen playable.
+    state.backend?.close?.();
+    state.curBitmap = null;
     state.backend = backend;
     state.frameOrder = await buildFrameOrder(backend);
     const shape = backend.shape ?? [];
@@ -942,15 +978,6 @@ function updateSelUI(): void {
 // compete for the same drag: the top row only ever moves where you are looking, and this one only
 // ever moves what will be extracted.
 
-// Gradations the ruler is allowed to divide a video into, in seconds. Every one of them is a step
-// someone reads at a glance; 3s or 7s marks would be arithmetic instead.
-const RULER_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900];
-
-function rulerLabel(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${String(Math.round(seconds - minutes * 60)).padStart(2, "0")}`;
-}
-
 /** Lays out the time gradations under the track. Rebuilt per load, since the spacing that suits a
  * thirty-second clip is unreadable on a ten-minute one: the step is chosen to land near six labelled
  * divisions whatever the duration, then subdivided into fifths. */
@@ -958,9 +985,7 @@ function buildRuler(): void {
   els.selRuler.replaceChildren();
   const last = state.totalFrames - 1;
   if (!state.backend || last <= 0 || !state.fps) return;
-  const seconds = last / state.fps;
-  const major = RULER_STEPS.find((step) => step >= seconds / 6) ?? RULER_STEPS[RULER_STEPS.length - 1];
-  const minor = major / 5;
+  const { minor } = rulerStep(last / state.fps);
   const marks = document.createDocumentFragment();
   for (let step = 0; step * minor * state.fps <= last; step++) {
     const frame = Math.round(step * minor * state.fps);
@@ -1772,18 +1797,17 @@ function updateDeliveryCopy(kind: SelectionKind): void {
   els.selectionDescription.placeholder = `What event does this ${kind} showcase?\n\nNote anything that went wrong in it, or any other details you want to share along with the clip.`;
 }
 
-/** The "include the original content" switch, and the two notes explaining the cases where it is
- * not on offer: a streamed source has no local bytes to send, and a blurred selection must not
- * travel beside an original that still holds the pixels the blur was placed over. The switch is
- * held off and disabled rather than hidden in that second case, so it is clear the original is
- * being withheld and why. */
-function updateOriginalContentRow(hasVideo: boolean): void {
+/** The "include the original content" switch, and the note explaining the case where it is on offer
+ * but withheld: a blurred selection must not travel beside an original that still holds the pixels
+ * the blur was placed over. The switch is held off and disabled rather than hidden there, so it is
+ * clear the original is being withheld and why. A source with no local bytes to send simply does
+ * not raise the row at all. */
+function updateOriginalContentRow(): void {
   // Original content can only ride along when its bytes are already in the browser; a range-streamed
   // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
   const canSendOriginal = state.sourceFile !== null || state.slpFile !== null;
   const blurred = state.blurRegions.length > 0;
   els.uploadOriginalRow.hidden = !canSendOriginal;
-  els.uploadOriginalNote.hidden = canSendOriginal || !hasVideo;
   els.uploadOriginal.disabled = blurred;
   els.uploadOriginal.checked = !blurred && includeOriginal;
   els.blurOriginalNote.hidden = !blurred || !canSendOriginal;
@@ -1806,7 +1830,7 @@ function updateDeliveryGate(): void {
   els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !described || !cfg.dandisetId || notEmbargoed || unconfirmed;
   els.btnUpload.hidden = uploadSubmitted;
   updateDeliveryCopy(kind);
-  updateOriginalContentRow(hasVideo);
+  updateOriginalContentRow();
   if (deliveryBusy) return;
   updateDeliveryPreview();
   // Only ever says why the button is unavailable; a ready button needs no caption.
@@ -1879,6 +1903,9 @@ async function extractSelection(
   return extractClip({
     sourceFile: state.sourceFile,
     sourceUrl: state.sourceUrl,
+    // Only the streaming backend can cut a selection out of a source it never downloaded; the
+    // sleap-io.js fallbacks hold no such thing, and fall through to ffmpeg as before.
+    backend: backend instanceof StreamingVideoBackend ? backend : null,
     sourceName: entities.sourceName,
     lo: entities.inFrame,
     hi: entities.outFrame,

@@ -76,7 +76,6 @@ export function getElements() {
     selectionDescription: required<HTMLTextAreaElement>("selectionDescription"),
     uploadOriginalRow: required<HTMLLabelElement>("uploadOriginalRow"),
     uploadOriginal: required<HTMLInputElement>("uploadOriginal"),
-    uploadOriginalNote: required<HTMLParagraphElement>("uploadOriginalNote"),
     blurOriginalNote: required<HTMLParagraphElement>("blurOriginalNote"),
     downloadPane: required<HTMLDivElement>("downloadPane"),
     downloadHint: required<HTMLParagraphElement>("downloadHint"),

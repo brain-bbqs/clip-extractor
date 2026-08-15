@@ -16,6 +16,12 @@ let currentHandlers: EnsureFfmpegHandlers = {};
 // Shared by every re-encoding path here: H.264 in a faststart MP4, no audio.
 const ENCODE_ARGS = ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart"];
 
+// Nothing this app writes carries audio. A recording it exists to de-identify should not send
+// voices to the archive in a track nobody was shown, and the player never offered one to review.
+// The re-encoding paths get this through ENCODE_ARGS; a stream copy has to be told separately,
+// since `-c copy` would otherwise carry every stream in the source straight through.
+const NO_AUDIO = "-an";
+
 /** Builds the ffmpeg CLI args for trimming [lo, hi] (inclusive, frame indices) out of `inName`,
  * blurring `blur`'s regions into every frame on the way through. "fast" stream-copies at the nearest
  * keyframe (may include a few extra leading frames); "precise" re-encodes with a frame-exact `trim`
@@ -33,7 +39,20 @@ export function ffmpegArgs(
   const start = lo / fps;
   const dur = (hi - lo + 1) / fps;
   if (streamCopies(trim, blur)) {
-    return ["-ss", start.toFixed(4), "-i", inName, "-t", dur.toFixed(4), "-c", "copy", "-avoid_negative_ts", "make_zero", outName];
+    return [
+      "-ss",
+      start.toFixed(4),
+      "-i",
+      inName,
+      "-t",
+      dur.toFixed(4),
+      "-c",
+      "copy",
+      NO_AUDIO,
+      "-avoid_negative_ts",
+      "make_zero",
+      outName,
+    ];
   }
   const trimChain = `trim=start_frame=${lo}:end_frame=${hi + 1},setpts=PTS-STARTPTS`;
   if (!blur.length) return ["-i", inName, "-vf", trimChain, ...ENCODE_ARGS, outName];
