@@ -54,6 +54,24 @@ describe("bytes", () => {
     expect(bytes(5 * 1048576)).toBe("5.00 MB");
   });
 
+  // An archived recording runs to hundreds of gigabytes, which stopping at MB rendered as six
+  // figures of them.
+  it("carries on into GB and TB, rather than counting a huge file in megabytes", () => {
+    expect(bytes(10.6 * 1024 ** 3)).toBe("10.60 GB");
+    expect(bytes(360464443754)).toBe("335.71 GB");
+    expect(bytes(3 * 1024 ** 4)).toBe("3.00 TB");
+  });
+
+  it("changes unit exactly at each multiple", () => {
+    expect(bytes(1023)).toBe("1023 B");
+    expect(bytes(1024)).toBe("1.0 KB");
+    expect(bytes(1024 ** 2 - 1)).toBe("1024.0 KB");
+    expect(bytes(1024 ** 2)).toBe("1.00 MB");
+    expect(bytes(1024 ** 3 - 1)).toBe("1024.00 MB");
+    expect(bytes(1024 ** 3)).toBe("1.00 GB");
+    expect(bytes(1024 ** 4)).toBe("1.00 TB");
+  });
+
   it("has nothing to show for nothing", () => {
     expect(bytes(null)).toBe("—");
     expect(bytes(undefined)).toBe("—");

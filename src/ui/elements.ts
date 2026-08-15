@@ -17,6 +17,13 @@ export function getElements() {
     // Load card
     srcSeg: required<HTMLDivElement>("srcSeg"),
     localPane: required<HTMLDivElement>("localPane"),
+    browsePane: required<HTMLDivElement>("browsePane"),
+    browseFilter: required<HTMLInputElement>("browseFilter"),
+    browseStatus: required<HTMLParagraphElement>("browseStatus"),
+    browseDandisets: required<HTMLUListElement>("browseDandisets"),
+    browseVideoHeading: required<HTMLSpanElement>("browseVideoHeading"),
+    browseDandisetLink: required<HTMLAnchorElement>("browseDandisetLink"),
+    browseVideos: required<HTMLUListElement>("browseVideos"),
     emberPane: required<HTMLDivElement>("emberPane"),
     emberUrl: required<HTMLInputElement>("emberUrl"),
     emberLoadBtn: required<HTMLButtonElement>("emberLoadBtn"),

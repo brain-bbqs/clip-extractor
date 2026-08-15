@@ -9,12 +9,26 @@ export function fmtTime(frame: number, fps: number): string {
   return `${mm}:${ss.toFixed(2).padStart(5, "0")}`;
 }
 
-/** Formats a byte count as a human-readable B/KB/MB string, or "—" for null/undefined. */
+// Binary multiples, labelled with the shorter names — the convention every readout in this app has
+// always used, kept so a size reads the same wherever it appears.
+const KB = 1024;
+const MB = KB * 1024;
+const GB = MB * 1024;
+const TB = GB * 1024;
+
+/**
+ * Formats a byte count as a human-readable B/KB/MB/GB/TB string, or "—" for null/undefined.
+ *
+ * The ladder runs to terabytes because the things being measured do: an archived recording can be
+ * hundreds of gigabytes, and stopping at megabytes rendered one of those as six figures of MB.
+ */
 export function bytes(n: number | null | undefined): string {
   if (n == null) return "—";
-  if (n < 1024) return `${n} B`;
-  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1048576).toFixed(2)} MB`;
+  if (n < KB) return `${n} B`;
+  if (n < MB) return `${(n / KB).toFixed(1)} KB`;
+  if (n < GB) return `${(n / MB).toFixed(2)} MB`;
+  if (n < TB) return `${(n / GB).toFixed(2)} GB`;
+  return `${(n / TB).toFixed(2)} TB`;
 }
 
 // Gradations the timeline ruler is allowed to divide a video into, in seconds. Every one of them is
