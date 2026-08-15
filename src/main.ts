@@ -1,7 +1,19 @@
 import "./style.css";
 import * as sio from "@talmolab/sleap-io.js";
 import { getElements } from "./ui/elements";
-import { bytes, fmtTime, rulerLabel, rulerStep } from "./lib/format";
+import { bytes, fmtTime, rulerLabel } from "./lib/format";
+import {
+  frameAt,
+  fractionOf,
+  hourMarks,
+  rulerMarks,
+  showsWindow,
+  windowFor,
+  windowHalfFrames,
+  windowHalfSeconds,
+  DEFAULT_WINDOW_HALF_SECONDS,
+  type TimelineView,
+} from "./lib/timeline";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { openStreamingBlob, openStreamingUrl, StreamingVideoBackend } from "./lib/streaming";
 import { drawPose, labelsToPose } from "./lib/pose";
@@ -134,6 +146,13 @@ interface AppState {
    * different video is opened underneath it. Null whenever `pose` is null. */
   slpMeta: SlpSourceMeta | null;
   mode: SelectorMode;
+  /** Where the trim track sits in the recording. The track covers a window centred here rather than
+   * the whole video once the video is long enough for that to matter (see lib/timeline.ts); until
+   * then the window is the whole video and this has nothing to do. */
+  viewCenter: number;
+  /** How much of the recording the trim track covers either side of `viewCenter`. A working
+   * preference rather than anything about the loaded video, so it survives opening another one. */
+  windowHalf: number;
   /** Areas blurred out of everything extracted from this video, in source pixels. Placed with the
    * blur tool under the player, which the human-subjects gate reveals (see below). */
   blurRegions: BlurRegion[];
@@ -161,6 +180,8 @@ const state: AppState = {
   slpKind: null,
   slpMeta: null,
   mode: "video",
+  viewCenter: 0,
+  windowHalf: DEFAULT_WINDOW_HALF_SECONDS,
   blurRegions: [],
   curBitmap: null,
 };
@@ -261,6 +282,8 @@ async function loadVideo(source: File | string, name: string, url: string | null
     state.width = shape[2] || backend.width || 0;
     state.totalFrames = backend.numFrames ?? shape.at(0) ?? 0;
     state.fps = backend.fps || 30;
+    // A new recording opens at its start, like the playhead below it.
+    state.viewCenter = 0;
     state.sourceName = name;
     state.sourceUrl = url;
     // loadVideo fully owns source state: this is either the dropped File, the one the stream
@@ -803,11 +826,14 @@ function schedulePrefetch(target: number): void {
 let shiftHeld = false;
 let shiftAnchor: number | null = null;
 
-async function seek(frame: number, force = false): Promise<void> {
+/** `extend` is what makes a shift-held seek grow the range; a seek the app makes on its own behalf
+ * (settling a panned window) passes false, since nothing was scrubbed over to include. */
+async function seek(frame: number, force = false, extend = true): Promise<void> {
   frame = Math.max(0, Math.min(state.totalFrames - 1, frame | 0));
-  if (shiftHeld && state.mode === "video") growSelection(frame);
+  if (extend && shiftHeld && state.mode === "video") growSelection(frame);
   if (frame === state.cur && !force && state.curBitmap) return;
   state.cur = frame;
+  followPlayhead();
   if (seeking) {
     pendingSeek = frame;
     updateSelUI();
@@ -893,10 +919,89 @@ function togglePlay(): void {
 // ============================================================
 // Selection
 // ============================================================
+/** The stretch that will be extracted. Both ends are set together or not at all — every route to a
+ * range writes both — so the fallbacks below stand for "nothing marked yet", which is the whole
+ * recording, rather than for one end of a half-marked one. */
 function selRange(): [number, number] {
   const a = state.inF != null ? state.inF : 0;
   const b = state.outF != null ? state.outF : state.totalFrames - 1;
   return [Math.min(a, b), Math.max(a, b)];
+}
+
+// ============================================================
+// The stretch of the recording the trim track covers
+// ============================================================
+/** The window's half-width for the loaded source, in frames. */
+function halfFrames(): number {
+  return windowHalfFrames(state.windowHalf, state.fps);
+}
+/** What the trim track currently spans: the whole video, or a window inside it once the video is
+ * long enough that one track across all of it stops being a control anyone can aim. */
+function view(): TimelineView {
+  return windowFor(state.totalFrames, state.viewCenter, halfFrames());
+}
+/** Moves the window, carrying the playhead and the snippet's ends along with it.
+ *
+ * The markers hold their place on the track while the recording slides underneath, rather than the
+ * window sliding over markers pinned to the video: a snippet of the right length can then be pushed
+ * across a day to find the moment it belongs to, which is the way a range this short is found in a
+ * recording this long. Everything moves by the window's own travel, so a pan that runs into either
+ * end of the recording stops the whole assembly together instead of squashing the range against the
+ * boundary.
+ *
+ * Cheap by design: it moves indices and decodes nothing, so it can run on every pointer move of a
+ * drag across a day-long recording. The frame the playhead lands on is decoded once, by settleView,
+ * when the drag ends. */
+function setViewCenter(frame: number): void {
+  const from = view().start;
+  state.viewCenter = Math.max(0, Math.min(Math.max(0, state.totalFrames - 1), Math.round(frame)));
+  const travel = view().start - from;
+  if (travel !== 0) shiftMarkers(travel);
+  buildRuler();
+  updateSelUI();
+}
+
+/** Slides the playhead and either marked end by the window's own travel.
+ *
+ * A mark inside the window can never leave the recording this way: the window is itself clamped to
+ * the video, so a mark at some offset into it lands inside wherever the window comes to rest. That
+ * is what keeps the playhead exactly where the window left it, and keeps its two drawings — the
+ * marker on the track and the hairline on the overview — reading the same frame.
+ *
+ * The clamp below therefore only ever bites on a mark that was already outside the window, which in
+ * practice means an end still sitting on the video's own boundary because nothing has been marked
+ * there yet. Such an end stays put while the rest travels, rather than holding the whole group
+ * back: bounding the travel by the most constrained mark would freeze the playhead against a window
+ * that kept moving, and the two drawings of it would then disagree. */
+function shiftMarkers(travel: number): void {
+  const last = Math.max(0, state.totalFrames - 1);
+  const slide = (frame: number): number => Math.max(0, Math.min(last, frame + travel));
+  state.cur = slide(state.cur);
+  if (state.inF != null) state.inF = slide(state.inF);
+  if (state.outF != null) state.outF = slide(state.outF);
+}
+
+/** Ends a pan of the window. The frames the markers have come to rest on are the snippet now, and
+ * the playhead's frame is decoded — one decode for the whole drag, rather than one per pointer
+ * move into a recording that is streamed a range request at a time. */
+function settleView(): void {
+  if (!state.backend) return;
+  selectionChanged();
+  // Already on state.cur, so only a forced seek will fetch it; and never as a shift-extend, since a
+  // pan is not the shift-held scrub that grows a range.
+  void seek(state.cur, true, false);
+}
+/** Keeps a playing head inside the window by paging the window forward, rather than letting
+ * playback run out through the edge of a track that then stops showing where it is. */
+function followPlayhead(): void {
+  const { start, len } = view();
+  if (state.cur >= start && state.cur < start + len) return;
+  // Landing the playhead on the window's leading edge rather than at its centre: playback carries
+  // on into fresh video instead of re-centring, and pages again when it reaches the end.
+  state.viewCenter = state.cur + Math.floor(len / 2);
+  // The gradations belong to the window, so they move with it; the markers and the overview are
+  // redrawn by the updateSelUI() that every seek ends with.
+  buildRuler();
 }
 
 // Grow the selection to include `target` (used while shift-seeking). Seeds from the shift-press
@@ -936,32 +1041,46 @@ function setFrameField(input: HTMLInputElement, value: number | null): void {
 }
 
 /** Places one trim handle and tells assistive technology where it now sits. `unset` marks an end
- * that is only sitting at the video's own boundary because nothing has been marked there yet. */
-function positionHandle(handle: HTMLElement, frame: number, den: number, unset: boolean): void {
-  handle.style.left = `${(frame / den) * 100}%`;
+ * that is only sitting at the video's own boundary because nothing has been marked there yet.
+ *
+ * A frame outside the stretch the track covers is pinned to the edge it left through and flagged,
+ * rather than positioned off the end of a track that does not reach it. The value it reports stays
+ * the frame itself: the marker's range is the whole video however little of it is on screen. */
+function positionHandle(handle: HTMLElement, frame: number, at: TimelineView, unset: boolean): void {
+  const t = fractionOf(at, frame);
+  const outside = t < 0 || t > 1;
+  handle.style.left = `${Math.max(0, Math.min(1, t)) * 100}%`;
   handle.classList.toggle("unset", unset);
+  handle.classList.toggle("outside", outside);
   handle.setAttribute("aria-valuemax", String(Math.max(0, state.totalFrames - 1)));
   handle.setAttribute("aria-valuenow", String(frame));
-  handle.setAttribute("aria-valuetext", `frame ${frame}`);
+  handle.setAttribute("aria-valuetext", outside ? `frame ${frame}, outside the visible range` : `frame ${frame}`);
 }
 
 function updateSelUI(): void {
   setFrameField(els.curVal, state.backend ? state.cur : null);
   setFrameField(els.inVal, state.inF);
   setFrameField(els.outVal, state.outF);
-  const tf = state.totalFrames || 1;
-  const den = Math.max(1, tf - 1); // avoid 0/0 → NaN% for a single-frame video
+  const at = view();
   const [lo, hi] = selRange();
   // The band is hidden by an inline style rather than by `.video-only`, which a live inline display
   // would outrank; the markers beside it carry no inline display, so the class is enough for them.
   const banded = state.mode === "video" && (state.inF != null || state.outF != null);
   els.selfill.style.display = banded ? "block" : "none";
-  els.selfill.style.left = `${(lo / den) * 100}%`;
-  els.selfill.style.width = `${((hi - lo) / den) * 100}%`;
-  positionHandle(els.inHandle, lo, den, state.inF == null);
-  positionHandle(els.outHandle, hi, den, state.outF == null);
+  // Clipped to the track, since either end may sit outside the stretch it covers. The border on a
+  // clipped side comes off with it (see #selfill.clip-l/-r): the band stops at the edge of the
+  // window there, not at the end of the snippet.
+  const a = Math.max(0, Math.min(1, fractionOf(at, lo)));
+  const b = Math.max(0, Math.min(1, fractionOf(at, hi)));
+  els.selfill.style.left = `${a * 100}%`;
+  els.selfill.style.width = `${(b - a) * 100}%`;
+  els.selfill.classList.toggle("clip-l", fractionOf(at, lo) < 0);
+  els.selfill.classList.toggle("clip-r", fractionOf(at, hi) > 1);
+  positionHandle(els.inHandle, lo, at, state.inF == null);
+  positionHandle(els.outHandle, hi, at, state.outF == null);
   // The playhead draws its own line through the track, so positioning the marker positions both.
-  positionHandle(els.playHandle, state.cur, den, false);
+  positionHandle(els.playHandle, state.cur, at, false);
+  updateOverview(at);
   // Frame mode's output name tracks the current frame, so the preview follows every seek.
   if (!deliveryBusy) {
     updateDeliveryPreview();
@@ -978,41 +1097,176 @@ function updateSelUI(): void {
 // compete for the same drag: the top row only ever moves where you are looking, and this one only
 // ever moves what will be extracted.
 
-/** Lays out the time gradations under the track. Rebuilt per load, since the spacing that suits a
- * thirty-second clip is unreadable on a ten-minute one: the step is chosen to land near six labelled
- * divisions whatever the duration, then subdivided into fifths. */
+/** Lays out the time gradations under the track. Rebuilt whenever the stretch it covers changes,
+ * since the spacing that suits a thirty-second clip is unreadable on a ten-minute one: the step is
+ * chosen to land near six labelled divisions whatever the duration, then subdivided into fifths. */
 function buildRuler(): void {
   els.selRuler.replaceChildren();
-  const last = state.totalFrames - 1;
-  if (!state.backend || last <= 0 || !state.fps) return;
-  const { minor } = rulerStep(last / state.fps);
+  if (!state.backend || state.totalFrames <= 1 || !state.fps) return;
+  const at = view();
   const marks = document.createDocumentFragment();
-  for (let step = 0; step * minor * state.fps <= last; step++) {
-    const frame = Math.round(step * minor * state.fps);
-    const position = `${(frame / last) * 100}%`;
-    const isMajor = step % 5 === 0;
+  for (const { frame, seconds, major } of rulerMarks(at, state.fps)) {
+    const t = fractionOf(at, frame);
+    const position = `${t * 100}%`;
     const tick = document.createElement("div");
-    tick.className = isMajor ? "sel-tick major" : "sel-tick";
+    tick.className = major ? "sel-tick major" : "sel-tick";
     tick.style.left = position;
     marks.append(tick);
-    if (!isMajor) continue;
+    if (!major) continue;
     const label = document.createElement("span");
     // The outermost labels align inwards; centred, they would hang off the ends of the track.
-    const edge = frame === 0 ? " at-start" : frame / last > 0.96 ? " at-end" : "";
+    const edge = t < 0.02 ? " at-start" : t > 0.96 ? " at-end" : "";
     label.className = `sel-tick-label${edge}`;
     label.style.left = position;
-    label.textContent = rulerLabel(step * minor);
+    label.textContent = rulerLabel(seconds);
     marks.append(label);
   }
   els.selRuler.append(marks);
 }
 
-/** Which frame a page x-coordinate falls on, clamped to the video. */
+// ============================================================
+// Overview: the whole recording, under the track that trims part of it
+// ============================================================
+
+/** Shows or hides the overview, and lays out its gradations for what it now spans. It arrives with
+ * its width control, on the transport row, at the same length of recording: a width means nothing
+ * without a window to apply it to, and a window means nothing without a width to set. */
+function refreshOverview(): void {
+  const windowed = !!state.backend && showsWindow(state.totalFrames, state.fps);
+  els.overviewWrap.hidden = !windowed;
+  els.windowGroup.hidden = !windowed;
+  buildOverviewRuler();
+}
+
+/** Lays out the hour gradations under the overview bar. Depends on how wide the bar is, so it is
+ * rebuilt on resize as well as on load. */
+function buildOverviewRuler(): void {
+  els.overRuler.replaceChildren();
+  if (els.overviewWrap.hidden) return;
+  const marks = document.createDocumentFragment();
+  for (const { frame, hour, labelled } of hourMarks(state.totalFrames, state.fps, els.overBar.clientWidth)) {
+    const t = frame / Math.max(1, state.totalFrames - 1);
+    const position = `${Math.min(1, t) * 100}%`;
+    const tick = document.createElement("div");
+    tick.className = labelled ? "over-tick major" : "over-tick";
+    tick.style.left = position;
+    marks.append(tick);
+    if (!labelled) continue;
+    const label = document.createElement("span");
+    const edge = t < 0.02 ? " at-start" : t > 0.97 ? " at-end" : "";
+    label.className = `over-tick-label${edge}`;
+    label.style.left = position;
+    label.textContent = `${hour}:00`;
+    marks.append(label);
+  }
+  els.overRuler.append(marks);
+}
+
+/** Draws the window, the snippet and the playhead onto the whole recording. */
+function updateOverview(at: TimelineView): void {
+  if (els.overviewWrap.hidden) return;
+  const den = Math.max(1, state.totalFrames - 1);
+  const pos = (frame: number) => `${Math.max(0, Math.min(1, frame / den)) * 100}%`;
+  els.overWin.style.left = pos(at.start);
+  // Spans the frames it covers, first to last, on the same scale the marks below are placed on: a
+  // width taken over the frame count rather than the span between them would leave the band and the
+  // playhead inside it disagreeing about where the window ends.
+  els.overWin.style.width = `${(Math.max(0, at.len - 1) / den) * 100}%`;
+  els.overBar.setAttribute("aria-valuemax", String(den));
+  els.overBar.setAttribute("aria-valuenow", String(at.start));
+  els.overBar.setAttribute("aria-valuetext", `frames ${at.start} to ${Math.min(den, at.start + at.len - 1)} of ${state.totalFrames}`);
+  const marked = state.mode === "video" && (state.inF != null || state.outF != null);
+  els.overSel.style.display = marked ? "block" : "none";
+  if (marked) {
+    const [lo, hi] = selRange();
+    els.overSel.style.left = pos(lo);
+    els.overSel.style.width = `${((hi - lo) / den) * 100}%`;
+  }
+  els.overPlay.style.left = pos(state.cur);
+}
+
+/** Which frame a page x-coordinate on the overview bar falls on. */
+function overFrameAtClientX(clientX: number): number {
+  const rect = els.overBar.getBoundingClientRect();
+  if (rect.width <= 0) return 0;
+  const t = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  return Math.round(t * Math.max(0, state.totalFrames - 1));
+}
+
+// Pressing the bar outside the window sends the window there — the quick way across a recording,
+// and it takes the snippet with it, since the window and what it holds travel together. Pressing
+// inside it keeps the grab's offset, so the window slides with the pointer instead of jumping its
+// centre under it.
+let overGrab: number | null = null;
+els.overBar.addEventListener("pointerdown", (e) => {
+  if (!state.backend) return;
+  e.preventDefault();
+  els.overBar.setPointerCapture(e.pointerId);
+  els.overBar.classList.add("dragging");
+  els.overBar.focus();
+  stopPlay();
+  const at = view();
+  const frame = overFrameAtClientX(e.clientX);
+  overGrab = frame >= at.start && frame < at.start + at.len ? state.viewCenter - frame : null;
+  if (overGrab === null) setViewCenter(frame);
+});
+els.overBar.addEventListener("pointermove", (e) => {
+  if (!els.overBar.hasPointerCapture(e.pointerId)) return;
+  setViewCenter(overFrameAtClientX(e.clientX) + (overGrab ?? 0));
+});
+const releaseOverview = (e: PointerEvent): void => {
+  if (!els.overBar.hasPointerCapture(e.pointerId)) return;
+  els.overBar.releasePointerCapture(e.pointerId);
+  els.overBar.classList.remove("dragging");
+  overGrab = null;
+  settleView();
+};
+els.overBar.addEventListener("pointerup", releaseOverview);
+els.overBar.addEventListener("pointercancel", releaseOverview);
+els.overBar.addEventListener("keydown", (e) => {
+  if (!state.backend) return;
+  const at = view();
+  const last = Math.max(0, state.totalFrames - 1);
+  // A minute, an hour, or the whole window: the three distances worth crossing on a bar that spans
+  // a recording running for hours.
+  const step = e.key === "PageUp" || e.key === "PageDown" ? at.len : Math.round(state.fps * (e.shiftKey ? 3600 : 60));
+  const dir =
+    e.key === "ArrowLeft" || e.key === "ArrowDown" || e.key === "PageDown"
+      ? -1
+      : e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "PageUp"
+        ? 1
+        : 0;
+  const next = dir ? state.viewCenter + dir * step : e.key === "Home" ? 0 : e.key === "End" ? last : null;
+  if (next === null) return;
+  e.preventDefault();
+  // The window-level shortcut handler would otherwise read the same arrow key as a seek too.
+  e.stopPropagation();
+  stopPlay();
+  setViewCenter(next);
+  settleView();
+});
+
+// The gradations under the overview are thinned to what the bar is wide enough to hold, so a
+// resized window needs them laid out again.
+window.addEventListener("resize", buildOverviewRuler);
+
+// How much of the recording the track covers. Re-centred on the playhead rather than kept where it
+// was, so the frame being looked at stays on screen at the new scale instead of sliding off it —
+// and so no seek is owed, since the playhead cannot end up outside a window centred on it.
+wireSeg(els.windowSeg, (value) => {
+  state.windowHalf = windowHalfSeconds(Number(value));
+  state.viewCenter = state.cur;
+  saveSettings();
+  refreshOverview();
+  buildRuler();
+  updateSelUI();
+});
+
+/** Which frame a page x-coordinate falls on, across whatever stretch the track covers. */
 function frameAtClientX(clientX: number): number {
   const rect = els.selbar.getBoundingClientRect();
   if (rect.width <= 0) return 0;
-  const den = Math.max(1, state.totalFrames - 1);
-  return Math.round(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * den);
+  return frameAt(view(), (clientX - rect.left) / rect.width, state.totalFrames);
 }
 
 /** Writes both ends at once, materializing whichever was still unmarked: once a handle has been
@@ -1029,25 +1283,19 @@ function setSelection(lo: number, hi: number): void {
 }
 
 /** Moves one end to `frame`, stopping at the other rather than crossing it — a handle dragged past
- * its partner collapses the range instead of silently swapping the two. */
+ * its partner collapses the range instead of silently swapping the two.
+ *
+ * Moving one end also materializes the other, if nothing has been marked there yet, and it does so
+ * at the edge of what the timeline covers rather than at the edge of the recording. On a whole-video
+ * timeline those are the same frame and this is what it has always done; on a windowed one the
+ * video's end is hours past the right of the track, and seeding from it would turn the first drag of
+ * a marker into a snippet running from here to the end of the day. */
 function moveHandle(which: "in" | "out", frame: number): void {
-  const [lo, hi] = selRange();
+  const at = view();
+  const lo = state.inF ?? at.start;
+  const hi = state.outF ?? at.start + at.len - 1;
   if (which === "in") setSelection(Math.min(frame, hi), hi);
   else setSelection(lo, Math.max(frame, lo));
-}
-
-/** Marks an end at the playhead, for the `[ ] I O` shortcuts. Unlike a drag this can invalidate the
- * other end (marking In past Out), in which case that end goes back to unmarked and the range runs
- * to the boundary — which is what someone re-marking a snippet from scratch is after. */
-function markIn(): void {
-  state.inF = state.cur;
-  if (state.outF != null && state.outF < state.inF) state.outF = null;
-  selectionChanged();
-}
-function markOut(): void {
-  state.outF = state.cur;
-  if (state.inF != null && state.inF > state.outF) state.inF = null;
-  selectionChanged();
 }
 
 /** Wires one marker: `read` is the frame it currently sits on, `move` is what dragging or arrowing it
@@ -1223,6 +1471,7 @@ function enablePlayer(on: boolean): void {
     handle.setAttribute("aria-disabled", String(!on));
     handle.tabIndex = on ? 0 : -1;
   }
+  refreshOverview();
   buildRuler();
   updateDeliveryGate();
 }
@@ -1334,10 +1583,6 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     stopPlay();
     void seek(state.cur + (e.code === "ArrowRight" ? 1 : -1));
-  } else if (state.mode === "video" && (e.key === "i" || e.key === "I" || e.key === "[")) {
-    markIn();
-  } else if (state.mode === "video" && (e.key === "o" || e.key === "O" || e.key === "]")) {
-    markOut();
   }
 });
 
@@ -1428,6 +1673,10 @@ let storedDeliveryMode: DeliveryMode | null = null;
 
 function loadSettings(): void {
   const s = loadStoredSettings();
+  // Held to one of the offered widths whatever storage held, and reflected in the control either
+  // way: it carries no active button of its own, so the default has to be painted onto it here.
+  state.windowHalf = windowHalfSeconds(s?.windowHalfSeconds);
+  selectSeg(els.windowSeg, String(state.windowHalf));
   if (!s) return;
   if (s.dandisetId) storedDandisetId = s.dandisetId;
   if (s.oauth) oauthTokens = s.oauth;
@@ -1443,6 +1692,7 @@ function saveSettings(): void {
     dandisetId: storedDandisetId,
     oauth: oauthTokens ?? undefined,
     deliveryMode: storedDeliveryMode ?? undefined,
+    windowHalfSeconds: state.windowHalf,
   });
 }
 
