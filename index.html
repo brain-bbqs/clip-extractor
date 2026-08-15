@@ -93,8 +93,8 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-CoaLrkJp.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Bdhci9MM.css">
+    <script type="module" crossorigin src="./assets/index-lryLKxsn.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-C3o56BFA.css">
   </head>
   <body>
     <a class="brand-watermark-link" href="https://brain-bbqs.org" target="_blank" rel="noopener" aria-label="BBQS" title="BBQS">
@@ -259,6 +259,16 @@
                writes; these are only the handles for moving and resizing them. -->
           <div id="blurLayer" class="blur-layer" role="group" aria-label="Blur areas"></div>
           <div id="overlayInfo" style="display: none"></div>
+          <!-- What the stage is waiting on, raised by main.ts. Opening a recording reads its
+               container index before a frame can be drawn, and a seek into a streamed stretch is a
+               network round trip; neither used to say anything on the page. The byte counter is
+               marked aria-hidden so a screen reader is told what is happening once rather than
+               re-read the running total every quarter second. -->
+          <div id="stageBusy" class="stage-busy" hidden>
+            <span class="stage-spinner" aria-hidden="true"></span>
+            <span id="stageBusyLabel" class="stage-busy-label" role="status"></span>
+            <span id="stageBusyDetail" class="stage-busy-detail" aria-hidden="true"></span>
+          </div>
         </div>
 
         <!-- Blur tool. Revealed when the upload destination is a dataset flagged as holding
