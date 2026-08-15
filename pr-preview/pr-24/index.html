@@ -93,7 +93,7 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-BWlhy5Rs.js"></script>
+    <script type="module" crossorigin src="./assets/index-DadUA-tn.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-DaRivwfF.css">
   </head>
   <body>
@@ -336,11 +336,12 @@
           <!-- The whole recording, under the track that trims it. Only shown once the recording runs
                longer than the stretch the track covers (see lib/timeline.ts): below that the track
                already spans the whole video and this would be a slider with nowhere to slide.
-               Dragging the window moves what the track above covers and decodes nothing, so crossing
-               a day costs one seek when the drag ends rather than one per pointer move. The
-               gradations under it are landmarks rather than divisions — the window is continuous and
-               goes wherever it is pointed, so a snippet straddling an hour boundary is never split
-               across two of them. -->
+               Dragging the window carries the playhead and the snippet with it, so a range of the
+               right length can be pushed across a day to find the moment it belongs to. It decodes
+               nothing on the way, so crossing a day costs one seek when the drag ends rather than one
+               per pointer move. The gradations under it are landmarks rather than divisions — the
+               window is continuous and goes wherever it is pointed, so a snippet straddling an hour
+               boundary is never split across two of them. -->
           <div id="overviewWrap" class="overview" hidden>
             <div
               id="overbar"
