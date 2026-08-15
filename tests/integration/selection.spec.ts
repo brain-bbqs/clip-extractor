@@ -245,6 +245,9 @@ test("a recording shorter than the window carries no overview bar", async ({ pag
   // second long is entirely on the track already, so the bar would be a slider with nowhere to
   // slide — and every marker below stays a marker on a track that reaches it.
   await expect(page.locator("#overviewWrap")).toBeHidden();
+  await expect(page.locator("#windowSeg")).toBeHidden();
+  // The width control still carries a width, ready for a recording long enough to want one.
+  await expect(page.locator("#windowSeg button.active")).toHaveAttribute("data-half", "1800");
   await expect(page.locator("#selruler .sel-tick-label").first()).toHaveText("0:00");
   for (const marker of ["#inHandle", "#outHandle", "#playHandle"]) {
     await expect(page.locator(marker)).not.toHaveClass(/outside/);

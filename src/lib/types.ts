@@ -37,6 +37,10 @@ export interface StoredSettings {
   /** The Download/Upload side the visitor last picked themselves, so a refresh does not hand them
    * back to whichever side the sign-in state would have defaulted to. */
   deliveryMode?: DeliveryMode;
+  /** How much of a long recording the timeline covers either side of the overview slider, in
+   * seconds. A working preference rather than a property of any one video, so it is remembered
+   * across loads and sessions. */
+  windowHalfSeconds?: number;
 }
 
 // ------------------------------------------------------------------

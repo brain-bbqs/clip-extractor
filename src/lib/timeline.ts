@@ -9,8 +9,19 @@ import { rulerStep } from "./format";
 // whose precision does not depend on how long the recording is — a hundred-hour file trims exactly
 // as finely as a three-hour one, because the track always spans the same two hours.
 
-/** How much of the recording the track covers either side of the overview slider's position. */
-export const WINDOW_HALF_SECONDS = 3600;
+/** How much of the recording the track covers either side of the overview slider's position, in
+ * seconds. Narrow enough that a snippet can be trimmed against it, wide enough to hold a bout and
+ * its surroundings; the choices below cover the rest, and the pick is remembered. */
+export const DEFAULT_WINDOW_HALF_SECONDS = 1800;
+
+/** The half-widths offered under the overview slider, narrowest first. */
+export const WINDOW_HALF_CHOICES = [900, 1800, 3600, 7200] as const;
+
+/** A stored or typed half-width, held to one of the offered choices. Anything unrecognised falls
+ * back to the default rather than leaving the track at a width nothing on screen can undo. */
+export function windowHalfSeconds(seconds: unknown): number {
+  return WINDOW_HALF_CHOICES.find((choice) => choice === seconds) ?? DEFAULT_WINDOW_HALF_SECONDS;
+}
 
 /** The stretch of frames the trim track covers: `len` frames starting at `start`. */
 export interface TimelineView {
@@ -22,9 +33,9 @@ function clamp(value: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, value));
 }
 
-/** {@link WINDOW_HALF_SECONDS} in frames, for a source running at `fps`. */
-export function windowHalfFrames(fps: number): number {
-  return Math.max(1, Math.round(WINDOW_HALF_SECONDS * (fps > 0 ? fps : 30)));
+/** A half-width in frames, for a source running at `fps`. */
+export function windowHalfFrames(halfSeconds: number, fps: number): number {
+  return Math.max(1, Math.round(halfSeconds * (fps > 0 ? fps : 30)));
 }
 
 /** Whether the overview slider is worth showing: only once the recording is longer than the window

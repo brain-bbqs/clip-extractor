@@ -2,7 +2,18 @@ import "./style.css";
 import * as sio from "@talmolab/sleap-io.js";
 import { getElements } from "./ui/elements";
 import { bytes, fmtTime, rulerLabel } from "./lib/format";
-import { frameAt, fractionOf, hourMarks, rulerMarks, usesWindow, windowFor, windowHalfFrames, type TimelineView } from "./lib/timeline";
+import {
+  frameAt,
+  fractionOf,
+  hourMarks,
+  rulerMarks,
+  usesWindow,
+  windowFor,
+  windowHalfFrames,
+  windowHalfSeconds,
+  DEFAULT_WINDOW_HALF_SECONDS,
+  type TimelineView,
+} from "./lib/timeline";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { openStreamingBlob, openStreamingUrl, StreamingVideoBackend } from "./lib/streaming";
 import { drawPose, labelsToPose } from "./lib/pose";
@@ -139,6 +150,9 @@ interface AppState {
    * the whole video once the video is long enough for that to matter (see lib/timeline.ts); until
    * then the window is the whole video and this has nothing to do. */
   viewCenter: number;
+  /** How much of the recording the trim track covers either side of `viewCenter`. A working
+   * preference rather than anything about the loaded video, so it survives opening another one. */
+  windowHalf: number;
   /** Areas blurred out of everything extracted from this video, in source pixels. Placed with the
    * blur tool under the player, which the human-subjects gate reveals (see below). */
   blurRegions: BlurRegion[];
@@ -167,6 +181,7 @@ const state: AppState = {
   slpMeta: null,
   mode: "video",
   viewCenter: 0,
+  windowHalf: DEFAULT_WINDOW_HALF_SECONDS,
   blurRegions: [],
   curBitmap: null,
 };
@@ -913,7 +928,7 @@ function selRange(): [number, number] {
 // ============================================================
 /** The window's half-width for the loaded source, in frames. */
 function halfFrames(): number {
-  return windowHalfFrames(state.fps);
+  return windowHalfFrames(state.windowHalf, state.fps);
 }
 /** What the trim track currently spans: the whole video, or a window inside it once the video is
  * long enough that one track across all of it stops being a control anyone can aim. */
@@ -1073,6 +1088,14 @@ function buildRuler(): void {
 // Overview: the whole recording, under the track that trims part of it
 // ============================================================
 
+/** Shows or hides the overview, and lays out its gradations for what it now spans. The bar is only
+ * there for a recording longer than the stretch the track covers: below that the track already
+ * spans the whole video, and this would be a slider with nowhere to slide. */
+function refreshOverview(): void {
+  els.overviewWrap.hidden = !state.backend || !usesWindow(state.totalFrames, halfFrames());
+  buildOverviewRuler();
+}
+
 /** Lays out the hour gradations under the overview bar. Depends on how wide the bar is, so it is
  * rebuilt on resize as well as on load. */
 function buildOverviewRuler(): void {
@@ -1180,6 +1203,18 @@ els.overBar.addEventListener("keydown", (e) => {
 // The gradations under the overview are thinned to what the bar is wide enough to hold, so a
 // resized window needs them laid out again.
 window.addEventListener("resize", buildOverviewRuler);
+
+// How much of the recording the track covers. Re-centred on the playhead rather than kept where it
+// was, so the frame being looked at stays on screen at the new scale instead of sliding off it —
+// and so no seek is owed, since the playhead cannot end up outside a window centred on it.
+wireSeg(els.windowSeg, (value) => {
+  state.windowHalf = windowHalfSeconds(Number(value));
+  state.viewCenter = state.cur;
+  saveSettings();
+  refreshOverview();
+  buildRuler();
+  updateSelUI();
+});
 
 /** Which frame a page x-coordinate falls on, across whatever stretch the track covers. */
 function frameAtClientX(clientX: number): number {
@@ -1396,11 +1431,8 @@ function enablePlayer(on: boolean): void {
     handle.setAttribute("aria-disabled", String(!on));
     handle.tabIndex = on ? 0 : -1;
   }
-  // Only there for a recording longer than the stretch the track covers: below that the track
-  // already spans the whole video, and this would be a slider with nowhere to slide.
-  els.overviewWrap.hidden = !on || !usesWindow(state.totalFrames, halfFrames());
+  refreshOverview();
   buildRuler();
-  buildOverviewRuler();
   updateDeliveryGate();
 }
 
@@ -1605,6 +1637,10 @@ let storedDeliveryMode: DeliveryMode | null = null;
 
 function loadSettings(): void {
   const s = loadStoredSettings();
+  // Held to one of the offered widths whatever storage held, and reflected in the control either
+  // way: it carries no active button of its own, so the default has to be painted onto it here.
+  state.windowHalf = windowHalfSeconds(s?.windowHalfSeconds);
+  selectSeg(els.windowSeg, String(state.windowHalf));
   if (!s) return;
   if (s.dandisetId) storedDandisetId = s.dandisetId;
   if (s.oauth) oauthTokens = s.oauth;
@@ -1620,6 +1656,7 @@ function saveSettings(): void {
     dandisetId: storedDandisetId,
     oauth: oauthTokens ?? undefined,
     deliveryMode: storedDeliveryMode ?? undefined,
+    windowHalfSeconds: state.windowHalf,
   });
 }
 

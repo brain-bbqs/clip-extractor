@@ -4,7 +4,8 @@
 
 #### 🚀 Enhancement
 
-- A recording longer than two hours is now trimmed against an hour either side of where you are looking, moved by a new slider under the timeline spanning the whole recording, rather than one track across the entire thing where a single pixel of travel covers a minute and a half of video ([#24](https://github.com/brain-bbqs/clip-extractor/pull/24))
+- A recording longer than an hour is now trimmed against half an hour either side of where you are looking, moved by a new slider under the timeline spanning the whole recording, rather than one track across the entire thing where a single pixel of travel covers a minute and a half of video ([#24](https://github.com/brain-bbqs/clip-extractor/pull/24))
+- How much of a long recording the timeline covers is now set under that slider, anywhere from fifteen minutes either side to two hours, and the choice is remembered between visits ([#24](https://github.com/brain-bbqs/clip-extractor/pull/24))
 - A trim marker whose frame is outside the stretch the timeline covers now flattens against the edge it left through instead of vanishing, and stays draggable so a snippet can still be started from it ([#24](https://github.com/brain-bbqs/clip-extractor/pull/24))
 
 #### 🏠 Internal

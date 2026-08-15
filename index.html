@@ -340,6 +340,21 @@
                goes wherever it is pointed, so a snippet straddling an hour boundary is never split
                across two of them. -->
           <div id="overviewWrap" class="overview" hidden>
+            <!-- How much of the recording the track above covers. Inside the overview block, so it
+                 goes away with it on anything short enough that the track already holds the lot. -->
+            <div class="overview-head">
+              <span class="overview-label" id="windowSegLabel">Window</span>
+              <div class="seg small" id="windowSeg" role="group" aria-labelledby="windowSegLabel">
+                <button type="button" data-half="900" title="The timeline covers 15 minutes either side of the window">
+                  &plusmn;15 min
+                </button>
+                <button type="button" data-half="1800" title="The timeline covers 30 minutes either side of the window">
+                  &plusmn;30 min
+                </button>
+                <button type="button" data-half="3600" title="The timeline covers an hour either side of the window">&plusmn;1 h</button>
+                <button type="button" data-half="7200" title="The timeline covers two hours either side of the window">&plusmn;2 h</button>
+              </div>
+            </div>
             <div
               id="overbar"
               role="slider"

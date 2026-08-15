@@ -49,6 +49,7 @@ export function getElements() {
     blurHint: required<HTMLParagraphElement>("blurHint"),
     selRuler: required<HTMLDivElement>("selruler"),
     overviewWrap: required<HTMLDivElement>("overviewWrap"),
+    windowSeg: required<HTMLDivElement>("windowSeg"),
     overBar: required<HTMLDivElement>("overbar"),
     overWin: required<HTMLDivElement>("overwin"),
     overSel: required<HTMLDivElement>("oversel"),

@@ -7,51 +7,77 @@ import {
   usesWindow,
   windowFor,
   windowHalfFrames,
-  WINDOW_HALF_SECONDS,
+  windowHalfSeconds,
+  DEFAULT_WINDOW_HALF_SECONDS,
+  WINDOW_HALF_CHOICES,
 } from "../../src/lib/timeline";
 
 const FPS = 30;
 const HOUR = 3600 * FPS;
 const DAY = 24 * HOUR;
-const HALF = windowHalfFrames(FPS);
+// The default: half an hour either side, so the timeline covers an hour of a long recording.
+const HALF = windowHalfFrames(DEFAULT_WINDOW_HALF_SECONDS, FPS);
+
+describe("windowHalfSeconds", () => {
+  it("keeps a width that is on offer", () => {
+    for (const choice of WINDOW_HALF_CHOICES) expect(windowHalfSeconds(choice)).toBe(choice);
+  });
+
+  it("offers the default among them, at half an hour either side", () => {
+    expect(DEFAULT_WINDOW_HALF_SECONDS).toBe(1800);
+    expect(WINDOW_HALF_CHOICES).toContain(DEFAULT_WINDOW_HALF_SECONDS);
+  });
+
+  it("falls back to the default rather than leaving the track at a width nothing can undo", () => {
+    // Whatever storage held: an older build's value, a hand-edited one, or nothing at all.
+    expect(windowHalfSeconds(12345)).toBe(DEFAULT_WINDOW_HALF_SECONDS);
+    expect(windowHalfSeconds(undefined)).toBe(DEFAULT_WINDOW_HALF_SECONDS);
+    expect(windowHalfSeconds("1800")).toBe(DEFAULT_WINDOW_HALF_SECONDS);
+    expect(windowHalfSeconds(Number.NaN)).toBe(DEFAULT_WINDOW_HALF_SECONDS);
+  });
+});
 
 describe("windowHalfFrames", () => {
-  it("converts the window's half-width to frames at the source's rate", () => {
-    expect(windowHalfFrames(30)).toBe(WINDOW_HALF_SECONDS * 30);
-    expect(windowHalfFrames(59.94)).toBe(Math.round(WINDOW_HALF_SECONDS * 59.94));
+  it("converts a half-width to frames at the source's rate", () => {
+    expect(windowHalfFrames(1800, 30)).toBe(1800 * 30);
+    expect(windowHalfFrames(1800, 59.94)).toBe(Math.round(1800 * 59.94));
   });
 
   it("falls back to 30 fps rather than returning a window of nothing", () => {
-    expect(windowHalfFrames(0)).toBe(WINDOW_HALF_SECONDS * 30);
-    expect(windowHalfFrames(-1)).toBe(WINDOW_HALF_SECONDS * 30);
+    expect(windowHalfFrames(1800, 0)).toBe(1800 * 30);
+    expect(windowHalfFrames(1800, -1)).toBe(1800 * 30);
   });
 });
 
 describe("usesWindow", () => {
-  it("leaves a recording shorter than the window on the timeline it has always had", () => {
-    expect(usesWindow(45 * 60 * FPS, HALF)).toBe(false);
-    expect(usesWindow(2 * HOUR, HALF)).toBe(false); // exactly the window: nowhere to slide
+  it("leaves a recording no longer than the window on the timeline it has always had", () => {
+    expect(usesWindow(30 * 60 * FPS, HALF)).toBe(false);
+    expect(usesWindow(2 * HALF, HALF)).toBe(false); // exactly the window: nowhere to slide
   });
 
   it("takes over once the recording is longer than the window", () => {
-    expect(usesWindow(2 * HOUR + 1, HALF)).toBe(true);
+    expect(usesWindow(2 * HALF + 1, HALF)).toBe(true);
     expect(usesWindow(DAY, HALF)).toBe(true);
+  });
+
+  it("puts that threshold at an hour of recording, for the default width", () => {
+    expect(2 * HALF).toBe(HOUR);
   });
 });
 
 describe("windowFor", () => {
   it("centres the window on the position it is given", () => {
-    expect(windowFor(DAY, 14 * HOUR, HALF)).toEqual({ start: 13 * HOUR, len: 2 * HOUR });
+    expect(windowFor(DAY, 14 * HOUR, HALF)).toEqual({ start: 14 * HOUR - HALF, len: 2 * HALF });
   });
 
   it("keeps its size at either end rather than shrinking to fit", () => {
-    // The centre runs out of room before the recording does; the window stops and stays two hours.
-    expect(windowFor(DAY, 0, HALF)).toEqual({ start: 0, len: 2 * HOUR });
-    expect(windowFor(DAY, DAY - 1, HALF)).toEqual({ start: DAY - 2 * HOUR, len: 2 * HOUR });
+    // The centre runs out of room before the recording does; the window stops, at its full width.
+    expect(windowFor(DAY, 0, HALF)).toEqual({ start: 0, len: 2 * HALF });
+    expect(windowFor(DAY, DAY - 1, HALF)).toEqual({ start: DAY - 2 * HALF, len: 2 * HALF });
   });
 
   it("covers the whole video when the video is shorter than the window", () => {
-    const short = 45 * 60 * FPS;
+    const short = 20 * 60 * FPS;
     expect(windowFor(short, short / 2, HALF)).toEqual({ start: 0, len: short });
   });
 
@@ -64,9 +90,9 @@ describe("fractionOf", () => {
   const at = windowFor(DAY, 14 * HOUR, HALF);
 
   it("places a frame across the window", () => {
-    expect(fractionOf(at, 13 * HOUR)).toBe(0);
+    expect(fractionOf(at, 14 * HOUR - HALF)).toBe(0);
     expect(fractionOf(at, 14 * HOUR)).toBeCloseTo(0.5, 5);
-    expect(fractionOf(at, 15 * HOUR - 1)).toBeCloseTo(1, 5);
+    expect(fractionOf(at, 14 * HOUR + HALF - 1)).toBeCloseTo(1, 5);
   });
 
   it("runs outside 0..1 for a frame the window does not cover, so a marker knows it is off", () => {
@@ -79,18 +105,18 @@ describe("frameAt", () => {
   const at = windowFor(DAY, 14 * HOUR, HALF);
 
   it("reads a position across the window back as a frame", () => {
-    expect(frameAt(at, 0, DAY)).toBe(13 * HOUR);
+    expect(frameAt(at, 0, DAY)).toBe(14 * HOUR - HALF);
     expect(frameAt(at, 0.5, DAY)).toBe(14 * HOUR);
   });
 
   it("round-trips with fractionOf", () => {
-    const frame = 13 * HOUR + 12345;
+    const frame = at.start + 12345;
     expect(frameAt(at, fractionOf(at, frame), DAY)).toBe(frame);
   });
 
   it("clamps a position off either end of the track to the window", () => {
-    expect(frameAt(at, -2, DAY)).toBe(13 * HOUR);
-    expect(frameAt(at, 4, DAY)).toBe(15 * HOUR - 1);
+    expect(frameAt(at, -2, DAY)).toBe(at.start);
+    expect(frameAt(at, 4, DAY)).toBe(at.start + at.len - 1);
   });
 
   it("never reads past the last frame of the video", () => {
@@ -101,11 +127,12 @@ describe("frameAt", () => {
 
 describe("rulerMarks", () => {
   it("lands gradations on round absolute times, not on the window's left edge", () => {
-    // A window over the fifteenth hour is labelled 14:20 and 14:40, not 0:20 and 0:40: the
-    // gradations name a moment in the recording rather than a position in the window.
+    // A window over the fourteenth hour is labelled 14:00 and 14:10, not 0:00 and 0:10: the
+    // gradations name a moment in the recording rather than a position in the window. The centre is
+    // deliberately off a round time, which is exactly when counting from the window's edge shows.
     const marks = rulerMarks(windowFor(DAY, 14 * HOUR + 733, HALF), FPS);
     const majors = marks.filter((m) => m.major).map((m) => m.seconds);
-    expect(majors.every((s) => s % 1800 === 0)).toBe(true);
+    expect(majors.every((s) => s % 600 === 0)).toBe(true);
     expect(majors).toContain(14 * 3600);
   });
 

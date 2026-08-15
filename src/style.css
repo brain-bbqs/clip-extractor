@@ -893,6 +893,26 @@ input[type="checkbox"] {
   padding-top: 0.85rem;
   border-top: 1px dashed var(--border);
 }
+.overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-bottom: 0.5rem;
+}
+.overview-label {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+/* The window control sits under a track rather than in a card's own row, so it is scaled down to
+   sit beside the gradations instead of competing with them. */
+.seg.small button {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  font-variant-numeric: tabular-nums;
+}
 #overbar {
   position: relative;
   height: 20px;
