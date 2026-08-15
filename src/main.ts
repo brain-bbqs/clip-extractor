@@ -6,9 +6,8 @@ import {
   frameAt,
   fractionOf,
   hourMarks,
-  offersWindowChoice,
   rulerMarks,
-  usesWindow,
+  showsWindow,
   windowFor,
   windowHalfFrames,
   windowHalfSeconds,
@@ -920,6 +919,9 @@ function togglePlay(): void {
 // ============================================================
 // Selection
 // ============================================================
+/** The stretch that will be extracted. Both ends are set together or not at all — every route to a
+ * range writes both — so the fallbacks below stand for "nothing marked yet", which is the whole
+ * recording, rather than for one end of a half-marked one. */
 function selRange(): [number, number] {
   const a = state.inF != null ? state.inF : 0;
   const b = state.outF != null ? state.outF : state.totalFrames - 1;
@@ -1126,17 +1128,13 @@ function buildRuler(): void {
 // Overview: the whole recording, under the track that trims part of it
 // ============================================================
 
-/** Shows or hides the overview, and lays out its gradations for what it now spans. The bar is only
- * there for a recording longer than the stretch the track covers: below that the track already
- * spans the whole video, and this would be a slider with nowhere to slide. Its width control goes
- * with it, from the transport row, since a width means nothing without something to move. */
+/** Shows or hides the overview, and lays out its gradations for what it now spans. It arrives with
+ * its width control, on the transport row, at the same length of recording: a width means nothing
+ * without a window to apply it to, and a window means nothing without a width to set. */
 function refreshOverview(): void {
-  const loaded = !!state.backend;
-  els.overviewWrap.hidden = !loaded || !usesWindow(state.totalFrames, halfFrames());
-  // The control outlives the bar by one step: it stays for as long as any width on offer would
-  // still window this recording, so picking one wide enough to cover the whole thing does not take
-  // away the control that would narrow it again.
-  els.windowGroup.hidden = !loaded || !offersWindowChoice(state.totalFrames, state.fps);
+  const windowed = !!state.backend && showsWindow(state.totalFrames, state.fps);
+  els.overviewWrap.hidden = !windowed;
+  els.windowGroup.hidden = !windowed;
   buildOverviewRuler();
 }
 
@@ -1298,20 +1296,6 @@ function moveHandle(which: "in" | "out", frame: number): void {
   const hi = state.outF ?? at.start + at.len - 1;
   if (which === "in") setSelection(Math.min(frame, hi), hi);
   else setSelection(lo, Math.max(frame, lo));
-}
-
-/** Marks an end at the playhead, for the `[ ] I O` shortcuts. Unlike a drag this can invalidate the
- * other end (marking In past Out), in which case that end goes back to unmarked and the range runs
- * to the boundary — which is what someone re-marking a snippet from scratch is after. */
-function markIn(): void {
-  state.inF = state.cur;
-  if (state.outF != null && state.outF < state.inF) state.outF = null;
-  selectionChanged();
-}
-function markOut(): void {
-  state.outF = state.cur;
-  if (state.inF != null && state.inF > state.outF) state.inF = null;
-  selectionChanged();
 }
 
 /** Wires one marker: `read` is the frame it currently sits on, `move` is what dragging or arrowing it
@@ -1599,10 +1583,6 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     stopPlay();
     void seek(state.cur + (e.code === "ArrowRight" ? 1 : -1));
-  } else if (state.mode === "video" && (e.key === "i" || e.key === "I" || e.key === "[")) {
-    markIn();
-  } else if (state.mode === "video" && (e.key === "o" || e.key === "O" || e.key === "]")) {
-    markOut();
   }
 });
 

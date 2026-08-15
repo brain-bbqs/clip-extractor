@@ -2,12 +2,12 @@ import { rulerStep } from "./format";
 
 // The stretch of a recording the trim track covers, and the gradations laid out across it.
 //
-// Up to a couple of hours the track covers the whole video, which is what it has always done. Past
-// that it covers a fixed window instead, moved by the overview slider underneath it: a day-long
-// recording across one track puts a minute and a half of video under every pixel, which is a
-// control that cannot land within a thousand frames of anything. A fixed window is the one shape
-// whose precision does not depend on how long the recording is — a hundred-hour file trims exactly
-// as finely as a three-hour one, because the track always spans the same two hours.
+// Up to half an hour the track covers the whole video, which is what it has always done. Past that
+// it covers a fixed window instead, moved by the overview slider underneath it: a day-long recording
+// across one track puts a minute and a half of video under every pixel, which is a control that
+// cannot land within a thousand frames of anything. A fixed window is the one shape whose precision
+// does not depend on how long the recording is — a hundred-hour file trims exactly as finely as a
+// three-hour one, because the track always spans the same hour of it.
 
 /** How much of the recording the track covers either side of the overview slider's position, in
  * seconds. Narrow enough that a snippet can be trimmed against it, wide enough to hold a bout and
@@ -39,18 +39,17 @@ export function windowHalfFrames(halfSeconds: number, fps: number): number {
   return Math.max(1, Math.round(halfSeconds * (fps > 0 ? fps : 30)));
 }
 
-/** Whether the overview slider is worth showing: only once the recording is longer than the window
- * the slider moves. Below that the window is the whole video and the slider has nowhere to slide,
- * so the two-hour threshold is the geometry rather than a separate rule. */
-export function usesWindow(totalFrames: number, halfFrames: number): boolean {
-  return totalFrames > halfFrames * 2;
-}
+/** How long a recording has to run before it is given the sliding window and its width control. */
+export const WINDOW_MIN_SECONDS = 1800;
 
-/** Whether the width control is worth offering: true once the narrowest width on offer would put a
- * window inside the recording. Deliberately not tied to the width currently picked, or choosing one
- * wide enough to cover the whole video would take the control that chose it off the screen. */
-export function offersWindowChoice(totalFrames: number, fps: number): boolean {
-  return usesWindow(totalFrames, windowHalfFrames(WINDOW_HALF_CHOICES[0], fps));
+/** Whether a recording gets the sliding window at all.
+ *
+ * A flat threshold rather than a comparison against the width in use: tying it to the width would
+ * take the whole control off the screen as soon as one wide enough to cover the recording was
+ * picked, leaving nothing to narrow it with, and would move the point at which the timeline changes
+ * shape every time the width did. Half an hour on one track is still a track that can be aimed. */
+export function showsWindow(totalFrames: number, fps: number): boolean {
+  return totalFrames > WINDOW_MIN_SECONDS * (fps > 0 ? fps : 30);
 }
 
 /** The window centred on `center`, clamped inside the recording. Never resized to fit: at either

@@ -3,9 +3,9 @@ import {
   frameAt,
   fractionOf,
   hourMarks,
-  offersWindowChoice,
   rulerMarks,
-  usesWindow,
+  showsWindow,
+  WINDOW_MIN_SECONDS,
   windowFor,
   windowHalfFrames,
   windowHalfSeconds,
@@ -56,36 +56,36 @@ describe("windowHalfFrames", () => {
   });
 });
 
-describe("usesWindow", () => {
-  it("leaves a recording no longer than the window on the timeline it has always had", () => {
-    expect(usesWindow(30 * 60 * FPS, HALF)).toBe(false);
-    expect(usesWindow(2 * HALF, HALF)).toBe(false); // exactly the window: nowhere to slide
+describe("showsWindow", () => {
+  it("leaves a recording of half an hour or less on the timeline it has always had", () => {
+    expect(showsWindow(10 * 60 * FPS, FPS)).toBe(false);
+    expect(showsWindow(WINDOW_MIN_SECONDS * FPS, FPS)).toBe(false); // exactly the threshold
   });
 
-  it("takes over once the recording is longer than the window", () => {
-    expect(usesWindow(2 * HALF + 1, HALF)).toBe(true);
-    expect(usesWindow(DAY, HALF)).toBe(true);
+  it("gives the window to anything longer", () => {
+    expect(showsWindow(WINDOW_MIN_SECONDS * FPS + 1, FPS)).toBe(true);
+    expect(showsWindow(DAY, FPS)).toBe(true);
   });
 
-  it("puts that threshold at an hour of recording, for the default width", () => {
-    expect(2 * HALF).toBe(HOUR);
-  });
-});
-
-describe("offersWindowChoice", () => {
-  it("offers the width control once the narrowest width would window the recording", () => {
-    const narrowest = 2 * windowHalfFrames(WINDOW_HALF_CHOICES[0], FPS);
-    expect(offersWindowChoice(narrowest, FPS)).toBe(false);
-    expect(offersWindowChoice(narrowest + 1, FPS)).toBe(true);
+  it("puts that threshold at half an hour of recording", () => {
+    expect(WINDOW_MIN_SECONDS).toBe(1800);
   });
 
-  it("keeps the control up for a recording the widest choice would swallow whole", () => {
-    // Picking a width wider than the recording hides the overview, since there is then nothing to
-    // slide. The control has to outlive it, or nothing on screen could narrow the width again.
-    const widest = 2 * windowHalfFrames(WINDOW_HALF_CHOICES[WINDOW_HALF_CHOICES.length - 1], FPS);
-    const recording = Math.round(widest / 2);
-    expect(usesWindow(recording, windowHalfFrames(WINDOW_HALF_CHOICES.at(-1)!, FPS))).toBe(false);
-    expect(offersWindowChoice(recording, FPS)).toBe(true);
+  it("does not move with the width that is picked", () => {
+    // Tying it to the width in use would take the control off screen as soon as a width wide enough
+    // to cover the recording was picked, leaving nothing on screen to narrow it with.
+    const recording = 40 * 60 * FPS;
+    for (const half of WINDOW_HALF_CHOICES) {
+      expect(showsWindow(recording, FPS)).toBe(true);
+      // Even where the window covers the whole recording, the control that would narrow it stays.
+      expect(windowFor(recording, recording / 2, windowHalfFrames(half, FPS)).len).toBeLessThanOrEqual(recording);
+    }
+  });
+
+  it("reads the source's own rate, not an assumed thirty", () => {
+    const halfHourAt60 = WINDOW_MIN_SECONDS * 60;
+    expect(showsWindow(halfHourAt60, 60)).toBe(false);
+    expect(showsWindow(halfHourAt60 + 1, 60)).toBe(true);
   });
 });
 
