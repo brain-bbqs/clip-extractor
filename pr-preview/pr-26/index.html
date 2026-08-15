@@ -93,8 +93,8 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-C3fLaiZf.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BNS17KB5.css">
+    <script type="module" crossorigin src="./assets/index-Bwy4keaU.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-C0GZot14.css">
   </head>
   <body>
     <a class="brand-watermark-link" href="https://brain-bbqs.org" target="_blank" rel="noopener" aria-label="BBQS" title="BBQS">
@@ -178,10 +178,19 @@
       <section class="card" id="loadCard">
         <div class="card-toprow">
           <span></span>
+          <!-- Each source is marked by what it reads from, so the three are told apart at a glance
+               rather than by reading all three labels. The marks are decorative: the label beside
+               each one already names it, so they are kept out of the accessibility tree. -->
           <div class="seg" id="srcSeg" role="group" aria-label="Video source">
-            <button type="button" data-src="local" class="active" aria-pressed="true">Load local file</button>
-            <button type="button" data-src="browse" aria-pressed="false">Browse EMBER</button>
-            <button type="button" data-src="ember" aria-pressed="false">Stream from a URL</button>
+            <button type="button" data-src="local" class="active" aria-pressed="true">
+              <span class="seg-icon" aria-hidden="true">📁</span>Load local file
+            </button>
+            <button type="button" data-src="browse" aria-pressed="false">
+              <img class="seg-icon" src="./assets/ember-mark-X20jsAgA.svg" alt="" width="12" height="15" />Browse EMBER
+            </button>
+            <button type="button" data-src="ember" aria-pressed="false">
+              <span class="seg-icon" aria-hidden="true">🔗</span>Stream from a URL
+            </button>
           </div>
           <label class="hint slp-toggle">
             <span>Pose annotations (<code>.slp</code> / <code>.nwb</code>)</span>
