@@ -40,6 +40,22 @@ import {
 import { containsHumanSubjects, fetchDraftMetadata } from "./lib/humanSubjects";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
+import {
+  archiveById,
+  canSweep,
+  dandisetWebUrl,
+  fetchDandisetVideos,
+  hydrateDandisetNames,
+  indexDandisets,
+  listManifestObjects,
+  sweepArchiveVideos,
+  PUBLIC_ARCHIVES,
+  type ArchiveDandiset,
+  type ArchiveId,
+  type ArchiveVideo,
+  type PublicArchive,
+} from "./lib/archives";
+import { loadCachedNames, saveCachedNames } from "./lib/archiveNames";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
 import {
   defaultDeliveryMode,
@@ -1566,11 +1582,15 @@ function selectSeg(segEl: HTMLElement, value: string | undefined): void {
 
 wireSeg(els.modeSeg, (v) => setMode(v as SelectorMode));
 
-// Source toggle: local file (dropzone) vs stream from EMBER (URL).
-type SourceKind = "local" | "ember";
+// Source toggle: local file (dropzone), browse the public archives, or stream a URL.
+type SourceKind = "local" | "browse" | "ember";
 function setSrcPane(src: SourceKind): void {
   els.localPane.hidden = src !== "local";
+  els.browsePane.hidden = src !== "browse";
   els.emberPane.hidden = src !== "ember";
+  // Reading an archive costs a bucket listing and a manifest per dataset, so nothing is read until
+  // somebody actually opens the pane.
+  if (src === "browse") void openArchive(browse?.archive.id ?? PUBLIC_ARCHIVES[0].id);
 }
 wireSeg(els.srcSeg, (v) => setSrcPane(v as SourceKind));
 
@@ -1584,6 +1604,289 @@ els.emberLoadBtn.addEventListener("click", loadFromEmberUrl);
 els.emberUrl.addEventListener("keydown", (e) => {
   if (e.key === "Enter") loadFromEmberUrl();
 });
+
+// ============================================================
+// Browsing the public archives
+// ============================================================
+// The pane is driven entirely by lib/archives.ts, which reads EMBER's and DANDI's public S3
+// buckets: one listing to learn which datasets exist, then the small `.jsonld` manifests each
+// dataset publishes. Nothing here signs in or calls either archive's API.
+
+/** Dataset rows put on the page at once. DANDI lists over a thousand datasets and the filter box
+ * is how you get to the one you want, so the list is capped and says when it has been. */
+const BROWSE_ROW_LIMIT = 200;
+
+interface BrowseState {
+  archive: PublicArchive;
+  datasets: ArchiveDandiset[];
+  names: Map<string, string>;
+  /** Videos per dataset id. A dataset missing from the map has not had its manifest read yet. */
+  videos: Map<string, ArchiveVideo[]>;
+  /** True once every dataset's manifest has been read, which is what "with video only" needs. */
+  swept: boolean;
+  selected: string | null;
+  /** Cancels this archive's outstanding reads when another archive is opened. */
+  abort: AbortController;
+}
+
+let browse: BrowseState | null = null;
+/** Bumped on every archive open, so a slow one that is switched away from cannot paint over the
+ * archive that replaced it. */
+let browseGeneration = 0;
+let browseFilterTimer: ReturnType<typeof setTimeout> | undefined;
+/** The label and trailing-detail nodes of the rows currently on the page, so a name or a video
+ * count arriving mid-sweep updates one row instead of rebuilding the list. */
+const browseRowLabels = new Map<string, HTMLElement>();
+const browseRowMeta = new Map<string, HTMLElement>();
+
+function browseSay(message: string, cls: "" | "err" = ""): void {
+  els.browseStatus.textContent = message;
+  els.browseStatus.classList.toggle("err", cls === "err");
+}
+
+/** Empties a list and replaces it with a single explanatory line. */
+function browseEmpty(list: HTMLUListElement, message: string): void {
+  list.replaceChildren();
+  const li = document.createElement("li");
+  const p = document.createElement("p");
+  p.className = "browse-empty";
+  p.textContent = message;
+  li.append(p);
+  list.append(li);
+}
+
+/** Opens an archive, reading it only the first time it is asked for. */
+async function openArchive(id: ArchiveId): Promise<void> {
+  if (browse && browse.archive.id === id) return;
+  browse?.abort.abort();
+  const archive = archiveById(id);
+  const generation = ++browseGeneration;
+  const current: BrowseState = {
+    archive,
+    datasets: [],
+    names: loadCachedNames(id),
+    videos: new Map(),
+    swept: false,
+    selected: null,
+    abort: new AbortController(),
+  };
+  browse = current;
+  const signal = current.abort.signal;
+  selectSeg(els.archiveSeg, id);
+  els.browseVideosOnlyRow.hidden = true;
+  els.browseDandisetLink.hidden = true;
+  els.browseVideoHeading.textContent = "Videos";
+  browseEmpty(els.browseVideos, "Choose a dataset to see the videos in it.");
+  els.browseDandisets.replaceChildren();
+  browseSay(`Reading the ${archive.label} archive listing…`);
+
+  try {
+    const datasets = indexDandisets(await listManifestObjects(archive, signal));
+    if (generation !== browseGeneration) return;
+    current.datasets = datasets;
+    renderDandisetList();
+    browseSay(`${datasets.length} ${archive.label} datasets.`);
+    // Titles first, so the list is readable while the longer scan below runs against it.
+    await hydrateNames(current, generation);
+    await sweepVideos(current, generation);
+  } catch (e) {
+    if (signal.aborted) return;
+    log(`Could not read the ${archive.label} archive: ${(e as Error).message}`, "err");
+    browseSay(`Could not read the ${archive.label} archive: ${friendlyError(e)}`, "err");
+  }
+}
+
+/** Fills in dataset titles, which is what makes the filter box match anything but a number. */
+async function hydrateNames(current: BrowseState, generation: number): Promise<void> {
+  const missing = current.datasets.filter((d) => !current.names.has(d.id));
+  if (!missing.length) return;
+  let done = 0;
+  await hydrateDandisetNames(
+    current.archive,
+    missing,
+    (dandiset, name) => {
+      if (generation !== browseGeneration) return;
+      done++;
+      if (name) {
+        current.names.set(dandiset.id, name);
+        const label = browseRowLabels.get(dandiset.id);
+        if (label) label.textContent = name;
+      }
+      browseSay(`${current.archive.label}: naming datasets, ${done} of ${missing.length}…`);
+    },
+    current.abort.signal,
+  );
+  if (generation !== browseGeneration) return;
+  saveCachedNames(current.archive.id, current.names);
+  browseSay(`${current.datasets.length} ${current.archive.label} datasets.`);
+}
+
+/**
+ * Reads every dataset's file list, so the pane can show only the datasets that actually hold
+ * video. Skipped on an archive whose manifests are too large to read wholesale (see
+ * SWEEP_BUDGET_BYTES): there, a dataset's file list is read when it is opened instead.
+ */
+async function sweepVideos(current: BrowseState, generation: number): Promise<void> {
+  if (!canSweep(current.datasets)) return;
+  let done = 0;
+  await sweepArchiveVideos(
+    current.archive,
+    current.datasets,
+    (dandiset, videos) => {
+      if (generation !== browseGeneration) return;
+      done++;
+      current.videos.set(dandiset.id, videos);
+      const meta = browseRowMeta.get(dandiset.id);
+      if (meta) meta.textContent = videoCountLabel(videos.length);
+      browseSay(`${current.archive.label}: looking for video, ${done} of ${current.datasets.length} datasets…`);
+    },
+    current.abort.signal,
+  );
+  if (generation !== browseGeneration) return;
+  current.swept = true;
+  const withVideo = current.datasets.filter((d) => (current.videos.get(d.id)?.length ?? 0) > 0).length;
+  els.browseVideosOnlyRow.hidden = false;
+  browseSay(`${withVideo} of ${current.datasets.length} ${current.archive.label} datasets hold video.`);
+  renderDandisetList();
+}
+
+function videoCountLabel(count: number): string {
+  if (count === 0) return "no video";
+  return count === 1 ? "1 video" : `${count} videos`;
+}
+
+/** The datasets the filter box and the "with video only" switch leave visible. */
+function visibleDandisets(current: BrowseState): ArchiveDandiset[] {
+  const query = els.browseFilter.value.trim().toLowerCase();
+  const videosOnly = current.swept && els.browseVideosOnly.checked;
+  return current.datasets.filter((d) => {
+    const videos = current.videos.get(d.id);
+    if (videosOnly && !videos?.length) return false;
+    if (!query) return true;
+    if (d.id.includes(query)) return true;
+    if (current.names.get(d.id)?.toLowerCase().includes(query)) return true;
+    return (videos ?? []).some((v) => v.path.toLowerCase().includes(query));
+  });
+}
+
+/** One clickable row: a fixed leading identifier, a wrapping label, and a trailing detail. */
+function browseRow(
+  id: string,
+  label: string,
+  meta: string,
+  onClick: () => void,
+): { li: HTMLLIElement; labelEl: HTMLElement; metaEl: HTMLElement } {
+  const li = document.createElement("li");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "browse-item";
+  const idEl = document.createElement("span");
+  idEl.className = "browse-id";
+  idEl.textContent = id;
+  const labelEl = document.createElement("span");
+  labelEl.className = "browse-label";
+  labelEl.textContent = label;
+  const metaEl = document.createElement("span");
+  metaEl.className = "browse-meta";
+  metaEl.textContent = meta;
+  button.append(idEl, labelEl, metaEl);
+  button.addEventListener("click", onClick);
+  li.append(button);
+  return { li, labelEl, metaEl };
+}
+
+function renderDandisetList(): void {
+  const current = browse;
+  browseRowLabels.clear();
+  browseRowMeta.clear();
+  if (!current) return;
+  const matches = visibleDandisets(current);
+  if (!matches.length) {
+    browseEmpty(els.browseDandisets, current.datasets.length ? "No dataset matches that filter." : "No datasets found.");
+    return;
+  }
+  const shown = matches.slice(0, BROWSE_ROW_LIMIT);
+  els.browseDandisets.replaceChildren();
+  for (const dandiset of shown) {
+    const videos = current.videos.get(dandiset.id);
+    const { li, labelEl, metaEl } = browseRow(
+      dandiset.id,
+      current.names.get(dandiset.id) ?? "",
+      videos ? videoCountLabel(videos.length) : bytes(dandiset.manifestBytes),
+      () => void selectDandiset(dandiset),
+    );
+    if (dandiset.id === current.selected) li.firstElementChild?.setAttribute("aria-current", "true");
+    browseRowLabels.set(dandiset.id, labelEl);
+    browseRowMeta.set(dandiset.id, metaEl);
+    els.browseDandisets.append(li);
+  }
+  if (matches.length > shown.length) {
+    const li = document.createElement("li");
+    const p = document.createElement("p");
+    p.className = "browse-empty";
+    p.textContent = `Showing ${shown.length} of ${matches.length} matches — narrow the filter to see the rest.`;
+    li.append(p);
+    els.browseDandisets.append(li);
+  }
+}
+
+/** Opens one dataset, reading its file list first if the sweep has not already done so. */
+async function selectDandiset(dandiset: ArchiveDandiset): Promise<void> {
+  const current = browse;
+  if (!current) return;
+  const generation = browseGeneration;
+  current.selected = dandiset.id;
+  renderDandisetList();
+  els.browseVideoHeading.textContent = `Videos in ${dandiset.id}`;
+  els.browseDandisetLink.href = dandisetWebUrl(current.archive, dandiset);
+  els.browseDandisetLink.hidden = false;
+  const known = current.videos.get(dandiset.id);
+  if (known) {
+    renderVideoList(known);
+    return;
+  }
+  browseEmpty(els.browseVideos, `Reading the file list for ${dandiset.id} (${bytes(dandiset.manifestBytes)})…`);
+  try {
+    const videos = await fetchDandisetVideos(current.archive, dandiset, current.abort.signal);
+    if (generation !== browseGeneration || browse?.selected !== dandiset.id) return;
+    current.videos.set(dandiset.id, videos);
+    const meta = browseRowMeta.get(dandiset.id);
+    if (meta) meta.textContent = videoCountLabel(videos.length);
+    renderVideoList(videos);
+  } catch (e) {
+    if (current.abort.signal.aborted || generation !== browseGeneration) return;
+    log(`Could not read the file list for ${dandiset.id}: ${(e as Error).message}`, "err");
+    browseEmpty(els.browseVideos, `The file list for ${dandiset.id} could not be read: ${friendlyError(e)}`);
+  }
+}
+
+function renderVideoList(videos: readonly ArchiveVideo[]): void {
+  if (!videos.length) {
+    browseEmpty(els.browseVideos, "This dataset holds no video files.");
+    return;
+  }
+  els.browseVideos.replaceChildren();
+  for (const video of videos) {
+    // The trailing path segment names the recording; the rest of the path is what places it in the
+    // dataset, so both are shown and the leading part is what wraps.
+    const { li } = browseRow("▶", video.path, bytes(video.size), () => streamArchiveVideo(video));
+    els.browseVideos.append(li);
+  }
+}
+
+function streamArchiveVideo(video: ArchiveVideo): void {
+  // Streamed from the bucket, which answers range requests cross-origin without a redirect, but
+  // recorded against the archive's own asset URL: that is the one that names the file rather than
+  // its content hash, and it is what a provenance sidecar should be able to be traced back through.
+  void loadVideo(video.streamUrl, video.path.split("/").pop() || video.path, video.assetUrl);
+}
+
+wireSeg(els.archiveSeg, (v) => void openArchive(v as ArchiveId));
+els.browseFilter.addEventListener("input", () => {
+  clearTimeout(browseFilterTimer);
+  browseFilterTimer = setTimeout(renderDandisetList, 150);
+});
+els.browseVideosOnly.addEventListener("change", renderDandisetList);
 
 // SLEAP annotations step: hidden until the toggle above the player is switched on.
 function enableSlpStep(): void {

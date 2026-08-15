@@ -178,7 +178,8 @@
           <span></span>
           <div class="seg" id="srcSeg" role="group" aria-label="Video source">
             <button type="button" data-src="local" class="active" aria-pressed="true">Load local file</button>
-            <button type="button" data-src="ember" aria-pressed="false">Stream from EMBER</button>
+            <button type="button" data-src="browse" aria-pressed="false">Browse EMBER or DANDI</button>
+            <button type="button" data-src="ember" aria-pressed="false">Stream from a URL</button>
           </div>
           <label class="hint slp-toggle">
             <span>Pose annotations (<code>.slp</code> / <code>.nwb</code>)</span>
@@ -193,6 +194,42 @@
               </div>
               <p>Drop a video here, or click to browse <button type="button" id="browseVideoBtn" class="dz-browse">files</button>.</p>
               <p class="dz-sample"><button type="button" id="sampleBtn" class="dz-browse">Load the sample (mice)</button></p>
+            </div>
+          </div>
+        </div>
+        <!-- Browse the public archives. Everything here is read straight out of the archives'
+             public S3 buckets (see lib/archives.ts): no sign-in, and no call to either API. -->
+        <div id="browsePane" hidden>
+          <div class="browse-controls">
+            <div class="seg small" id="archiveSeg" role="group" aria-label="Archive">
+              <button type="button" data-archive="ember" class="active" aria-pressed="true">EMBER</button>
+              <button type="button" data-archive="dandi" aria-pressed="false">DANDI</button>
+            </div>
+            <input
+              type="search"
+              id="browseFilter"
+              placeholder="Filter by dataset number, title or file name"
+              aria-label="Filter datasets"
+            />
+            <label class="hint browse-toggle" id="browseVideosOnlyRow" hidden>
+              <input type="checkbox" id="browseVideosOnly" checked />
+              <span>With video only</span>
+            </label>
+          </div>
+          <p id="browseStatus" class="hint" role="status"></p>
+          <div class="browse-columns">
+            <div class="browse-column">
+              <p class="browse-heading" id="browseDandisetHeading">Datasets</p>
+              <ul id="browseDandisets" class="browse-list" aria-labelledby="browseDandisetHeading"></ul>
+            </div>
+            <div class="browse-column">
+              <p class="browse-heading">
+                <span id="browseVideoHeading">Videos</span>
+                <a id="browseDandisetLink" class="browse-out" target="_blank" rel="noopener" hidden
+                  >Open dataset <span class="btn-arrow" aria-hidden="true">↗</span></a
+                >
+              </p>
+              <ul id="browseVideos" class="browse-list" aria-labelledby="browseVideoHeading"></ul>
             </div>
           </div>
         </div>

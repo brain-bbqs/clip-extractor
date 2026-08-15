@@ -490,7 +490,7 @@ input[type="checkbox"].switch:checked::after {
   background: none;
 }
 
-/* Stream-from-EMBER pane */
+/* Stream-from-a-URL pane */
 .url-row {
   display: flex;
   gap: 0.5rem;
@@ -504,6 +504,133 @@ input[type="url"] {
   border-radius: 8px;
   background: var(--bg);
   color: var(--text);
+}
+
+/* Browse-the-archives pane: the archive toggle and filter above two lists, datasets on the left
+   and the videos in the chosen dataset on the right. */
+.browse-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.browse-controls input[type="search"] {
+  flex: 1;
+  min-width: 12rem;
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+.browse-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+#browseStatus {
+  margin: 0.6rem 0 0;
+  min-height: 1.2em;
+}
+.browse-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 1rem;
+  margin-top: 0.6rem;
+}
+@media (max-width: 720px) {
+  .browse-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.browse-column {
+  min-width: 0;
+}
+.browse-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.browse-out {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.browse-out:hover {
+  text-decoration: underline;
+}
+/* Both lists scroll rather than growing the card: an archive holds far more datasets than fit on
+   a screen, and the load card sits above the player. */
+.browse-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 15rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.browse-list:empty {
+  border-style: dashed;
+  min-height: 3rem;
+}
+.browse-list li + li {
+  border-top: 1px solid var(--border);
+}
+.browse-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.85rem;
+  white-space: normal;
+}
+.browse-item:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+.browse-item[aria-current="true"] {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+.browse-item .browse-id {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+.browse-item .browse-label {
+  flex: 1;
+  min-width: 0;
+  /* Asset paths are long and their tail is the part that identifies them, so they wrap rather
+     than being cut off. */
+  overflow-wrap: anywhere;
+}
+.browse-item .browse-meta {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.browse-empty {
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
 }
 /* Player */
 input[type="checkbox"] {
