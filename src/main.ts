@@ -41,20 +41,18 @@ import { containsHumanSubjects, fetchDraftMetadata } from "./lib/humanSubjects";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
 import {
-  archiveById,
   canSweep,
   dandisetWebUrl,
   fetchDandisetVideos,
   hydrateDandisetNames,
   indexDandisets,
   listManifestObjects,
+  mergeDandisets,
   sweepArchiveVideos,
-  PUBLIC_ARCHIVES,
   type ArchiveDandiset,
-  type ArchiveId,
   type ArchiveVideo,
-  type PublicArchive,
 } from "./lib/archives";
+import { listEmbargoedVideos, listOwnedEmbargoedDandisets, resolveEmbargoedStreamUrl } from "./lib/embargoed";
 import { loadCachedNames, saveCachedNames } from "./lib/archiveNames";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
 import {
@@ -1582,15 +1580,15 @@ function selectSeg(segEl: HTMLElement, value: string | undefined): void {
 
 wireSeg(els.modeSeg, (v) => setMode(v as SelectorMode));
 
-// Source toggle: local file (dropzone), browse the public archives, or stream a URL.
+// Source toggle: local file (dropzone), browse EMBER, or stream a URL.
 type SourceKind = "local" | "browse" | "ember";
 function setSrcPane(src: SourceKind): void {
   els.localPane.hidden = src !== "local";
   els.browsePane.hidden = src !== "browse";
   els.emberPane.hidden = src !== "ember";
-  // Reading an archive costs a bucket listing and a manifest per dataset, so nothing is read until
+  // Reading the archive costs a bucket listing and a manifest per dataset, so nothing is read until
   // somebody actually opens the pane.
-  if (src === "browse") void openArchive(browse?.archive.id ?? PUBLIC_ARCHIVES[0].id);
+  if (src === "browse" && !browse) void refreshBrowse();
 }
 wireSeg(els.srcSeg, (v) => setSrcPane(v as SourceKind));
 
@@ -1606,38 +1604,51 @@ els.emberUrl.addEventListener("keydown", (e) => {
 });
 
 // ============================================================
-// Browsing the public archives
+// Browsing EMBER
 // ============================================================
-// The pane is driven entirely by lib/archives.ts, which reads EMBER's and DANDI's public S3
-// buckets: one listing to learn which datasets exist, then the small `.jsonld` manifests each
-// dataset publishes. Nothing here signs in or calls either archive's API.
+// Two halves, because an archive answers for a public dataset and an embargoed one in completely
+// different ways. What is public is read straight out of EMBER's public S3 bucket (lib/archives.ts):
+// one listing to learn which datasets exist, then the small `.jsonld` manifests each one publishes,
+// with no sign-in and no call to the API. What is embargoed cannot be read that way at all — its
+// manifests are listed in the bucket but refuse anonymous reads, which is the point — so a signed-in
+// visitor's own datasets are asked of the API instead (lib/embargoed.ts) and merged into the same
+// list.
 
-/** Dataset rows put on the page at once. DANDI lists over a thousand datasets and the filter box
- * is how you get to the one you want, so the list is capped and says when it has been. */
+/** Dataset rows put on the page at once, so a filter that matches everything cannot flood it. */
 const BROWSE_ROW_LIMIT = 200;
 
 interface BrowseState {
-  archive: PublicArchive;
   datasets: ArchiveDandiset[];
+  /** Titles of the *public* datasets, read from their manifests. An embargoed dataset carries its
+   * own title from the API listing that found it. */
   names: Map<string, string>;
-  /** Videos per dataset id. A dataset missing from the map has not had its manifest read yet. */
+  /** Videos per dataset id. A dataset missing from the map has not had its file list read yet. */
   videos: Map<string, ArchiveVideo[]>;
-  /** True once every dataset's manifest has been read, which is what "with video only" needs. */
+  /** True once every dataset's file list has been read, which is what "with video only" needs. */
   swept: boolean;
   selected: string | null;
-  /** Cancels this archive's outstanding reads when another archive is opened. */
+  /** Cancels this pass's outstanding reads when the pane is rebuilt (a sign-in, say). */
   abort: AbortController;
 }
 
 let browse: BrowseState | null = null;
-/** Bumped on every archive open, so a slow one that is switched away from cannot paint over the
- * archive that replaced it. */
+/** Bumped on every rebuild, so a slow pass that has been superseded cannot paint over the one that
+ * replaced it. */
 let browseGeneration = 0;
+/** Whether the list on screen was built signed in. What the pane can see changes with that and
+ * with nothing else about the upload side, so it is the only thing that forces a rebuild. */
+let browseSignedIn = false;
 let browseFilterTimer: ReturnType<typeof setTimeout> | undefined;
 /** The label and trailing-detail nodes of the rows currently on the page, so a name or a video
  * count arriving mid-sweep updates one row instead of rebuilding the list. */
 const browseRowLabels = new Map<string, HTMLElement>();
 const browseRowMeta = new Map<string, HTMLElement>();
+
+/** The archive config the browse pane's API calls run under. Unlike currentConfig(), it is not
+ * tied to the upload destination picker: which dataset is being read is passed per call. */
+function browseConfig(): ArchiveConfig {
+  return resolveConfig({ dandisetId: "", oauthAccessToken: oauthTokens?.accessToken });
+}
 
 function browseSay(message: string, cls: "" | "err" = ""): void {
   els.browseStatus.textContent = message;
@@ -1655,16 +1666,21 @@ function browseEmpty(list: HTMLUListElement, message: string): void {
   list.append(li);
 }
 
-/** Opens an archive, reading it only the first time it is asked for. */
-async function openArchive(id: ArchiveId): Promise<void> {
-  if (browse && browse.archive.id === id) return;
+/** The title to show for a dataset, wherever it came from. */
+function browseName(current: BrowseState, dandiset: ArchiveDandiset): string {
+  return dandiset.name || current.names.get(dandiset.id) || "";
+}
+
+/** Reads the archive from scratch. Run when the pane is first opened and again whenever signing in
+ * or out changes which datasets there are to see. */
+async function refreshBrowse(): Promise<void> {
+  const reopen = browse?.selected ?? null;
   browse?.abort.abort();
-  const archive = archiveById(id);
+  browseSignedIn = oauthTokens !== null;
   const generation = ++browseGeneration;
   const current: BrowseState = {
-    archive,
     datasets: [],
-    names: loadCachedNames(id),
+    names: loadCachedNames(),
     videos: new Map(),
     swept: false,
     selected: null,
@@ -1672,37 +1688,61 @@ async function openArchive(id: ArchiveId): Promise<void> {
   };
   browse = current;
   const signal = current.abort.signal;
-  selectSeg(els.archiveSeg, id);
   els.browseVideosOnlyRow.hidden = true;
   els.browseDandisetLink.hidden = true;
   els.browseVideoHeading.textContent = "Videos";
   browseEmpty(els.browseVideos, "Choose a dataset to see the videos in it.");
   els.browseDandisets.replaceChildren();
-  browseSay(`Reading the ${archive.label} archive listing…`);
+  browseSay("Reading the EMBER archive listing…");
 
   try {
-    const datasets = indexDandisets(await listManifestObjects(archive, signal));
+    if (oauthTokens) await ensureFreshOAuth();
+    // The public listing and the signed-in visitor's own datasets are independent reads, so they
+    // run together; only the bucket listing is allowed to fail the whole pane.
+    const [pub, owned] = await Promise.all([listManifestObjects(signal).then(indexDandisets), listOwnedEmbargoed(signal)]);
     if (generation !== browseGeneration) return;
-    current.datasets = datasets;
+    current.datasets = mergeDandisets(pub, owned);
     renderDandisetList();
-    browseSay(`${datasets.length} ${archive.label} datasets.`);
+    browseSay(browseCountLine(current));
+    // A rebuild is a change of what can be seen, not a change of mind: whatever dataset was open
+    // before is opened again, so signing in does not close it.
+    const previous = reopen ? current.datasets.find((d) => d.id === reopen) : undefined;
+    if (previous) void selectDandiset(previous);
     // Titles first, so the list is readable while the longer scan below runs against it.
     await hydrateNames(current, generation);
     await sweepVideos(current, generation);
   } catch (e) {
     if (signal.aborted) return;
-    log(`Could not read the ${archive.label} archive: ${(e as Error).message}`, "err");
-    browseSay(`Could not read the ${archive.label} archive: ${friendlyError(e)}`, "err");
+    log(`Could not read the EMBER archive: ${(e as Error).message}`, "err");
+    browseSay(`Could not read the EMBER archive: ${friendlyError(e)}`, "err");
   }
 }
 
-/** Fills in dataset titles, which is what makes the filter box match anything but a number. */
+/** The datasets the signed-in visitor owns and nobody else can see. Signed out, there are none; a
+ * failed lookup is reported and the public half of the pane carries on without them. */
+async function listOwnedEmbargoed(signal: AbortSignal): Promise<ArchiveDandiset[]> {
+  if (!oauthTokens) return [];
+  try {
+    return await listOwnedEmbargoedDandisets(browseConfig());
+  } catch (e) {
+    if (signal.aborted) throw e;
+    log(`Could not list your embargoed datasets: ${(e as Error).message}`, "warn");
+    return [];
+  }
+}
+
+function browseCountLine(current: BrowseState): string {
+  const mine = current.datasets.filter((d) => d.embargoed).length;
+  const suffix = mine ? `, ${mine} of them embargoed and yours` : "";
+  return `${current.datasets.length} EMBER datasets${suffix}.`;
+}
+
+/** Fills in public dataset titles, which is what makes the filter box match anything but a number. */
 async function hydrateNames(current: BrowseState, generation: number): Promise<void> {
-  const missing = current.datasets.filter((d) => !current.names.has(d.id));
+  const missing = current.datasets.filter((d) => !d.embargoed && !current.names.has(d.id));
   if (!missing.length) return;
   let done = 0;
   await hydrateDandisetNames(
-    current.archive,
     missing,
     (dandiset, name) => {
       if (generation !== browseGeneration) return;
@@ -1712,33 +1752,39 @@ async function hydrateNames(current: BrowseState, generation: number): Promise<v
         const label = browseRowLabels.get(dandiset.id);
         if (label) label.textContent = name;
       }
-      browseSay(`${current.archive.label}: naming datasets, ${done} of ${missing.length}…`);
+      browseSay(`Naming datasets, ${done} of ${missing.length}…`);
     },
     current.abort.signal,
   );
   if (generation !== browseGeneration) return;
-  saveCachedNames(current.archive.id, current.names);
-  browseSay(`${current.datasets.length} ${current.archive.label} datasets.`);
+  saveCachedNames(current.names);
+  browseSay(browseCountLine(current));
+}
+
+/** Every video in one dataset, asked of whichever side can answer for it. */
+function readDandisetVideos(dandiset: ArchiveDandiset, signal?: AbortSignal): Promise<ArchiveVideo[]> {
+  if (dandiset.embargoed) return listEmbargoedVideos(browseConfig(), dandiset.id, signal);
+  return fetchDandisetVideos(dandiset, signal);
 }
 
 /**
- * Reads every dataset's file list, so the pane can show only the datasets that actually hold
- * video. Skipped on an archive whose manifests are too large to read wholesale (see
- * SWEEP_BUDGET_BYTES): there, a dataset's file list is read when it is opened instead.
+ * Reads every dataset's file list, so the pane can show only the datasets that actually hold video.
+ * Skipped when the public manifests are too large to read wholesale (see SWEEP_BUDGET_BYTES): a
+ * dataset's file list is then read when it is opened instead.
  */
 async function sweepVideos(current: BrowseState, generation: number): Promise<void> {
   if (!canSweep(current.datasets)) return;
   let done = 0;
   await sweepArchiveVideos(
-    current.archive,
     current.datasets,
+    readDandisetVideos,
     (dandiset, videos) => {
       if (generation !== browseGeneration) return;
       done++;
       current.videos.set(dandiset.id, videos);
       const meta = browseRowMeta.get(dandiset.id);
       if (meta) meta.textContent = videoCountLabel(videos.length);
-      browseSay(`${current.archive.label}: looking for video, ${done} of ${current.datasets.length} datasets…`);
+      browseSay(`Looking for video, ${done} of ${current.datasets.length} datasets…`);
     },
     current.abort.signal,
   );
@@ -1746,7 +1792,7 @@ async function sweepVideos(current: BrowseState, generation: number): Promise<vo
   current.swept = true;
   const withVideo = current.datasets.filter((d) => (current.videos.get(d.id)?.length ?? 0) > 0).length;
   els.browseVideosOnlyRow.hidden = false;
-  browseSay(`${withVideo} of ${current.datasets.length} ${current.archive.label} datasets hold video.`);
+  browseSay(`${withVideo} of ${current.datasets.length} EMBER datasets hold video.`);
   renderDandisetList();
 }
 
@@ -1764,18 +1810,20 @@ function visibleDandisets(current: BrowseState): ArchiveDandiset[] {
     if (videosOnly && !videos?.length) return false;
     if (!query) return true;
     if (d.id.includes(query)) return true;
-    if (current.names.get(d.id)?.toLowerCase().includes(query)) return true;
+    if (browseName(current, d).toLowerCase().includes(query)) return true;
     return (videos ?? []).some((v) => v.path.toLowerCase().includes(query));
   });
 }
 
-/** One clickable row: a fixed leading identifier, a wrapping label, and a trailing detail. */
-function browseRow(
-  id: string,
-  label: string,
-  meta: string,
-  onClick: () => void,
-): { li: HTMLLIElement; labelEl: HTMLElement; metaEl: HTMLElement } {
+interface BrowseRowParts {
+  li: HTMLLIElement;
+  labelEl: HTMLElement;
+  metaEl: HTMLElement;
+}
+
+/** One clickable row: a fixed leading identifier, a wrapping label, an optional badge, and a
+ * trailing detail. */
+function browseRow(id: string, label: string, meta: string, onClick: () => void, badge?: string): BrowseRowParts {
   const li = document.createElement("li");
   const button = document.createElement("button");
   button.type = "button";
@@ -1789,10 +1837,27 @@ function browseRow(
   const metaEl = document.createElement("span");
   metaEl.className = "browse-meta";
   metaEl.textContent = meta;
-  button.append(idEl, labelEl, metaEl);
+  button.append(idEl, labelEl);
+  if (badge) {
+    const badgeEl = document.createElement("span");
+    badgeEl.className = "badge";
+    badgeEl.textContent = badge;
+    button.append(badgeEl);
+  }
+  button.append(metaEl);
   button.addEventListener("click", onClick);
   li.append(button);
   return { li, labelEl, metaEl };
+}
+
+/** Appends a line of explanatory text as the last row of a list. */
+function browseNote(list: HTMLUListElement, message: string): void {
+  const li = document.createElement("li");
+  const p = document.createElement("p");
+  p.className = "browse-empty";
+  p.textContent = message;
+  li.append(p);
+  list.append(li);
 }
 
 function renderDandisetList(): void {
@@ -1811,9 +1876,10 @@ function renderDandisetList(): void {
     const videos = current.videos.get(dandiset.id);
     const { li, labelEl, metaEl } = browseRow(
       dandiset.id,
-      current.names.get(dandiset.id) ?? "",
-      videos ? videoCountLabel(videos.length) : bytes(dandiset.manifestBytes),
+      browseName(current, dandiset),
+      videos ? videoCountLabel(videos.length) : dandiset.embargoed ? "" : bytes(dandiset.manifestBytes),
       () => void selectDandiset(dandiset),
+      dandiset.embargoed ? "embargoed" : undefined,
     );
     if (dandiset.id === current.selected) li.firstElementChild?.setAttribute("aria-current", "true");
     browseRowLabels.set(dandiset.id, labelEl);
@@ -1821,12 +1887,7 @@ function renderDandisetList(): void {
     els.browseDandisets.append(li);
   }
   if (matches.length > shown.length) {
-    const li = document.createElement("li");
-    const p = document.createElement("p");
-    p.className = "browse-empty";
-    p.textContent = `Showing ${shown.length} of ${matches.length} matches — narrow the filter to see the rest.`;
-    li.append(p);
-    els.browseDandisets.append(li);
+    browseNote(els.browseDandisets, `Showing ${shown.length} of ${matches.length} matches — narrow the filter to see the rest.`);
   }
 }
 
@@ -1838,16 +1899,17 @@ async function selectDandiset(dandiset: ArchiveDandiset): Promise<void> {
   current.selected = dandiset.id;
   renderDandisetList();
   els.browseVideoHeading.textContent = `Videos in ${dandiset.id}`;
-  els.browseDandisetLink.href = dandisetWebUrl(current.archive, dandiset);
+  els.browseDandisetLink.href = dandisetWebUrl(dandiset);
   els.browseDandisetLink.hidden = false;
   const known = current.videos.get(dandiset.id);
   if (known) {
     renderVideoList(known);
     return;
   }
-  browseEmpty(els.browseVideos, `Reading the file list for ${dandiset.id} (${bytes(dandiset.manifestBytes)})…`);
+  const cost = dandiset.embargoed ? "" : ` (${bytes(dandiset.manifestBytes)})`;
+  browseEmpty(els.browseVideos, `Reading the file list for ${dandiset.id}${cost}…`);
   try {
-    const videos = await fetchDandisetVideos(current.archive, dandiset, current.abort.signal);
+    const videos = await readDandisetVideos(dandiset, current.abort.signal);
     if (generation !== browseGeneration || browse?.selected !== dandiset.id) return;
     current.videos.set(dandiset.id, videos);
     const meta = browseRowMeta.get(dandiset.id);
@@ -1867,21 +1929,43 @@ function renderVideoList(videos: readonly ArchiveVideo[]): void {
   }
   els.browseVideos.replaceChildren();
   for (const video of videos) {
-    // The trailing path segment names the recording; the rest of the path is what places it in the
-    // dataset, so both are shown and the leading part is what wraps.
-    const { li } = browseRow("▶", video.path, bytes(video.size), () => streamArchiveVideo(video));
+    const { li } = browseRow("▶", video.path, bytes(video.size), () => void streamArchiveVideo(video));
     els.browseVideos.append(li);
   }
 }
 
-function streamArchiveVideo(video: ArchiveVideo): void {
+async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
+  const name = video.path.split("/").pop() || video.path;
+  let streamUrl = video.streamUrl;
+  if (!streamUrl) {
+    // Embargoed: the bytes sit behind a signature the archive has to issue, and it is only good for
+    // a while, so it is asked for at the moment the video is opened rather than when it was listed.
+    browseSay(`Asking EMBER for a link to ${name}…`);
+    try {
+      await ensureFreshOAuth();
+      streamUrl = await resolveEmbargoedStreamUrl(browseConfig(), video.assetUrl);
+    } catch (e) {
+      log(`Could not open the embargoed file ${video.path}: ${(e as Error).message}`, "err");
+      browseSay(`${name} could not be opened: ${friendlyError(e)}`, "err");
+      return;
+    }
+    browseSay(browse ? browseCountLine(browse) : "");
+  }
   // Streamed from the bucket, which answers range requests cross-origin without a redirect, but
-  // recorded against the archive's own asset URL: that is the one that names the file rather than
-  // its content hash, and it is what a provenance sidecar should be able to be traced back through.
-  void loadVideo(video.streamUrl, video.path.split("/").pop() || video.path, video.assetUrl);
+  // recorded against the archive's own asset URL: that is the one naming the file rather than its
+  // content hash — and for an embargoed file, the only one that will still resolve tomorrow.
+  void loadVideo(streamUrl, name, video.assetUrl);
 }
 
-wireSeg(els.archiveSeg, (v) => void openArchive(v as ArchiveId));
+/**
+ * Re-reads the archive when signing in or out has changed what the pane can see. Only then: the
+ * auth path this hangs off runs on every load and on every change of upload destination, and
+ * rebuilding the list underneath somebody who is reading it is not a free thing to do.
+ */
+function syncBrowseToAuth(): void {
+  if (browse && browseSignedIn !== (oauthTokens !== null)) void refreshBrowse();
+}
+
 els.browseFilter.addEventListener("input", () => {
   clearTimeout(browseFilterTimer);
   browseFilterTimer = setTimeout(renderDandisetList, 150);
@@ -2162,6 +2246,7 @@ async function refreshDandisetOptions(): Promise<void> {
     setDandisetPlaceholder("Please sign in to see your incoming datasets.");
     updateViewDatasetLink();
     applyDeliveryMode();
+    syncBrowseToAuth();
     return;
   }
   await ensureFreshOAuth();
@@ -2183,6 +2268,7 @@ async function refreshDandisetOptions(): Promise<void> {
   updateViewDatasetLink();
   applyDeliveryMode();
   void refreshHumanSubjectsGate();
+  syncBrowseToAuth();
 }
 
 async function initEmberAuth(): Promise<void> {

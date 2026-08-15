@@ -18,7 +18,6 @@ export function getElements() {
     srcSeg: required<HTMLDivElement>("srcSeg"),
     localPane: required<HTMLDivElement>("localPane"),
     browsePane: required<HTMLDivElement>("browsePane"),
-    archiveSeg: required<HTMLDivElement>("archiveSeg"),
     browseFilter: required<HTMLInputElement>("browseFilter"),
     browseVideosOnlyRow: required<HTMLLabelElement>("browseVideosOnlyRow"),
     browseVideosOnly: required<HTMLInputElement>("browseVideosOnly"),

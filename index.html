@@ -178,7 +178,7 @@
           <span></span>
           <div class="seg" id="srcSeg" role="group" aria-label="Video source">
             <button type="button" data-src="local" class="active" aria-pressed="true">Load local file</button>
-            <button type="button" data-src="browse" aria-pressed="false">Browse EMBER or DANDI</button>
+            <button type="button" data-src="browse" aria-pressed="false">Browse EMBER</button>
             <button type="button" data-src="ember" aria-pressed="false">Stream from a URL</button>
           </div>
           <label class="hint slp-toggle">
@@ -197,14 +197,12 @@
             </div>
           </div>
         </div>
-        <!-- Browse the public archives. Everything here is read straight out of the archives'
-             public S3 buckets (see lib/archives.ts): no sign-in, and no call to either API. -->
+        <!-- Browse EMBER. The public half is read straight out of the archive's public S3 bucket
+             (see lib/archives.ts), with no sign-in and no call to the API; the datasets a signed-in
+             visitor owns are asked of the API instead, since an embargo is exactly a refusal to
+             answer that bucket read (see lib/embargoed.ts). -->
         <div id="browsePane" hidden>
           <div class="browse-controls">
-            <div class="seg small" id="archiveSeg" role="group" aria-label="Archive">
-              <button type="button" data-archive="ember" class="active" aria-pressed="true">EMBER</button>
-              <button type="button" data-archive="dandi" aria-pressed="false">DANDI</button>
-            </div>
             <input
               type="search"
               id="browseFilter"

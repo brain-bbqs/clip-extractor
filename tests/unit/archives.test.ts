@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  archiveById,
   canSweep,
   dandisetWebUrl,
   fetchDandisetName,
@@ -8,18 +7,17 @@ import {
   indexDandisets,
   isVideoAsset,
   listManifestObjects,
+  mergeDandisets,
   parseListing,
   pickManifestVersion,
   selectVideoAssets,
   sweepArchiveVideos,
   sweepBytes,
+  EMBER_ARCHIVE,
   SWEEP_BUDGET_BYTES,
   type ArchiveDandiset,
   type ArchiveVideo,
 } from "../../src/lib/archives";
-
-const ember = archiveById("ember");
-const dandi = archiveById("dandi");
 
 function listingXml(keys: [string, number][], nextToken?: string): string {
   const contents = keys.map(([key, size]) => `<Contents><Key>${key}</Key><Size>${size}</Size></Contents>`).join("");
@@ -31,19 +29,24 @@ function textResponse(body: string, ok = true, status = 200): Response {
   return { ok, status, text: () => Promise.resolve(body) } as unknown as Response;
 }
 
+/** A dataset as the bucket listing describes it. */
+function publicDandiset(id: string, manifestBytes = 1234): ArchiveDandiset {
+  return { id, version: "draft", manifestBytes, embargoed: false };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("parseListing", () => {
   it("reads keys, sizes and the continuation token out of an S3 listing", () => {
-    const page = parseListing(listingXml([["dandisets/000003/draft/assets.jsonld", 4096]], "tok"));
-    expect(page.entries).toEqual([{ key: "dandisets/000003/draft/assets.jsonld", size: 4096 }]);
+    const page = parseListing(listingXml([["dandisets/000265/draft/assets.jsonld", 4096]], "tok"));
+    expect(page.entries).toEqual([{ key: "dandisets/000265/draft/assets.jsonld", size: 4096 }]);
     expect(page.nextToken).toBe("tok");
   });
 
   it("reports no continuation token on the last page", () => {
-    expect(parseListing(listingXml([["dandisets/000003/draft/assets.jsonld", 1]])).nextToken).toBe(null);
+    expect(parseListing(listingXml([["dandisets/000265/draft/assets.jsonld", 1]])).nextToken).toBe(null);
   });
 
   it("refuses a body that is not XML at all", () => {
@@ -74,13 +77,28 @@ describe("indexDandisets", () => {
       { key: "dandisets/000003/draft/assets.jsonld", size: 30 },
     ]);
     expect(datasets).toEqual([
-      { id: "000003", version: "draft", manifestBytes: 30 },
-      { id: "000005", version: "draft", manifestBytes: 20 },
+      { id: "000003", version: "draft", manifestBytes: 30, embargoed: false },
+      { id: "000005", version: "draft", manifestBytes: 20, embargoed: false },
     ]);
   });
 
   it("ignores keys that are not a dataset version's asset manifest", () => {
     expect(indexDandisets([{ key: "blobs/abc/def/0123", size: 5 }])).toEqual([]);
+  });
+});
+
+describe("mergeDandisets", () => {
+  const owned: ArchiveDandiset = { id: "000265", version: "draft", manifestBytes: 0, embargoed: true, name: "Mine" };
+
+  it("lists the public datasets and the signed-in visitor's own together, by identifier", () => {
+    expect(mergeDandisets([publicDandiset("000299")], [owned]).map((d) => d.id)).toEqual(["000265", "000299"]);
+  });
+
+  it("lets the owned entry replace the unreadable public listing of the same dataset", () => {
+    // An embargoed dataset's manifests are listed publicly but refuse to be read, so the bucket
+    // knows it exists and nothing more; the API listing is the one that knows anything about it.
+    const merged = mergeDandisets([publicDandiset("000265")], [owned]);
+    expect(merged).toEqual([owned]);
   });
 });
 
@@ -114,56 +132,57 @@ describe("selectVideoAssets", () => {
   ];
 
   it("keeps only the videos, streaming from the bucket and citing the archive's own URL", () => {
-    expect(selectVideoAssets(ember, "000265", manifest)).toEqual([
+    expect(selectVideoAssets("000265", manifest)).toEqual([
       {
-        archiveId: "ember",
         dandisetId: "000265",
         path: "sub-1/mice.mp4",
         size: 31258120,
         streamUrl: "https://ember-dandi-archive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83",
         assetUrl: "https://api-dandi.emberarchive.org/api/assets/1e002c85/download/",
+        embargoed: false,
       },
     ]);
   });
 
   it("picks the bucket URL by which bucket it points at, not by its position in the list", () => {
     const reordered = [{ ...manifest[0], contentUrl: [...manifest[0].contentUrl].reverse() }];
-    expect(selectVideoAssets(ember, "000265", reordered)[0].streamUrl).toBe(
-      "https://ember-dandi-archive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83",
-    );
+    expect(selectVideoAssets("000265", reordered)[0].streamUrl).toBe("https://ember-dandi-archive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83");
   });
 
   it("cites the bucket URL when the archive lists no other one", () => {
     const onlyS3 = [{ ...manifest[0], contentUrl: ["https://ember-dandi-archive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83"] }];
-    expect(selectVideoAssets(ember, "000265", onlyS3)[0].assetUrl).toBe(
-      "https://ember-dandi-archive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83",
-    );
+    expect(selectVideoAssets("000265", onlyS3)[0].assetUrl).toBe("https://ember-dandi-archive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83");
   });
 
   it("drops a video whose bytes are not on this archive's bucket", () => {
-    expect(selectVideoAssets(dandi, "000265", manifest)).toEqual([]);
+    const elsewhere = [{ ...manifest[0], contentUrl: ["https://dandiarchive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83"] }];
+    expect(selectVideoAssets("000265", elsewhere)).toEqual([]);
   });
 
   it("survives a manifest that is not the list of assets it should be", () => {
-    expect(selectVideoAssets(ember, "000265", { error: "AccessDenied" })).toEqual([]);
-    expect(selectVideoAssets(ember, "000265", [null, { path: 7 }])).toEqual([]);
+    expect(selectVideoAssets("000265", { error: "AccessDenied" })).toEqual([]);
+    expect(selectVideoAssets("000265", [null, { path: 7 }])).toEqual([]);
   });
 });
 
 describe("sweep affordability", () => {
   const datasets = (bytesEach: number, count: number): ArchiveDandiset[] =>
-    Array.from({ length: count }, (_, i) => ({ id: String(i).padStart(6, "0"), version: "draft", manifestBytes: bytesEach }));
+    Array.from({ length: count }, (_, i) => publicDandiset(String(i).padStart(6, "0"), bytesEach));
 
   it("adds up what reading every manifest would cost", () => {
     expect(sweepBytes(datasets(1000, 4))).toBe(4000);
   });
 
-  it("allows a sweep of an archive whose manifests are small, like EMBER's", () => {
+  it("allows a sweep of an archive whose manifests are small, as EMBER's are", () => {
     expect(canSweep(datasets(10_000, 30))).toBe(true);
   });
 
-  it("refuses one whose manifests run to hundreds of megabytes, like DANDI's", () => {
+  it("refuses one whose manifests have grown past what a browser should read wholesale", () => {
     expect(canSweep(datasets(SWEEP_BUDGET_BYTES, 2))).toBe(false);
+  });
+
+  it("counts an embargoed dataset as free, since no manifest is read for it", () => {
+    expect(sweepBytes([{ id: "000265", version: "draft", manifestBytes: 0, embargoed: true }])).toBe(0);
   });
 });
 
@@ -178,35 +197,35 @@ describe("listManifestObjects", () => {
         return Promise.resolve(
           textResponse(
             first
-              ? listingXml([["dandisets/000003/draft/assets.jsonld", 1]], "page2")
-              : listingXml([["dandisets/000004/draft/assets.jsonld", 2]]),
+              ? listingXml([["dandisets/000265/draft/assets.jsonld", 1]], "page2")
+              : listingXml([["dandisets/000299/draft/assets.jsonld", 2]]),
           ),
         );
       }),
     );
-    const entries = await listManifestObjects(ember);
-    expect(entries.map((e) => e.key)).toEqual(["dandisets/000003/draft/assets.jsonld", "dandisets/000004/draft/assets.jsonld"]);
-    expect(urls[0].startsWith(`${ember.origin}/?`)).toBe(true);
+    const entries = await listManifestObjects();
+    expect(entries.map((e) => e.key)).toEqual(["dandisets/000265/draft/assets.jsonld", "dandisets/000299/draft/assets.jsonld"]);
+    expect(urls[0].startsWith(`${EMBER_ARCHIVE.origin}/?`)).toBe(true);
     expect(urls[1].includes("continuation-token=page2")).toBe(true);
   });
 
-  it("reports an unreadable bucket rather than returning an empty archive", async () => {
+  it("reports an unreachable bucket rather than returning an empty archive", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(() => Promise.resolve(textResponse("", false, 503))),
     );
-    await expect(listManifestObjects(ember)).rejects.toThrow(/HTTP 503/);
+    await expect(listManifestObjects()).rejects.toThrow(/HTTP 503/);
   });
 });
 
 describe("reading a dataset's manifests", () => {
-  const dandiset: ArchiveDandiset = { id: "000265", version: "draft", manifestBytes: 1234 };
+  const dandiset = publicDandiset("000265");
 
   it("reads a dataset's title from the version it indexed", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(textResponse(JSON.stringify({ name: "Clip extractor test data" }))));
     vi.stubGlobal("fetch", fetchMock);
-    expect(await fetchDandisetName(ember, dandiset)).toBe("Clip extractor test data");
-    expect(fetchMock.mock.calls[0][0]).toBe(`${ember.origin}/dandisets/000265/draft/dandiset.jsonld`);
+    expect(await fetchDandisetName(dandiset)).toBe("Clip extractor test data");
+    expect(fetchMock.mock.calls[0][0]).toBe(`${EMBER_ARCHIVE.origin}/dandisets/000265/draft/dandiset.jsonld`);
   });
 
   it("leaves a dataset unnamed rather than failing when its manifest is not readable", async () => {
@@ -215,7 +234,7 @@ describe("reading a dataset's manifests", () => {
       "fetch",
       vi.fn(() => Promise.resolve(textResponse("", false, 403))),
     );
-    expect(await fetchDandisetName(ember, dandiset)).toBe(null);
+    expect(await fetchDandisetName(dandiset)).toBe(null);
   });
 
   it("reads the videos in a dataset out of its asset manifest", async () => {
@@ -231,44 +250,48 @@ describe("reading a dataset's manifests", () => {
         ),
       ),
     );
-    const videos = await fetchDandisetVideos(ember, dandiset);
-    expect(videos.map((v) => v.path)).toEqual(["sub-1/mice.mp4"]);
+    expect((await fetchDandisetVideos(dandiset)).map((v) => v.path)).toEqual(["sub-1/mice.mp4"]);
   });
 });
 
 describe("sweepArchiveVideos", () => {
-  it("reports every dataset, including the ones whose manifest could not be read", async () => {
+  const video = (dandisetId: string): ArchiveVideo => ({
+    dandisetId,
+    path: "a.mp4",
+    size: 1,
+    assetUrl: "https://api.example.org/api/assets/a/download/",
+    streamUrl: "https://ember-dandi-archive.s3.amazonaws.com/blobs/a",
+    embargoed: false,
+  });
+
+  it("reports every dataset, including the ones whose file list could not be read", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: string) =>
-        Promise.resolve(
-          String(input).includes("000265")
-            ? textResponse(
-                JSON.stringify([{ path: "a.mp4", contentSize: 1, contentUrl: ["https://ember-dandi-archive.s3.amazonaws.com/blobs/a"] }]),
-              )
-            : textResponse("", false, 403),
-        ),
-      ),
-    );
     const seen = new Map<string, ArchiveVideo[]>();
     await sweepArchiveVideos(
-      ember,
-      [
-        { id: "000265", version: "draft", manifestBytes: 1 },
-        { id: "000299", version: "draft", manifestBytes: 1 },
-      ],
+      [publicDandiset("000265"), publicDandiset("000299")],
+      (dandiset) => (dandiset.id === "000265" ? Promise.resolve([video(dandiset.id)]) : Promise.reject(new Error("HTTP 403"))),
       (dandiset, videos) => seen.set(dandiset.id, videos),
     );
     expect(seen.get("000265")?.length).toBe(1);
     expect(seen.get("000299")).toEqual([]);
   });
+
+  it("asks the reader it is given, so an embargoed dataset can be read a different way", async () => {
+    const asked: string[] = [];
+    await sweepArchiveVideos(
+      [publicDandiset("000265"), { id: "000900", version: "draft", manifestBytes: 0, embargoed: true }],
+      (dandiset) => {
+        asked.push(`${dandiset.id}:${String(dandiset.embargoed)}`);
+        return Promise.resolve([]);
+      },
+      () => {},
+    );
+    expect(asked.sort()).toEqual(["000265:false", "000900:true"]);
+  });
 });
 
 describe("dandisetWebUrl", () => {
-  it("points at the dataset's own page in the archive that holds it", () => {
-    expect(dandisetWebUrl(dandi, { id: "000003", version: "draft", manifestBytes: 0 })).toBe(
-      "https://dandiarchive.org/dandiset/000003/draft",
-    );
+  it("points at the dataset's own page in the archive", () => {
+    expect(dandisetWebUrl(publicDandiset("000265"))).toBe("https://dandi.emberarchive.org/dandiset/000265/draft");
   });
 });
