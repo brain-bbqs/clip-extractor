@@ -330,6 +330,33 @@
           <!-- Time gradations, laid out per load by main.ts. Decorative: every number it shows is
                also in the readouts below, hence aria-hidden. -->
           <div id="selruler" class="sel-ruler" aria-hidden="true"></div>
+
+          <!-- The whole recording, under the track that trims it. Only shown once the recording runs
+               longer than the stretch the track covers (see lib/timeline.ts): below that the track
+               already spans the whole video and this would be a slider with nowhere to slide.
+               Dragging the window moves what the track above covers and decodes nothing, so crossing
+               a day costs one seek when the drag ends rather than one per pointer move. The
+               gradations under it are landmarks rather than divisions — the window is continuous and
+               goes wherever it is pointed, so a snippet straddling an hour boundary is never split
+               across two of them. -->
+          <div id="overviewWrap" class="overview" hidden>
+            <div
+              id="overbar"
+              role="slider"
+              tabindex="0"
+              aria-label="Part of the recording the timeline covers"
+              aria-valuemin="0"
+              aria-valuemax="0"
+              aria-valuenow="0"
+            >
+              <div id="overwin"></div>
+              <!-- Where the snippet is and where the playhead is, drawn on the whole recording so
+                   neither is lost while the window is somewhere else in the day. -->
+              <div id="oversel" class="over-mark band" style="display: none"></div>
+              <div id="overplay" class="over-mark play"></div>
+            </div>
+            <div id="overruler" class="over-ruler" aria-hidden="true"></div>
+          </div>
         </div>
 
         <!-- The transport triple is its own group inside a three-column grid, so it lands on the

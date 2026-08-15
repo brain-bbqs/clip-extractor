@@ -237,6 +237,20 @@ test("the ruler lays out time gradations, and stays put in frame mode", async ({
   await expect(page.locator("#selfill")).toBeHidden();
 });
 
+test("a recording shorter than the window carries no overview bar", async ({ page }) => {
+  await page.goto("/");
+  await loadRecordedVideo(page, "trim.webm");
+
+  // The overview only earns its row once the track covers less than the whole recording. A clip a
+  // second long is entirely on the track already, so the bar would be a slider with nowhere to
+  // slide — and every marker below stays a marker on a track that reaches it.
+  await expect(page.locator("#overviewWrap")).toBeHidden();
+  await expect(page.locator("#selruler .sel-tick-label").first()).toHaveText("0:00");
+  for (const marker of ["#inHandle", "#outHandle", "#playHandle"]) {
+    await expect(page.locator(marker)).not.toHaveClass(/outside/);
+  }
+});
+
 test("a snippet selection survives a trip through frame mode", async ({ page }) => {
   await page.goto("/");
   await loadRecordedVideo(page, "trim.webm");

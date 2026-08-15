@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.8
+
+#### 🚀 Enhancement
+
+- A recording longer than two hours is now trimmed against an hour either side of where you are looking, moved by a new slider under the timeline spanning the whole recording, rather than one track across the entire thing where a single pixel of travel covers a minute and a half of video ([#24](https://github.com/brain-bbqs/clip-extractor/pull/24))
+- A trim marker whose frame is outside the stretch the timeline covers now flattens against the edge it left through instead of vanishing, and stays draggable so a snippet can still be started from it ([#24](https://github.com/brain-bbqs/clip-extractor/pull/24))
+
+#### 🏠 Internal
+
+- Added `src/lib/timeline.ts`, holding the arithmetic for which stretch of a recording the timeline covers and how it is divided, with unit coverage ([#24](https://github.com/brain-bbqs/clip-extractor/pull/24))
+
 ## 0.1.7
 
 #### 🚀 Enhancement
