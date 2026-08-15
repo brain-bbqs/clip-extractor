@@ -93,8 +93,8 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-DvFZNv9p.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-B3NJogmy.css">
+    <script type="module" crossorigin src="./assets/index-CoaLrkJp.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Bdhci9MM.css">
   </head>
   <body>
     <a class="brand-watermark-link" href="https://brain-bbqs.org" target="_blank" rel="noopener" aria-label="BBQS" title="BBQS">
@@ -284,8 +284,8 @@
              indistinguishable wherever they meet. Each marker tapers to a point, so its tip names
              one frame on the ruler instead of a 14px-wide guess at which frame it is on, and each is
              a hit area holding the drawn marker — a clip-path would otherwise clip the focus ring
-             away along with the corners. The [ ] I O shortcuts still mark either end at the
-             playhead. -->
+             away along with the corners. Either end is set by dragging its marker, by arrowing it
+             once focused, or by typing a frame index into the readout below. -->
         <div id="selbarWrap" class="track-pad">
           <div id="selbar">
             <div id="selfill" class="video-only" style="display: none"></div>
@@ -332,12 +332,55 @@
           <!-- Time gradations, laid out per load by main.ts. Decorative: every number it shows is
                also in the readouts below, hence aria-hidden. -->
           <div id="selruler" class="sel-ruler" aria-hidden="true"></div>
+
+          <!-- The whole recording, under the track that trims it. Only shown once the recording runs
+               longer than half an hour (see lib/timeline.ts): below that one track holds the lot at
+               a scale that can still be aimed.
+               Dragging the window carries the playhead and the snippet with it, so a range of the
+               right length can be pushed across a day to find the moment it belongs to. It decodes
+               nothing on the way, so crossing a day costs one seek when the drag ends rather than one
+               per pointer move. The gradations under it are landmarks rather than divisions — the
+               window is continuous and goes wherever it is pointed, so a snippet straddling an hour
+               boundary is never split across two of them. -->
+          <div id="overviewWrap" class="overview" hidden>
+            <div
+              id="overbar"
+              role="slider"
+              tabindex="0"
+              aria-label="Part of the recording the timeline covers"
+              aria-valuemin="0"
+              aria-valuemax="0"
+              aria-valuenow="0"
+            >
+              <div id="overwin"></div>
+              <!-- Where the snippet is and where the playhead is, drawn on the whole recording so
+                   neither is lost while the window is somewhere else in the day. -->
+              <div id="oversel" class="over-mark band" style="display: none"></div>
+              <div id="overplay" class="over-mark play"></div>
+            </div>
+            <div id="overruler" class="over-ruler" aria-hidden="true"></div>
+          </div>
         </div>
 
         <!-- The transport triple is its own group inside a three-column grid, so it lands on the
              same centre line as the mode toggle above and the Current readout below rather than
-             being pushed off it by the speed control sharing the row. -->
+             being pushed off it by the controls sharing the row. Those two sit one per side and are
+             centred in the space the transport leaves them, so the row reads as a pair of clusters
+             either side of the play button rather than as three things pushed to three edges. -->
         <div class="transport">
+          <!-- How much of a long recording the timeline covers. Beside the speed control because
+               both are settings for the track rather than commands to it, and main.ts shows it only
+               for a recording longer than the window (see lib/timeline.ts). -->
+          <div class="transport-side" id="windowGroup" hidden>
+            <span class="transport-label" id="windowSegLabel">Window</span>
+            <div class="seg small" id="windowSeg" role="group" aria-labelledby="windowSegLabel">
+              <button type="button" data-half="300" title="The timeline covers 5 minutes either side of the window">&plusmn;5 min</button>
+              <button type="button" data-half="900" title="The timeline covers 15 minutes either side of the window">&plusmn;15 min</button>
+              <button type="button" data-half="1800" title="The timeline covers 30 minutes either side of the window">
+                &plusmn;30 min
+              </button>
+            </div>
+          </div>
           <!-- The step buttons carry the arrow keys they are bound to rather than triangles: a
                triangle here is the play glyph at a smaller size, which leaves fill colour as the
                only thing separating "advance one frame" from "start playing". The arrows also put
@@ -353,10 +396,13 @@
           <!-- Three speeds rather than a dropdown: with the list this short, the current speed is
                worth showing rather than hiding behind a click, and it matches the segmented controls
                the rest of the page uses. -->
-          <div class="seg speed-seg" id="speedSeg" role="group" aria-label="Playback speed">
-            <button type="button" data-speed="0.5" aria-pressed="false">0.5&times;</button>
-            <button type="button" data-speed="1" class="active" aria-pressed="true">1&times;</button>
-            <button type="button" data-speed="2" aria-pressed="false">2&times;</button>
+          <div class="transport-side" id="speedGroup">
+            <span class="transport-label" id="speedSegLabel">Speed</span>
+            <div class="seg small" id="speedSeg" role="group" aria-labelledby="speedSegLabel">
+              <button type="button" data-speed="0.5" aria-pressed="false">0.5&times;</button>
+              <button type="button" data-speed="1" class="active" aria-pressed="true">1&times;</button>
+              <button type="button" data-speed="2" aria-pressed="false">2&times;</button>
+            </div>
           </div>
         </div>
 
