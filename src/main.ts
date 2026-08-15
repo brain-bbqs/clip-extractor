@@ -70,6 +70,7 @@ import { fetchArchiveUser, type ArchiveUser } from "./lib/users";
 import { friendlyError } from "./lib/errors";
 import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
+import { StageStatus } from "./ui/stageStatus";
 import type { ArchiveConfig, OAuthTokenSet, PoseModel, SleapLabels, SleapVideoBackend } from "./lib/types";
 
 // Injected at build time from package.json's version (see configs/appVersion.ts).
@@ -87,6 +88,10 @@ function log(msg: string, cls: LogClass = ""): void {
   else if (cls === "warn") console.warn(msg);
   else console.info(msg);
 }
+
+// Since the console is the only place the log goes, it is also the only place anything says a video
+// is on its way — so the waiting itself is reported on the stage instead (see ui/stageStatus.ts).
+const stageStatus = new StageStatus({ root: els.stageBusy, label: els.stageBusyLabel, detail: els.stageBusyDetail });
 
 const ctx2d = els.view.getContext("2d");
 if (!ctx2d) throw new Error("Canvas 2D context unavailable");
@@ -216,15 +221,54 @@ const FRAME_CACHE_SIZE = 32;
 // through in silence, so the read is logged as it goes, no more often than this.
 const INDEX_PROGRESS_MS = 2000;
 
+// How often the same count is refreshed on the stage, where it is the only sign the tab is doing
+// anything at all: often enough to read as movement, rarely enough that a fast source is not
+// repainting the overlay on every chunk it receives.
+const STAGE_PROGRESS_MS = 250;
+
 /** A throttled reporter for how much of `name` has been read while it is being opened. */
 function indexProgress(name: string): (bytesRead: number) => void {
-  let last = 0;
+  let lastLog = 0;
+  let lastPaint = 0;
   return (bytesRead) => {
     const now = Date.now();
-    if (now - last < INDEX_PROGRESS_MS) return;
-    last = now;
+    if (now - lastPaint >= STAGE_PROGRESS_MS) {
+      lastPaint = now;
+      stageStatus.show(`Loading ${name}…`, `${bytes(bytesRead)} read`);
+    }
+    if (now - lastLog < INDEX_PROGRESS_MS) return;
+    lastLog = now;
     log(`Reading ${name}'s index… ${bytes(bytesRead)} so far`);
   };
+}
+
+/** Fetches a whole video, saying how far along it is as it goes. The fallback for a URL that could
+ * not be range-streamed, which is the longest wait the app has: the entire recording arrives before
+ * a single frame can be drawn, so it is the last place that should look like nothing happening. */
+async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching video`);
+  const type = resp.headers.get("content-type") || "video/mp4";
+  // Only a server that declares the length can be counted down to; without one the count still says
+  // the download is moving.
+  const total = Number(resp.headers.get("content-length")) || 0;
+  const body = resp.body;
+  if (!body) return resp.blob();
+  const reader = body.getReader();
+  const chunks: BlobPart[] = [];
+  let read = 0;
+  let lastPaint = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    read += value.byteLength;
+    const now = Date.now();
+    if (now - lastPaint < STAGE_PROGRESS_MS) continue;
+    lastPaint = now;
+    stageStatus.show(`Downloading ${name}…`, total ? `${bytes(read)} of ${bytes(total)}` : `${bytes(read)} so far`);
+  }
+  return new Blob(chunks, { type });
 }
 
 /** Opens bytes already in hand, falling back through sleap-io.js's backends: its MediaBunny one
@@ -254,9 +298,8 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
       return { backend, file: null };
     } catch (e) {
       log(`Range/stream open failed (${(e as Error).message}); downloading full file…`, "warn");
-      const resp = await fetch(source);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching video`);
-      const blob = await resp.blob();
+      stageStatus.show(`Downloading ${name}…`);
+      const blob = await fetchWholeVideo(source, name);
       const file = new File([blob], name, { type: blob.type || "video/mp4" });
       return { backend: await openLocalBackend(file, name), file };
     }
@@ -267,6 +310,9 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
 async function loadVideo(source: File | string, name: string, url: string | null = null): Promise<void> {
   stopPlay();
   log(`Loading video: ${name}…`);
+  // Raised before the first await, and lowered once there is a frame on the stage — or an error in
+  // the console — so the wait is never unaccounted for.
+  stageStatus.show(`Loading ${name}…`);
   try {
     const { backend, file } = await openVideoBackend(source, name);
     // Dropping the reference to the outgoing backend frees neither its decoded frames — ImageBitmaps
@@ -315,6 +361,11 @@ async function loadVideo(source: File | string, name: string, url: string | null
   } catch (e) {
     log(`Video error: ${(e as Error).message}`, "err");
     console.error(e);
+    // A load that failed with nothing on the stage has to say so where the stage is: otherwise the
+    // indicator comes down and the player goes back to inviting a file as though nothing happened.
+    if (!state.backend) els.emptyStage.textContent = `"${name}" could not be loaded: ${friendlyError(e)}`;
+  } finally {
+    stageStatus.hide();
   }
 }
 
@@ -822,6 +873,12 @@ function schedulePrefetch(target: number): void {
       prefetchInFlight = false;
     });
 }
+// How long a frame may be waited on before the stage says it is being waited on. Long enough that
+// the frames served straight from the decoded-frame cache — most of them — never flash anything,
+// short enough that a seek into a stretch that has to come over the network says so before the
+// player looks stuck on the frame it was already showing.
+const FRAME_WAIT_MS = 250;
+
 // Shift-held seeking extends the selection to cover the frames scrubbed over (video mode only).
 let shiftHeld = false;
 let shiftAnchor: number | null = null;
@@ -840,27 +897,36 @@ async function seek(frame: number, force = false, extend = true): Promise<void> 
     return;
   }
   seeking = true;
-  do {
-    const target = pendingSeek == null ? frame : pendingSeek;
-    pendingSeek = null;
-    if (!state.backend) break;
-    try {
-      const f = await state.backend.getFrame(decodeIndex(state.frameOrder, target));
-      if (f) {
-        state.curBitmap = f;
-        state.cur = target;
-        renderFrame();
+  // A frame the cache already holds is served in the time it takes to draw it, and one that has to
+  // be decoded off a stream is a network round trip — the same call, with three orders of magnitude
+  // between them. Rather than guess which this is, say so only once it has taken long enough to be
+  // worth saying (see ui/stageStatus.ts), which leaves ordinary scrubbing untouched.
+  stageStatus.showAfter(FRAME_WAIT_MS, "Loading frame…");
+  try {
+    do {
+      const target = pendingSeek == null ? frame : pendingSeek;
+      pendingSeek = null;
+      if (!state.backend) break;
+      try {
+        const f = await state.backend.getFrame(decodeIndex(state.frameOrder, target));
+        if (f) {
+          state.curBitmap = f;
+          state.cur = target;
+          renderFrame();
+        }
+        if (!state.playing) schedulePrefetch(target);
+      } catch (e) {
+        log(`Seek error: ${(e as Error).message}`, "err");
       }
-      if (!state.playing) schedulePrefetch(target);
-    } catch (e) {
-      log(`Seek error: ${(e as Error).message}`, "err");
-    }
-    // A concurrent call to seek() (this is re-entrant: the loop below awaits, and another
-    // invocation can run and set pendingSeek during that await) may have queued a newer target
-    // while this iteration's getFrame() was in flight — TS's flow analysis only sees this
-    // function's own literal assignments and can't account for that, hence the cast.
-  } while ((pendingSeek as number | null) !== null);
-  seeking = false;
+      // A concurrent call to seek() (this is re-entrant: the loop below awaits, and another
+      // invocation can run and set pendingSeek during that await) may have queued a newer target
+      // while this iteration's getFrame() was in flight — TS's flow analysis only sees this
+      // function's own literal assignments and can't account for that, hence the cast.
+    } while ((pendingSeek as number | null) !== null);
+  } finally {
+    stageStatus.hide();
+    seeking = false;
+  }
   updateSelUI();
 }
 
