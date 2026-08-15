@@ -952,7 +952,12 @@ input[type="checkbox"] {
   border-radius: 2px;
   background: color-mix(in srgb, var(--accent) 60%, transparent);
 }
+/* A hairline, against the snippet's two-pixel band: the playhead is one frame, and inside a window
+   only a few pixels wide on this bar it would otherwise read as a span of its own. */
 .over-mark.play {
+  width: 1px;
+  margin-left: -0.5px;
+  border-radius: 0;
   background: var(--ok);
 }
 /* Hour gradations: landmarks across the recording, thinned by main.ts to what the bar can hold. */
