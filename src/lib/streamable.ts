@@ -120,16 +120,17 @@ export function unstreamableRefusal(name: string, size: number | null): string |
  * decoder for, or an MP4 whose index sits at the end of the file, is in a perfectly streamable
  * container and still leaves the whole file as the only way to read it.
  *
- * `reason` is what the streaming open failed with, quoted so the page says which of those it was
- * rather than leaving it in a console nobody has open.
+ * Which of those it was is not said here. It is a sentence about container internals in the middle
+ * of a message whose point is that the file is too large and where to have it re-encoded, and it
+ * leaves neither of those any clearer. The streaming open's own words go to the console, which is
+ * where the question it answers gets asked.
  */
-export function wholeFileRefusal(size: number | null, reason?: string): string | null {
+export function wholeFileRefusal(size: number | null): string | null {
   if (size === null || size <= WHOLE_FILE_LIMIT_BYTES) return null;
-  const because = reason ? ` (${reason})` : "";
   // The file is named by the line above this one wherever this is shown, so it opens on what is
   // wrong rather than repeating whose fault it is.
   return (
-    `This file ${CANNOT_STREAM}${because}, and at ${bytes(size)} it is past the ` +
+    `This file ${CANNOT_STREAM}, and at ${bytes(size)} it is past the ` +
     `${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file download.${PARAGRAPH}${ADVICE}`
   );
 }

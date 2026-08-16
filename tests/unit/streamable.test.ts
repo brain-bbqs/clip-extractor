@@ -111,12 +111,12 @@ describe("wholeFileRefusal", () => {
     expect(refusal!.split(PARAGRAPH)[0].startsWith("This file")).toBe(true);
   });
 
-  it("quotes what the streaming open failed with, which is the only place that reason is visible", () => {
-    // What a 300 GB MKV in an archival codec fails with: a streamable container the browser still
-    // has no decoder for, which nothing but the open itself can report.
-    const refusal = wholeFileRefusal(300 * GB, "Cannot decode video codec ffv1");
-    expect(refusal).toContain("(Cannot decode video codec ffv1)");
+  it("leaves what the streaming open failed with to the console, saying only what can be acted on", () => {
+    const refusal = wholeFileRefusal(300 * GB);
     expect(refusal).toContain("300.00 GB");
+    // No aside about container internals in the sentence saying the file is too large. (The link
+    // in the paragraph after it has brackets of its own, so this asks only of the first.)
+    expect(refusal!.split(PARAGRAPH)[0]).not.toContain("(");
   });
 });
 

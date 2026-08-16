@@ -278,14 +278,14 @@ function indexProgress(name: string): (bytesRead: number) => void {
  * Refused for a file past {@link WHOLE_FILE_LIMIT_BYTES}, both on the length the server declares and
  * on the bytes that actually arrive — a server that declares no length, or a wrong one, would
  * otherwise fill the tab's memory on the strength of a header nobody checked. */
-async function fetchWholeVideo(url: string, name: string, reason?: string): Promise<Blob> {
+async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching video`);
   const type = resp.headers.get("content-type") || "video/mp4";
   // Only a server that declares the length can be counted down to; without one the count still says
   // the download is moving.
   const total = Number(resp.headers.get("content-length")) || 0;
-  const declared = wholeFileRefusal(total || null, reason);
+  const declared = wholeFileRefusal(total || null);
   if (declared) {
     // The headers are in but the body is not, and an abandoned one goes on being received until
     // the collector gets to it — which for the recordings this refuses is the whole problem.
@@ -370,13 +370,12 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
       });
       return { backend, file: null };
     } catch (e) {
-      const reason = (e as Error).message;
-      log(`Range/stream open failed (${reason}); downloading full file…`, "warn");
+      // What the open failed with is left here rather than carried into the refusal: it is a
+      // sentence about container internals, and the refusal is about a file being too large to
+      // fetch and where to have it re-encoded.
+      log(`Range/stream open failed (${(e as Error).message}); downloading full file…`, "warn");
       stageStatus.show(`Downloading ${name}…`);
-      // Carried into the refusal below: a file in a streamable container that still cannot be
-      // streamed — an MKV in a codec the browser has no decoder for, say — is refused for a reason
-      // that is only visible here.
-      const blob = await fetchWholeVideo(source, name, reason);
+      const blob = await fetchWholeVideo(source, name);
       const file = new File([blob], name, { type: blob.type || "video/mp4" });
       return { backend: await openLocalBackend(file, name), file };
     }
