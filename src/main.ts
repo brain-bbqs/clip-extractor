@@ -1828,35 +1828,42 @@ interface BrowseRowParts {
   metaEl: HTMLElement;
 }
 
-/** One clickable row: a fixed leading identifier, a wrapping label, an optional badge, and a
+/** One clickable row: an optional leading identifier, a wrapping label, an optional badge, and a
  * trailing detail. */
 function browseRow(id: string, label: string, meta: string, onClick: () => void, badge?: string): BrowseRowParts {
   const li = document.createElement("li");
   const button = document.createElement("button");
   button.type = "button";
   button.className = "browse-item";
-  // The identifier and the badge share the row's leading column, stacked: a badge set between the
-  // identifier and the title pushes every title across by a different amount, so a column of them
-  // no longer lines up to be read down.
-  const idCol = document.createElement("span");
-  idCol.className = "browse-idcol";
-  const idEl = document.createElement("span");
-  idEl.className = "browse-id";
-  idEl.textContent = id;
-  idCol.append(idEl);
-  if (badge) {
-    const badgeEl = document.createElement("span");
-    badgeEl.className = "badge restricted";
-    badgeEl.textContent = badge;
-    idCol.append(badgeEl);
-  }
   const labelEl = document.createElement("span");
   labelEl.className = "browse-label";
   labelEl.textContent = label;
   const metaEl = document.createElement("span");
   metaEl.className = "browse-meta";
   metaEl.textContent = meta;
-  button.append(idCol, labelEl, metaEl);
+  // A row with nothing to identify it beyond its label leads with the label itself, rather than
+  // with a decorative stand-in for the identifier other rows carry.
+  if (id || badge) {
+    // The identifier and the badge share the row's leading column, stacked: a badge set between
+    // the identifier and the title pushes every title across by a different amount, so a column of
+    // them no longer lines up to be read down.
+    const idCol = document.createElement("span");
+    idCol.className = "browse-idcol";
+    if (id) {
+      const idEl = document.createElement("span");
+      idEl.className = "browse-id";
+      idEl.textContent = id;
+      idCol.append(idEl);
+    }
+    if (badge) {
+      const badgeEl = document.createElement("span");
+      badgeEl.className = "badge restricted";
+      badgeEl.textContent = badge;
+      idCol.append(badgeEl);
+    }
+    button.append(idCol);
+  }
+  button.append(labelEl, metaEl);
   button.addEventListener("click", onClick);
   li.append(button);
   return { li, labelEl, metaEl };
@@ -1941,7 +1948,7 @@ function renderVideoList(videos: readonly ArchiveVideo[]): void {
   }
   els.browseVideos.replaceChildren();
   for (const video of videos) {
-    const { li } = browseRow("▶", video.path, bytes(video.size), () => void streamArchiveVideo(video));
+    const { li } = browseRow("", video.path, bytes(video.size), () => void streamArchiveVideo(video));
     els.browseVideos.append(li);
   }
 }

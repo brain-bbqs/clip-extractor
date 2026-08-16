@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.12
+
+#### 🐛 Bug Fix
+
+- Dropped the play triangle from each video row in the browse pane, where it read as a dropdown that would expand rather than as the row that opens the video ([#28](https://github.com/brain-bbqs/clip-extractor/pull/28))
+
 ## 0.1.11
 
 #### 🏠 Internal
