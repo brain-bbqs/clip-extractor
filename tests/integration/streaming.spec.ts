@@ -48,3 +48,41 @@ test("a streamed video that cannot be fetched leaves the reason on the stage", a
   await expect(page.locator("#stageBusy")).toBeHidden();
   await expect(page.locator("#view")).toBeHidden();
 });
+
+const HUGE_AVI_URL = "https://videos.test/recording.avi";
+
+test("a large remote file in a container that cannot stream is refused before it is fetched", async ({ page }) => {
+  await page.goto("/");
+  const methods: string[] = [];
+  await page.route(HUGE_AVI_URL, (route) => {
+    methods.push(route.request().method());
+    // Only the size is ever answered here: a GET reaching this handler is the download the guard
+    // exists to prevent, and the spec below fails on having seen one.
+    return route.fulfill({ status: 200, headers: { "content-length": String(3 * 1024 ** 3), "accept-ranges": "bytes" } });
+  });
+
+  await page.locator('#srcSeg button[data-src="ember"]').click();
+  await page.locator("#emberUrl").fill(HUGE_AVI_URL);
+  await page.locator("#emberLoadBtn").click();
+
+  // Three lines: the file that will not open, what is wrong with it, and what to do about it.
+  const lines = page.locator("#emptyStage p.message-line");
+  await expect(lines).toHaveCount(3);
+  await expect(lines.nth(0)).toContainText("recording.avi");
+  await expect(lines.nth(1)).toContainText("cannot be opened efficiently through streaming");
+  await expect(lines.nth(1)).toContainText("3.00 GB");
+  // The way out of it is a link, named rather than spelled out as a URL.
+  const helper = page.locator("#emptyStage a");
+  await expect(helper).toHaveText("Encoding Helper");
+  await expect(helper).toHaveAttribute("href", "https://encoding-helper.emberarchive.org");
+  await expect(page.locator("#stageBusy")).toBeHidden();
+  expect(methods).toEqual(["HEAD"]);
+});
+
+// The other half of the guard — a file in a streamable container that still cannot be streamed, an
+// MKV in a codec the browser has no decoder for being the case the archive actually hits — is not
+// exercised here. That refusal reads the size off the whole-file fetch's own `Content-Length`, and
+// a fulfilled response carries the length of the body Playwright sends: a declared 300 GB against a
+// short body is an incomplete response, which hangs rather than refusing. What the app makes of a
+// declared size, and of the reason the streaming open gave, is covered over wholeFileRefusal in the
+// unit tests instead.

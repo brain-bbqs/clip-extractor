@@ -16,6 +16,16 @@ import {
 } from "./lib/timeline";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { openStreamingBlob, openStreamingUrl, StreamingVideoBackend } from "./lib/streaming";
+import {
+  remoteFileSize,
+  streamsEfficiently,
+  unstreamableRefusal,
+  wholeFileRefusal,
+  ENCODING_HELPER_URL,
+  PARAGRAPH,
+  WHOLE_FILE_LIMIT_BYTES,
+} from "./lib/streamable";
+import { setMessage } from "./ui/linkify";
 import { drawPose, labelsToPose } from "./lib/pose";
 import {
   slpSourceMeta,
@@ -93,6 +103,15 @@ declare const __APP_VERSION__: string;
 const els = getElements();
 
 els.versionIndicator.textContent = `v${__APP_VERSION__}`;
+
+/** What the stage says with nothing loaded and nothing gone wrong, kept from the markup so a fresh
+ * attempt can put it back over the last one's refusal. */
+const EMPTY_STAGE_DEFAULT = els.emptyStage.textContent;
+
+// The links the app may put in a message. A message can quote a name taken from the `?url=`
+// parameter or an error a server wrote, so what is turned into a link is chosen from this list
+// rather than from whatever in the text reads like a URL — see ui/linkify.ts.
+const APP_LINKS: readonly string[] = [ENCODING_HELPER_URL];
 
 // Load/seek diagnostics go to the browser console — the interface deliberately has no on-page
 // log panel.
@@ -258,7 +277,11 @@ function indexProgress(name: string): (bytesRead: number) => void {
 
 /** Fetches a whole video, saying how far along it is as it goes. The fallback for a URL that could
  * not be range-streamed, which is the longest wait the app has: the entire recording arrives before
- * a single frame can be drawn, so it is the last place that should look like nothing happening. */
+ * a single frame can be drawn, so it is the last place that should look like nothing happening.
+ *
+ * Refused for a file past {@link WHOLE_FILE_LIMIT_BYTES}, both on the length the server declares and
+ * on the bytes that actually arrive — a server that declares no length, or a wrong one, would
+ * otherwise fill the tab's memory on the strength of a header nobody checked. */
 async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching video`);
@@ -266,6 +289,13 @@ async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
   // Only a server that declares the length can be counted down to; without one the count still says
   // the download is moving.
   const total = Number(resp.headers.get("content-length")) || 0;
+  const declared = wholeFileRefusal(total || null);
+  if (declared) {
+    // The headers are in but the body is not, and an abandoned one goes on being received until
+    // the collector gets to it — which for the recordings this refuses is the whole problem.
+    void resp.body?.cancel();
+    throw new Error(declared);
+  }
   const body = resp.body;
   if (!body) return resp.blob();
   const reader = body.getReader();
@@ -277,6 +307,13 @@ async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
     if (done) break;
     chunks.push(value);
     read += value.byteLength;
+    if (read > WHOLE_FILE_LIMIT_BYTES) {
+      await reader.cancel();
+      throw new Error(
+        `${name} ran past the ${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file download, having never declared its size. ` +
+          `Please use the Encoding Helper (${ENCODING_HELPER_URL}) to improve the video accessibility.`,
+      );
+    }
     const now = Date.now();
     if (now - lastPaint < STAGE_PROGRESS_MS) continue;
     lastPaint = now;
@@ -305,12 +342,41 @@ async function openLocalBackend(file: File, name: string): Promise<SleapVideoBac
   }
 }
 
+/**
+ * Refuses a remote source that cannot be read a piece at a time before a byte of it is fetched.
+ *
+ * Only a container known not to stream is checked, and only that check costs a request: a size is
+ * asked of the server for it, because a URL — unlike a video picked out of the archive — arrives
+ * with nothing but a name. Everything else goes straight to the streaming open, which settles the
+ * question by trying it, and falls through to the whole-file guard in {@link fetchWholeVideo} when
+ * the answer is no.
+ */
+async function refuseUnstreamable(url: string, name: string): Promise<void> {
+  if (streamsEfficiently(name)) return;
+  stageStatus.show(`Checking ${name}…`);
+  const size = await remoteFileSize(url);
+  const refusal = unstreamableRefusal(name, size);
+  if (refusal) throw new Error(refusal);
+  log(`${name} cannot be streamed, so all ${bytes(size)} of it will be downloaded first`, "warn");
+}
+
 async function openVideoBackend(source: File | string, name: string): Promise<OpenedSource> {
   if (typeof source === "string") {
+    await refuseUnstreamable(source, name);
     try {
-      const backend = await openStreamingUrl(source, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
+      const backend = await openStreamingUrl(source, {
+        cacheSize: FRAME_CACHE_SIZE,
+        onIndexProgress: indexProgress(name),
+        // A URL's frames are found by reading the container, and a file whose container does not
+        // say where they are leaves reading the file itself as the only way — which over a network
+        // is the recording pulled through it whole, silently, for as long as that takes.
+        maxIndexBytes: WHOLE_FILE_LIMIT_BYTES,
+      });
       return { backend, file: null };
     } catch (e) {
+      // What the open failed with is left here rather than carried into the refusal: it is a
+      // sentence about container internals, and the refusal is about a file being too large to
+      // fetch and where to have it re-encoded.
       log(`Range/stream open failed (${(e as Error).message}); downloading full file…`, "warn");
       stageStatus.show(`Downloading ${name}…`);
       const blob = await fetchWholeVideo(source, name);
@@ -321,8 +387,51 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
   return { backend: await openLocalBackend(source, name), file: source };
 }
 
-async function loadVideo(source: File | string, name: string, url: string | null = null): Promise<void> {
+/**
+ * Where a video that would not open says so.
+ *
+ * There are two places it can be said, and the one to use is wherever the video was asked for. The
+ * stage answers for a URL and a dropped file, which is what the picker above it opened; the browse
+ * pane answers for a video picked out of a list, since that list is what is being read at the time
+ * and the pane goes on standing whether or not another video is already playing behind it.
+ *
+ * What must not happen is both at once. Every attempt starts by clearing the pair (see
+ * {@link clearLoadMessages}), so a refusal is never read beside the one before it.
+ */
+type LoadFailureReport = (name: string, message: string) => void;
+
+/** The refusal's first line, the same wherever the rest of it is set out. */
+function failureHeadline(name: string): string {
+  return `${name} cannot be opened.`;
+}
+
+/** Says so on the stage. Only where there is no video on it: with one loaded the stage is the
+ * picture, and a line written under it would be written where nobody is looking. */
+const stageFailure: LoadFailureReport = (name, message) => {
+  if (state.backend) return;
+  setMessage(els.emptyStage, `${failureHeadline(name)}${PARAGRAPH}${message}`, APP_LINKS);
+};
+
+/** Says so in the browse pane, for a video picked out of it. */
+const browseFailure: LoadFailureReport = (name, message) => {
+  browseSay(`${failureHeadline(name)}${PARAGRAPH}${message}`, "err");
+};
+
+/** Takes down whatever the last attempt left behind, on both surfaces. Called as an attempt
+ * begins, so the two can never be on screen together. */
+function clearLoadMessages(): void {
+  browseSay("");
+  if (!state.backend) els.emptyStage.textContent = EMPTY_STAGE_DEFAULT;
+}
+
+async function loadVideo(
+  source: File | string,
+  name: string,
+  url: string | null = null,
+  report: LoadFailureReport = stageFailure,
+): Promise<void> {
   stopPlay();
+  clearLoadMessages();
   log(`Loading video: ${name}…`);
   // Raised before the first await, and lowered once there is a frame on the stage — or an error in
   // the console — so the wait is never unaccounted for.
@@ -375,9 +484,11 @@ async function loadVideo(source: File | string, name: string, url: string | null
   } catch (e) {
     log(`Video error: ${(e as Error).message}`, "err");
     console.error(e);
-    // A load that failed with nothing on the stage has to say so where the stage is: otherwise the
-    // indicator comes down and the player goes back to inviting a file as though nothing happened.
-    if (!state.backend) els.emptyStage.textContent = `"${name}" could not be loaded: ${friendlyError(e)}`;
+    // A load that failed has to say so where it was asked for: otherwise the indicator comes down
+    // and the page goes back to inviting a file as though nothing had happened.
+    // Set through linkify because a refusal names where the file can be re-encoded, and a URL
+    // nobody can click is only half an answer.
+    report(name, friendlyError(e));
   } finally {
     stageStatus.hide();
   }
@@ -1651,7 +1762,7 @@ function browseConfig(): ArchiveConfig {
 }
 
 function browseSay(message: string, cls: "" | "err" = ""): void {
-  els.browseStatus.textContent = message;
+  setMessage(els.browseStatus, message, APP_LINKS);
   els.browseStatus.classList.toggle("err", cls === "err");
 }
 
@@ -1948,13 +2059,32 @@ function renderVideoList(videos: readonly ArchiveVideo[]): void {
   }
   els.browseVideos.replaceChildren();
   for (const video of videos) {
-    const { li } = browseRow("", video.path, bytes(video.size), () => void streamArchiveVideo(video));
+    // The manifest reports every asset's size, so a file the player would refuse is marked as one
+    // in the listing rather than only when it is picked. The mark rides in the trailing detail
+    // beside the size that decided it, so a row carrying it still lines its path up with the rest.
+    const refusal = unstreamableRefusal(video.path, video.size);
+    const meta = refusal ? `${bytes(video.size)} · no streaming` : bytes(video.size);
+    const { li } = browseRow("", video.path, meta, () => void streamArchiveVideo(video));
+    if (refusal) {
+      li.firstElementChild?.classList.add("blocked");
+      li.firstElementChild?.setAttribute("title", refusal);
+    }
     els.browseVideos.append(li);
   }
 }
 
 async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
   const name = video.path.split("/").pop() || video.path;
+  // Settled against the size the archive reports, so an embargoed file is refused without a signed
+  // link being asked for on its behalf.
+  const refusal = unstreamableRefusal(video.path, video.size);
+  // Refused or not, this is an attempt: whatever the last one left on the stage comes down first.
+  clearLoadMessages();
+  if (refusal) {
+    log(`${name} will not be opened: ${refusal}`, "err");
+    browseFailure(name, refusal);
+    return;
+  }
   let streamUrl = video.streamUrl;
   if (!streamUrl) {
     // Embargoed: the bytes sit behind a signature the archive has to issue, and it is only good for
@@ -1965,7 +2095,7 @@ async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
       streamUrl = await resolveEmbargoedStreamUrl(browseConfig(), video.assetUrl);
     } catch (e) {
       log(`Could not open the embargoed file ${video.path}: ${(e as Error).message}`, "err");
-      browseSay(`${name} could not be opened: ${friendlyError(e)}`, "err");
+      browseFailure(name, friendlyError(e));
       return;
     }
     browseSay("");
@@ -1973,7 +2103,9 @@ async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
   // Streamed from the bucket, which answers range requests cross-origin without a redirect, but
   // recorded against the archive's own asset URL: that is the one naming the file rather than its
   // content hash — and for an embargoed file, the only one that will still resolve tomorrow.
-  void loadVideo(streamUrl, name, video.assetUrl);
+  // Reported in the pane, like the refusals above it: a video picked out of a list is answered for
+  // where the list is, whether or not another one is already playing on the stage.
+  void loadVideo(streamUrl, name, video.assetUrl, browseFailure);
 }
 
 /**

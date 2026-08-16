@@ -556,6 +556,16 @@ input[type="url"] {
   margin: 0.6rem 0 0;
   min-height: 1.2em;
 }
+/* A message rendered a paragraph at a time (see ui/linkify.ts). Centered, and with the refusal it
+   was written for in mind: the file that will not open, what is wrong with it, and what to do
+   about it read as three lines rather than as one paragraph to be picked apart. */
+.message-line {
+  margin: 0;
+  text-align: center;
+}
+.message-line + .message-line {
+  margin-top: 0.5rem;
+}
 .browse-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
@@ -662,6 +672,14 @@ input[type="url"] {
   flex-shrink: 0;
   font-size: 0.75rem;
   color: var(--muted);
+}
+/* A file the player will not open, marked where its size is: the size is what decided it. The row
+   stays clickable, since clicking it is how the reason is read out in full. */
+.browse-item.blocked .browse-label {
+  color: var(--muted);
+}
+.browse-item.blocked .browse-meta {
+  color: var(--restricted);
 }
 .browse-empty {
   margin: 0;

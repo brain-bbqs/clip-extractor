@@ -11,6 +11,7 @@ import {
   VideoSampleSink,
 } from "mediabunny";
 import type { InputVideoTrack, Source, VideoSample } from "mediabunny";
+import { bytes } from "./format";
 import type { SleapVideoBackend } from "./types";
 
 // A frame-indexed video backend built straight on mediabunny, used in place of sleap-io.js's
@@ -57,6 +58,24 @@ export interface StreamingBackendOptions {
   /** Called as the container index is read, with the bytes read from the source so far. Opening a
    * large file is not instant even when it streams, and this is what a caller can say so with. */
   onIndexProgress?: (bytesRead: number) => void;
+  /**
+   * The most of the source that may be read to work out where its frames are. Unlimited by
+   * default, which is right for bytes already on the machine and wrong for a URL.
+   *
+   * Everything below rests on the container recording its own duration and rate. A file that does
+   * not — a recording stopped without being finalized, most of all — leaves only one way to find
+   * out where its frames are, which is to read them, and a Matroska file with no cue points makes
+   * even the checks against that model walk the clusters one by one from wherever the last one
+   * left off. Over a URL that is the whole recording pulled through the network in range requests:
+   * hours of a progress count going up, no frame ever drawn, and no error to say why.
+   *
+   * This settles both halves of that. A source larger than this has to be describable from its
+   * header, and one that turns out not to be is refused there and then — before a packet is
+   * walked, on the strength of what the header already said, which is the same answer an `.avi`
+   * gets and just as cheaply. The figure is also a ceiling on what indexing may read, for the
+   * container that describes itself and then makes the checking of it a walk.
+   */
+  maxIndexBytes?: number;
 }
 
 /** Anything closable enough to be cached as a decoded frame. Written as an interface rather than
@@ -234,9 +253,13 @@ export async function modelHolds(
   return !!past && Math.abs(past.timestamp - index.time(index.count - 1)) <= tolerance;
 }
 
+/** Throws once opening has read more of the source than it is allowed to. Called wherever a read
+ * that should have been a seek could be walking the file instead. */
+type ReadBudget = () => void;
+
 /** The constant-rate model for a track, or null when the container does not describe one or the
  * file does not hold to it. */
-async function constantRateFor(track: InputVideoTrack, packets: EncodedPacketSink): Promise<FrameIndex | null> {
+async function constantRateFor(track: InputVideoTrack, packets: EncodedPacketSink, budget: ReadBudget): Promise<FrameIndex | null> {
   const duration = await track.getDurationFromMetadata();
   if (duration === null || !Number.isFinite(duration) || duration <= 0) return null;
   const { averagePacketRate: fps } = await track.computePacketStats(RATE_PROBE_PACKETS);
@@ -248,15 +271,25 @@ async function constantRateFor(track: InputVideoTrack, packets: EncodedPacketSin
   // The rate has to account for the whole span, not just the prefix it was measured over.
   if (count < 1 || Math.abs(span * fps - count) > COUNT_TOLERANCE) return null;
   const index = constantRateIndex(firstPacket.timestamp, fps, count);
-  const holds = await modelHolds((timestamp) => packets.getPacket(timestamp, { metadataOnly: true }), index);
+  // Each probe is a seek only where the container carries something to seek by. Where it does not,
+  // it is a walk from wherever the last one ended, and five of them across the file are the file.
+  const holds = await modelHolds(async (timestamp) => {
+    const packet = await packets.getPacket(timestamp, { metadataOnly: true });
+    budget();
+    return packet;
+  }, index);
   return holds ? index : null;
 }
 
 /** Every packet's timestamp, in decode order, yielding to the event loop as it goes. */
-async function enumerateFrameTimes(packets: EncodedPacketSink): Promise<number[]> {
+async function enumerateFrameTimes(packets: EncodedPacketSink, budget: ReadBudget): Promise<number[]> {
   const times: number[] = [];
   for await (const packet of packets.packets(undefined, undefined, { metadataOnly: true })) {
     times.push(packet.timestamp);
+    // Checked every packet rather than at the yields below: over a URL each one of these can be
+    // another range request, and a budget only looked at every twenty thousand of them is twenty
+    // thousand requests coarse.
+    budget();
     // Nothing in this loop waits on the network once the container index is in memory, so without
     // a yield it drains as one uninterrupted flood and the tab goes unresponsive until it ends.
     if (times.length % YIELD_EVERY === 0) await yieldToEventLoop();
@@ -328,12 +361,19 @@ export class StreamingVideoBackend implements SleapVideoBackend {
   static async open(source: Source, options: StreamingBackendOptions = {}): Promise<StreamingVideoBackend> {
     const input = new Input({ source, formats: ALL_FORMATS });
     let read = 0;
-    const stopWatching = options.onIndexProgress
-      ? source.on("read", ({ start, end }) => {
-          read += end - start;
-          options.onIndexProgress?.(read);
-        })
-      : null;
+    // Watched whether or not anyone asked for progress: the count is also what the budget below is
+    // measured against.
+    const stopWatching = source.on("read", ({ start, end }) => {
+      read += end - start;
+      options.onIndexProgress?.(read);
+    });
+    const allowed = options.maxIndexBytes ?? Infinity;
+    const budget: ReadBudget = () => {
+      if (read <= allowed) return;
+      throw new Error(
+        `where its frames are is not recorded in the container, and reading the file itself to find out passed ${bytes(allowed)}`,
+      );
+    };
     try {
       const track = await input.getPrimaryVideoTrack();
       if (!track) throw new Error("No video track found in file");
@@ -341,7 +381,22 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       // time rather than as a blank player.
       if (!(await track.canDecode())) throw new Error(`Cannot decode video codec ${track.codec ?? "unknown"}`);
       const packets = new EncodedPacketSink(track);
-      const index = (await constantRateFor(track, packets)) ?? enumeratedIndex(await enumerateFrameTimes(packets));
+      const constant = await constantRateFor(track, packets, budget);
+      // Nothing in the container says where the frames are, so the only way left to find out is to
+      // read them — all of them, in order, before the first one can be drawn. For a file past the
+      // budget that is not a slow open but an open that does not finish, so it is refused here,
+      // where the only thing read so far is the header. Checked against the budget too, since the
+      // walk that established there was no model may already have been the expensive part.
+      if (!constant) {
+        budget();
+        const size = await source.getSizeOrNull().catch(() => null);
+        if (size !== null && size > allowed) {
+          throw new Error(
+            `where its frames are is not recorded in the container, and finding out would mean reading all ${bytes(size)} of it`,
+          );
+        }
+      }
+      const index = constant ?? enumeratedIndex(await enumerateFrameTimes(packets, budget));
       if (!index.count) throw new Error("No frames found in video track");
       return new StreamingVideoBackend(input, track, index, options.cacheSize ?? DEFAULT_CACHE_SIZE);
     } catch (e) {
@@ -349,7 +404,7 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       input.dispose();
       throw e;
     } finally {
-      stopWatching?.();
+      stopWatching();
     }
   }
 

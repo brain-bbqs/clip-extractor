@@ -243,6 +243,92 @@ test("an embargoed dataset lists its videos through the API", async ({ page }) =
   await expect(videos.first()).toContainText("4.0 KB");
 });
 
+test("a video in a container that cannot stream is marked in the listing and refused when it is picked", async ({ page }) => {
+  // The archive's own manifest reports the size, so the pane knows what opening this would cost
+  // before anything is asked of the bucket.
+  const dataset: StubDataset = { id: "000700", name: "Long recordings", paths: ["sub-1/session.avi"] };
+  await page.route(`${BUCKET}/**`, (route) => {
+    const url = new URL(route.request().url());
+    const json = (body: string) => route.fulfill({ status: 200, contentType: "application/json", body });
+    if (url.searchParams.get("list-type") === "2") {
+      return route.fulfill({ status: 200, contentType: "application/xml", body: listingXml([dataset]) });
+    }
+    if (url.pathname.endsWith("/dandiset.jsonld")) return json(JSON.stringify({ name: dataset.name }));
+    if (url.pathname.endsWith("/assets.jsonld")) {
+      const asset = {
+        path: dataset.paths[0],
+        contentSize: 3 * 1024 ** 3,
+        contentUrl: [`${API}/assets/asset-0/download/`, `${BUCKET}/blobs/a/b/0`],
+      };
+      return json(JSON.stringify([asset]));
+    }
+    return route.continue();
+  });
+  await page.goto("/");
+
+  await page.locator('#srcSeg button[data-src="browse"]').click();
+  await page.locator("#browseDandisets .browse-item").first().click();
+  const videos = page.locator("#browseVideos .browse-item");
+  await expect(videos.first()).toContainText("3.00 GB");
+  await expect(videos.first()).toContainText("no streaming");
+
+  await videos.first().click();
+  const lines = page.locator("#browseStatus p.message-line");
+  await expect(lines).toHaveCount(3);
+  await expect(lines.nth(0)).toHaveText("session.avi cannot be opened.");
+  await expect(lines.nth(1)).toContainText("1.00 GB");
+  await expect(lines.nth(2).locator("a")).toHaveText("Encoding Helper");
+  await expect(page.locator("#view")).toBeHidden();
+});
+
+test("a second refusal replaces the first, rather than being read beside it", async ({ page }) => {
+  // Two videos neither of which will open, picked one after the other. The first fails inside the
+  // load, the second is refused before it starts, and before this they answered on different
+  // surfaces — leaving the stage still holding the first while the pane reported the second.
+  const dataset: StubDataset = { id: "000700", name: "Long recordings", paths: ["sub-1/first.mkv", "sub-1/second.avi"] };
+  await page.route(`${BUCKET}/**`, (route) => {
+    const url = new URL(route.request().url());
+    const json = (body: string) => route.fulfill({ status: 200, contentType: "application/json", body });
+    if (url.searchParams.get("list-type") === "2") {
+      return route.fulfill({ status: 200, contentType: "application/xml", body: listingXml([dataset]) });
+    }
+    if (url.pathname.endsWith("/dandiset.jsonld")) return json(JSON.stringify({ name: dataset.name }));
+    if (url.pathname.endsWith("/assets.jsonld")) {
+      // The `.mkv` is small enough to be attempted, and the bytes behind it are not there, so it
+      // fails inside the load. The `.avi` is refused before a byte of it is asked for.
+      return json(
+        JSON.stringify([
+          { path: dataset.paths[0], contentSize: 4096, contentUrl: [`${API}/assets/a-0/download/`, `${BUCKET}/blobs/a/b/0`] },
+          { path: dataset.paths[1], contentSize: 3 * 1024 ** 3, contentUrl: [`${API}/assets/a-1/download/`, `${BUCKET}/blobs/a/b/1`] },
+        ]),
+      );
+    }
+    if (url.pathname.startsWith("/blobs/")) return route.fulfill({ status: 404, contentType: "text/plain", body: "gone" });
+    return route.continue();
+  });
+  await page.goto("/");
+
+  await page.locator('#srcSeg button[data-src="browse"]').click();
+  // The sweep clears the status line when it finishes, so it is left to finish before anything is
+  // written there to be read.
+  await expect(page.locator("#browseStatus")).toHaveText("");
+  await page.locator("#browseDandisets .browse-item").first().click();
+  const videos = page.locator("#browseVideos .browse-item");
+
+  await videos.first().click();
+  await expect(page.locator("#browseStatus")).toContainText("first.mkv cannot be opened.");
+  // The stage keeps its invitation: the pane is where this video was asked for, so it is where the
+  // answer goes.
+  await expect(page.locator("#emptyStage")).toHaveText(/No video loaded/);
+
+  await videos.nth(1).click();
+  await expect(page.locator("#browseStatus")).toContainText("second.avi cannot be opened.");
+  await expect(page.locator("#browseStatus")).not.toContainText("first.mkv");
+  await expect(page.locator("#emptyStage")).toHaveText(/No video loaded/);
+  // One refusal on the page, not two.
+  await expect(page.locator("p.message-line", { hasText: "cannot be opened efficiently through streaming" })).toHaveCount(1);
+});
+
 test("an embargoed video the archive will not hand out says so, and leaves the player alone", async ({ page }) => {
   await stubBucket(page);
   await stubSignedIn(page);
@@ -253,7 +339,7 @@ test("an embargoed video the archive will not hand out says so, and leaves the p
   await page.locator('#browseDandisets .browse-item:has-text("000900")').click();
   await page.locator("#browseVideos .browse-item").first().click();
 
-  await expect(page.locator("#browseStatus")).toContainText("held.mp4 could not be opened");
+  await expect(page.locator("#browseStatus")).toContainText("held.mp4 cannot be opened.");
   await expect(page.locator("#view")).toBeHidden();
   await expect(page.locator("#emptyStage")).toBeVisible();
 });

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.13
+
+#### 🚀 Enhancement
+
+- A remote video in a container that cannot be streamed, such as an `.avi` over 1 GB, is now refused with an explanation instead of being downloaded whole into a tab that cannot hold it ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+- The browse pane marks such a file `no streaming` in the listing, so it reads as one before it is picked ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+- A URL that cannot be streamed for any other reason is no longer downloaded past 1 GB either, whatever its container ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+- A refused video now points at the Encoding Helper, as a link rather than a bare URL, instead of describing a conversion to make by hand ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+- Only the app's own links are made clickable in a message, so a crafted `?url=` cannot put a link to somewhere else on the page ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+- A refusal now reads as three centered lines — the file, what is wrong with it, and the Encoding Helper as a named link — rather than as one paragraph ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+- A remote recording over 1 GB whose container does not record where its frames are is now refused as soon as its header says so, rather than looking for them by reading the file itself — which for a 300 GB `.mkv` was hours of a byte count going up with nothing on the stage ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+
+#### 🐛 Bug Fix
+
+- A video that will not open now says so in one place — the browse pane for a video picked out of it, the stage for a URL or a dropped file — and each attempt clears the last one's message, so two refusals are never read side by side ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+
 ## 0.1.12
 
 #### 🐛 Bug Fix

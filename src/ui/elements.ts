@@ -19,7 +19,7 @@ export function getElements() {
     localPane: required<HTMLDivElement>("localPane"),
     browsePane: required<HTMLDivElement>("browsePane"),
     browseFilter: required<HTMLInputElement>("browseFilter"),
-    browseStatus: required<HTMLParagraphElement>("browseStatus"),
+    browseStatus: required<HTMLDivElement>("browseStatus"),
     browseDandisets: required<HTMLUListElement>("browseDandisets"),
     browseVideoHeading: required<HTMLSpanElement>("browseVideoHeading"),
     browseDandisetLink: required<HTMLAnchorElement>("browseDandisetLink"),
