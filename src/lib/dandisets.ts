@@ -43,11 +43,16 @@ interface AdminOwnedResponse {
   adminOwned: boolean;
 }
 
-/** Whether a BBQS/EMBER admin is a listed owner of the given dandiset, per the admin-check service. */
-async function hasAdminOwner(cfg: ArchiveConfig, identifier: string): Promise<boolean> {
-  const resp = await fetch(`${ADMIN_CHECK_BASE_URL}/admin-owned/${identifier}`, {
-    headers: { Authorization: `Bearer ${cfg.accessToken}` },
-  });
+/**
+ * Whether a BBQS/EMBER admin is a listed owner of the given dandiset, per the admin-check service.
+ *
+ * Deliberately unauthenticated: the service reads the owner list with its own archive credentials,
+ * so the signed-in user's access token never leaves the archive and this origin. Don't add an
+ * `Authorization` header here without re-reading SECURITY.md — forwarding a live token to a host
+ * this repo doesn't control is the exact trade this call was rewritten to avoid.
+ */
+async function hasAdminOwner(identifier: string): Promise<boolean> {
+  const resp = await fetch(`${ADMIN_CHECK_BASE_URL}/admin-owned/${identifier}`);
   if (!resp.ok) {
     throw new Error(`GET /admin-owned/${identifier} failed with HTTP ${resp.status}`);
   }
@@ -77,7 +82,7 @@ export async function listIncomingDandisets(cfg: ArchiveConfig): Promise<Incomin
   // service outage doesn't masquerade as "you own no incoming datasets".
   const checks = await Promise.all(
     candidates.map((d) =>
-      hasAdminOwner(cfg, d.identifier).catch((e: unknown) => {
+      hasAdminOwner(d.identifier).catch((e: unknown) => {
         console.warn(`Could not verify admin ownership of dandiset ${d.identifier}:`, e);
         return null;
       }),
