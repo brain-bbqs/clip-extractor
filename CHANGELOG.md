@@ -7,6 +7,8 @@
 - A remote video in a container that cannot be streamed, such as an `.avi` over 1 GB, is now refused with an explanation instead of being downloaded whole into a tab that cannot hold it ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
 - The browse pane marks such a file `no streaming` in the listing, so it reads as one before it is picked ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
 - A URL that cannot be streamed for any other reason is no longer downloaded past 1 GB either, whatever its container ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+- A refused video now points at the Encoding Helper, as a link rather than a bare URL, instead of describing a conversion to make by hand ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+- A file in a streamable container that still cannot be streamed, such as an MKV in a codec the browser cannot decode, now says on the page what stopped it rather than only in the console ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
 
 ## 0.1.12
 

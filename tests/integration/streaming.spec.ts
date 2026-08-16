@@ -66,7 +66,17 @@ test("a large remote file in a container that cannot stream is refused before it
   await page.locator("#emberLoadBtn").click();
 
   await expect(page.locator("#emptyStage")).toContainText("3.00 GB");
-  await expect(page.locator("#emptyStage")).toContainText(".avi");
+  await expect(page.locator("#emptyStage")).toContainText("cannot be opened efficiently through streaming");
+  // The way out of it is a link rather than a URL nobody can click.
+  await expect(page.locator("#emptyStage a")).toHaveAttribute("href", "https://encoding-helper.emberarchive.org");
   await expect(page.locator("#stageBusy")).toBeHidden();
   expect(methods).toEqual(["HEAD"]);
 });
+
+// The other half of the guard — a file in a streamable container that still cannot be streamed, an
+// MKV in a codec the browser has no decoder for being the case the archive actually hits — is not
+// exercised here. That refusal reads the size off the whole-file fetch's own `Content-Length`, and
+// a fulfilled response carries the length of the body Playwright sends: a declared 300 GB against a
+// short body is an incomplete response, which hangs rather than refusing. What the app makes of a
+// declared size, and of the reason the streaming open gave, is covered over wholeFileRefusal in the
+// unit tests instead.

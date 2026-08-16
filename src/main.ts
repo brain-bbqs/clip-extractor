@@ -16,7 +16,15 @@ import {
 } from "./lib/timeline";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { openStreamingBlob, openStreamingUrl, StreamingVideoBackend } from "./lib/streaming";
-import { remoteFileSize, streamsEfficiently, unstreamableRefusal, wholeFileRefusal, WHOLE_FILE_LIMIT_BYTES } from "./lib/streamable";
+import {
+  remoteFileSize,
+  streamsEfficiently,
+  unstreamableRefusal,
+  wholeFileRefusal,
+  ENCODING_HELPER_URL,
+  WHOLE_FILE_LIMIT_BYTES,
+} from "./lib/streamable";
+import { setTextWithLinks } from "./ui/linkify";
 import { drawPose, labelsToPose } from "./lib/pose";
 import {
   slpSourceMeta,
@@ -264,15 +272,20 @@ function indexProgress(name: string): (bytesRead: number) => void {
  * Refused for a file past {@link WHOLE_FILE_LIMIT_BYTES}, both on the length the server declares and
  * on the bytes that actually arrive — a server that declares no length, or a wrong one, would
  * otherwise fill the tab's memory on the strength of a header nobody checked. */
-async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
+async function fetchWholeVideo(url: string, name: string, reason?: string): Promise<Blob> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching video`);
   const type = resp.headers.get("content-type") || "video/mp4";
   // Only a server that declares the length can be counted down to; without one the count still says
   // the download is moving.
   const total = Number(resp.headers.get("content-length")) || 0;
-  const declared = wholeFileRefusal(name, total || null);
-  if (declared) throw new Error(declared);
+  const declared = wholeFileRefusal(name, total || null, reason);
+  if (declared) {
+    // The headers are in but the body is not, and an abandoned one goes on being received until
+    // the collector gets to it — which for the recordings this refuses is the whole problem.
+    void resp.body?.cancel();
+    throw new Error(declared);
+  }
   const body = resp.body;
   if (!body) return resp.blob();
   const reader = body.getReader();
@@ -287,7 +300,8 @@ async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
     if (read > WHOLE_FILE_LIMIT_BYTES) {
       await reader.cancel();
       throw new Error(
-        `${name} ran past the ${bytes(WHOLE_FILE_LIMIT_BYTES)} this app will download whole, having never declared its size.`,
+        `${name} ran past the ${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file download, having never declared its size. ` +
+          `Please use the Encoding Helper (${ENCODING_HELPER_URL}) to improve the video accessibility.`,
       );
     }
     const now = Date.now();
@@ -343,9 +357,13 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
       const backend = await openStreamingUrl(source, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
       return { backend, file: null };
     } catch (e) {
-      log(`Range/stream open failed (${(e as Error).message}); downloading full file…`, "warn");
+      const reason = (e as Error).message;
+      log(`Range/stream open failed (${reason}); downloading full file…`, "warn");
       stageStatus.show(`Downloading ${name}…`);
-      const blob = await fetchWholeVideo(source, name);
+      // Carried into the refusal below: a file in a streamable container that still cannot be
+      // streamed — an MKV in a codec the browser has no decoder for, say — is refused for a reason
+      // that is only visible here.
+      const blob = await fetchWholeVideo(source, name, reason);
       const file = new File([blob], name, { type: blob.type || "video/mp4" });
       return { backend: await openLocalBackend(file, name), file };
     }
@@ -409,7 +427,9 @@ async function loadVideo(source: File | string, name: string, url: string | null
     console.error(e);
     // A load that failed with nothing on the stage has to say so where the stage is: otherwise the
     // indicator comes down and the player goes back to inviting a file as though nothing happened.
-    if (!state.backend) els.emptyStage.textContent = `"${name}" could not be loaded: ${friendlyError(e)}`;
+    // Set through linkify because a refusal names where the file can be re-encoded, and a URL
+    // nobody can click is only half an answer.
+    if (!state.backend) setTextWithLinks(els.emptyStage, `"${name}" could not be loaded: ${friendlyError(e)}`);
   } finally {
     stageStatus.hide();
   }
@@ -1683,7 +1703,7 @@ function browseConfig(): ArchiveConfig {
 }
 
 function browseSay(message: string, cls: "" | "err" = ""): void {
-  els.browseStatus.textContent = message;
+  setTextWithLinks(els.browseStatus, message);
   els.browseStatus.classList.toggle("err", cls === "err");
 }
 

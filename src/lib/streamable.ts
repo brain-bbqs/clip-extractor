@@ -77,9 +77,18 @@ export function streamsEfficiently(nameOrUrl: string): boolean {
   return !UNSEEKABLE_CONTAINERS.has(containerOf(nameOrUrl));
 }
 
-/** How to get out of this, appended to every refusal: nobody is helped by being told only that
- * their file will not open. */
-const ADVICE = "Convert it to MP4 (with its index at the front) or MKV and load that instead.";
+/** Where a video that will not open is re-encoded into one that will. Named in every refusal:
+ * nobody is helped by being told only that their file cannot be read. */
+export const ENCODING_HELPER_URL = "https://encoding-helper.emberarchive.org";
+
+/** How to get out of this, appended to every refusal. The URL is left bare rather than marked up,
+ * since these messages are read in the console and in a `title` as well as on the page — the page
+ * turns it into a link on its way in (see ui/linkify.ts). */
+const ADVICE = `Please use the Encoding Helper (${ENCODING_HELPER_URL}) to improve the video accessibility.`;
+
+/** What every refusal opens with. Deliberately says nothing about the container: what a person can
+ * do about the file is the same either way, and the extension is already in the name beside it. */
+const CANNOT_STREAM = "cannot be opened efficiently through streaming";
 
 /**
  * Why a remote source will not be opened at all, or null when it will be. `size` is the file's byte
@@ -93,26 +102,29 @@ const ADVICE = "Convert it to MP4 (with its index at the front) or MKV and load 
  */
 export function unstreamableRefusal(name: string, size: number | null): string | null {
   if (streamsEfficiently(name)) return null;
-  const container = containerOf(name);
-  const label = container ? `.${container}` : "This";
-  const opening = `${label} files cannot be opened without reading all of them`;
+  const opening = `Files such as this ${CANNOT_STREAM}`;
   if (size === null) {
     return `${opening}, and nothing says how large this one is, so there is no knowing what opening it would cost. ${ADVICE}`;
   }
   if (size <= WHOLE_FILE_LIMIT_BYTES) return null;
-  return `${opening}, and at ${bytes(size)} this one is past the ${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file read. ${ADVICE}`;
+  return `${opening}, and at ${bytes(size)} this one is past the ${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file download. ${ADVICE}`;
 }
 
 /**
  * Why a source that could not be streamed will not be downloaded whole either, or null when it
- * will be. The check the container list cannot make: an MP4 whose index sits at the end of the file
- * is in a perfectly streamable container and still has to be read from front to back.
+ * will be. The check the container list cannot make: an MKV holding a codec the browser has no
+ * decoder for, or an MP4 whose index sits at the end of the file, is in a perfectly streamable
+ * container and still leaves the whole file as the only way to read it.
+ *
+ * `reason` is what the streaming open failed with, quoted so the page says which of those it was
+ * rather than leaving it in a console nobody has open.
  */
-export function wholeFileRefusal(name: string, size: number | null): string | null {
+export function wholeFileRefusal(name: string, size: number | null, reason?: string): string | null {
   if (size === null || size <= WHOLE_FILE_LIMIT_BYTES) return null;
+  const because = reason ? ` (${reason})` : "";
   return (
-    `${name} could not be streamed, and at ${bytes(size)} it is past the ${bytes(WHOLE_FILE_LIMIT_BYTES)} ` +
-    `this app will download whole. ${ADVICE}`
+    `${name} ${CANNOT_STREAM}${because}, and at ${bytes(size)} it is past the ` +
+    `${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file download. ${ADVICE}`
   );
 }
 
