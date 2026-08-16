@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.14
+
+#### 🚀 Enhancement
+
+- The browse pane's scrolling lists now carry a slim, rounded, accent-tinted scrollbar instead of the platform's gray slab with stepper arrows, matching the tables on the DANDI usage page ([#30](https://github.com/brain-bbqs/clip-extractor/pull/30))
+
 ## 0.1.13
 
 #### 🚀 Enhancement
