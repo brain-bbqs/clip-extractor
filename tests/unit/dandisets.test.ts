@@ -61,6 +61,18 @@ describe("listIncomingDandisets", () => {
     expect(datasets.map((d) => d.identifier)).toEqual(["000001"]);
   });
 
+  it("sends no access token to the admin-check service", async () => {
+    stubArchive([{ identifier: "000001", title: "Incoming: Lab A" }], () => true);
+    await listIncomingDandisets(cfg);
+
+    // The service resolves ownership with its own archive credentials, so the user's access token
+    // must never be attached to this cross-origin call (see SECURITY.md).
+    const adminCheckCall = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(([url]) =>
+      String(url).includes("/admin-owned/000001"),
+    );
+    expect(adminCheckCall?.[1]).toBe(undefined);
+  });
+
   it("drops an 'Incoming: ' dataset no admin owns, so it can't be self-provisioned", async () => {
     stubArchive(
       [

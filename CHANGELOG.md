@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.11
+
+#### 🏠 Internal
+
+- The dataset picker's admin-owner check no longer sends your EMBER sign-in token to the companion admin-check service; that service now answers from its own archive credentials, so your token only ever goes to EMBER itself ([#27](https://github.com/brain-bbqs/clip-extractor/pull/27))
+
 ## 0.1.10
 
 #### 🚀 Enhancement
