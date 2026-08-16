@@ -663,6 +663,14 @@ input[type="url"] {
   font-size: 0.75rem;
   color: var(--muted);
 }
+/* A file the player will not open, marked where its size is: the size is what decided it. The row
+   stays clickable, since clicking it is how the reason is read out in full. */
+.browse-item.blocked .browse-label {
+  color: var(--muted);
+}
+.browse-item.blocked .browse-meta {
+  color: var(--restricted);
+}
 .browse-empty {
   margin: 0;
   padding: 0.75rem;

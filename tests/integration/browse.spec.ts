@@ -243,6 +243,41 @@ test("an embargoed dataset lists its videos through the API", async ({ page }) =
   await expect(videos.first()).toContainText("4.0 KB");
 });
 
+test("a video in a container that cannot stream is marked in the listing and refused when it is picked", async ({ page }) => {
+  // The archive's own manifest reports the size, so the pane knows what opening this would cost
+  // before anything is asked of the bucket.
+  const dataset: StubDataset = { id: "000700", name: "Long recordings", paths: ["sub-1/session.avi"] };
+  await page.route(`${BUCKET}/**`, (route) => {
+    const url = new URL(route.request().url());
+    const json = (body: string) => route.fulfill({ status: 200, contentType: "application/json", body });
+    if (url.searchParams.get("list-type") === "2") {
+      return route.fulfill({ status: 200, contentType: "application/xml", body: listingXml([dataset]) });
+    }
+    if (url.pathname.endsWith("/dandiset.jsonld")) return json(JSON.stringify({ name: dataset.name }));
+    if (url.pathname.endsWith("/assets.jsonld")) {
+      const asset = {
+        path: dataset.paths[0],
+        contentSize: 3 * 1024 ** 3,
+        contentUrl: [`${API}/assets/asset-0/download/`, `${BUCKET}/blobs/a/b/0`],
+      };
+      return json(JSON.stringify([asset]));
+    }
+    return route.continue();
+  });
+  await page.goto("/");
+
+  await page.locator('#srcSeg button[data-src="browse"]').click();
+  await page.locator("#browseDandisets .browse-item").first().click();
+  const videos = page.locator("#browseVideos .browse-item");
+  await expect(videos.first()).toContainText("3.00 GB");
+  await expect(videos.first()).toContainText("no streaming");
+
+  await videos.first().click();
+  await expect(page.locator("#browseStatus")).toContainText("session.avi cannot be opened");
+  await expect(page.locator("#browseStatus")).toContainText("1.00 GB");
+  await expect(page.locator("#view")).toBeHidden();
+});
+
 test("an embargoed video the archive will not hand out says so, and leaves the player alone", async ({ page }) => {
   await stubBucket(page);
   await stubSignedIn(page);

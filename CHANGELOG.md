@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.13
+
+#### 🚀 Enhancement
+
+- A remote video in a container that cannot be streamed, such as an `.avi` over 1 GB, is now refused with an explanation instead of being downloaded whole into a tab that cannot hold it ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+- The browse pane marks such a file `no streaming` in the listing, so it reads as one before it is picked ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+- A URL that cannot be streamed for any other reason is no longer downloaded past 1 GB either, whatever its container ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+
 ## 0.1.12
 
 #### 🐛 Bug Fix

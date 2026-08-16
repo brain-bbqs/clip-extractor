@@ -48,3 +48,25 @@ test("a streamed video that cannot be fetched leaves the reason on the stage", a
   await expect(page.locator("#stageBusy")).toBeHidden();
   await expect(page.locator("#view")).toBeHidden();
 });
+
+const HUGE_AVI_URL = "https://videos.test/recording.avi";
+
+test("a large remote file in a container that cannot stream is refused before it is fetched", async ({ page }) => {
+  await page.goto("/");
+  const methods: string[] = [];
+  await page.route(HUGE_AVI_URL, (route) => {
+    methods.push(route.request().method());
+    // Only the size is ever answered here: a GET reaching this handler is the download the guard
+    // exists to prevent, and the spec below fails on having seen one.
+    return route.fulfill({ status: 200, headers: { "content-length": String(3 * 1024 ** 3), "accept-ranges": "bytes" } });
+  });
+
+  await page.locator('#srcSeg button[data-src="ember"]').click();
+  await page.locator("#emberUrl").fill(HUGE_AVI_URL);
+  await page.locator("#emberLoadBtn").click();
+
+  await expect(page.locator("#emptyStage")).toContainText("3.00 GB");
+  await expect(page.locator("#emptyStage")).toContainText(".avi");
+  await expect(page.locator("#stageBusy")).toBeHidden();
+  expect(methods).toEqual(["HEAD"]);
+});

@@ -16,6 +16,7 @@ import {
 } from "./lib/timeline";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { openStreamingBlob, openStreamingUrl, StreamingVideoBackend } from "./lib/streaming";
+import { remoteFileSize, streamsEfficiently, unstreamableRefusal, wholeFileRefusal, WHOLE_FILE_LIMIT_BYTES } from "./lib/streamable";
 import { drawPose, labelsToPose } from "./lib/pose";
 import {
   slpSourceMeta,
@@ -258,7 +259,11 @@ function indexProgress(name: string): (bytesRead: number) => void {
 
 /** Fetches a whole video, saying how far along it is as it goes. The fallback for a URL that could
  * not be range-streamed, which is the longest wait the app has: the entire recording arrives before
- * a single frame can be drawn, so it is the last place that should look like nothing happening. */
+ * a single frame can be drawn, so it is the last place that should look like nothing happening.
+ *
+ * Refused for a file past {@link WHOLE_FILE_LIMIT_BYTES}, both on the length the server declares and
+ * on the bytes that actually arrive — a server that declares no length, or a wrong one, would
+ * otherwise fill the tab's memory on the strength of a header nobody checked. */
 async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching video`);
@@ -266,6 +271,8 @@ async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
   // Only a server that declares the length can be counted down to; without one the count still says
   // the download is moving.
   const total = Number(resp.headers.get("content-length")) || 0;
+  const declared = wholeFileRefusal(name, total || null);
+  if (declared) throw new Error(declared);
   const body = resp.body;
   if (!body) return resp.blob();
   const reader = body.getReader();
@@ -277,6 +284,12 @@ async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
     if (done) break;
     chunks.push(value);
     read += value.byteLength;
+    if (read > WHOLE_FILE_LIMIT_BYTES) {
+      await reader.cancel();
+      throw new Error(
+        `${name} ran past the ${bytes(WHOLE_FILE_LIMIT_BYTES)} this app will download whole, having never declared its size.`,
+      );
+    }
     const now = Date.now();
     if (now - lastPaint < STAGE_PROGRESS_MS) continue;
     lastPaint = now;
@@ -305,8 +318,27 @@ async function openLocalBackend(file: File, name: string): Promise<SleapVideoBac
   }
 }
 
+/**
+ * Refuses a remote source that cannot be read a piece at a time before a byte of it is fetched.
+ *
+ * Only a container known not to stream is checked, and only that check costs a request: a size is
+ * asked of the server for it, because a URL — unlike a video picked out of the archive — arrives
+ * with nothing but a name. Everything else goes straight to the streaming open, which settles the
+ * question by trying it, and falls through to the whole-file guard in {@link fetchWholeVideo} when
+ * the answer is no.
+ */
+async function refuseUnstreamable(url: string, name: string): Promise<void> {
+  if (streamsEfficiently(name)) return;
+  stageStatus.show(`Checking ${name}…`);
+  const size = await remoteFileSize(url);
+  const refusal = unstreamableRefusal(name, size);
+  if (refusal) throw new Error(refusal);
+  log(`${name} cannot be streamed, so all ${bytes(size)} of it will be downloaded first`, "warn");
+}
+
 async function openVideoBackend(source: File | string, name: string): Promise<OpenedSource> {
   if (typeof source === "string") {
+    await refuseUnstreamable(source, name);
     try {
       const backend = await openStreamingUrl(source, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
       return { backend, file: null };
@@ -1948,13 +1980,30 @@ function renderVideoList(videos: readonly ArchiveVideo[]): void {
   }
   els.browseVideos.replaceChildren();
   for (const video of videos) {
-    const { li } = browseRow("", video.path, bytes(video.size), () => void streamArchiveVideo(video));
+    // The manifest reports every asset's size, so a file the player would refuse is marked as one
+    // in the listing rather than only when it is picked. The mark rides in the trailing detail
+    // beside the size that decided it, so a row carrying it still lines its path up with the rest.
+    const refusal = unstreamableRefusal(video.path, video.size);
+    const meta = refusal ? `${bytes(video.size)} · no streaming` : bytes(video.size);
+    const { li } = browseRow("", video.path, meta, () => void streamArchiveVideo(video));
+    if (refusal) {
+      li.firstElementChild?.classList.add("blocked");
+      li.firstElementChild?.setAttribute("title", refusal);
+    }
     els.browseVideos.append(li);
   }
 }
 
 async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
   const name = video.path.split("/").pop() || video.path;
+  // Settled against the size the archive reports, so an embargoed file is refused without a signed
+  // link being asked for on its behalf.
+  const refusal = unstreamableRefusal(video.path, video.size);
+  if (refusal) {
+    log(`${name} will not be opened: ${refusal}`, "err");
+    browseSay(`${name} cannot be opened. ${refusal}`, "err");
+    return;
+  }
   let streamUrl = video.streamUrl;
   if (!streamUrl) {
     // Embargoed: the bytes sit behind a signature the archive has to issue, and it is only good for
