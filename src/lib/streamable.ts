@@ -81,10 +81,14 @@ export function streamsEfficiently(nameOrUrl: string): boolean {
  * nobody is helped by being told only that their file cannot be read. */
 export const ENCODING_HELPER_URL = "https://encoding-helper.emberarchive.org";
 
-/** How to get out of this, appended to every refusal. The URL is left bare rather than marked up,
- * since these messages are read in the console and in a `title` as well as on the page — the page
- * turns it into a link on its way in (see ui/linkify.ts). */
-const ADVICE = `Please use the Encoding Helper (${ENCODING_HELPER_URL}) to improve the video accessibility.`;
+/** Separates a message's paragraphs. What the page breaks a refusal into lines on, and no more
+ * than a blank line anywhere else it is read. */
+export const PARAGRAPH = "\n\n";
+
+/** How to get out of this, its own paragraph at the end of every refusal. The link is written in
+ * markdown because these messages are read in the console and in a `title` as well as on the page,
+ * where it becomes a real link on its way in (see ui/linkify.ts). */
+const ADVICE = `Please use the [Encoding Helper](${ENCODING_HELPER_URL}) to improve the video accessibility.`;
 
 /** What every refusal opens with. Deliberately says nothing about the container: what a person can
  * do about the file is the same either way, and the extension is already in the name beside it. */
@@ -104,10 +108,10 @@ export function unstreamableRefusal(name: string, size: number | null): string |
   if (streamsEfficiently(name)) return null;
   const opening = `Files such as this ${CANNOT_STREAM}`;
   if (size === null) {
-    return `${opening}, and nothing says how large this one is, so there is no knowing what opening it would cost. ${ADVICE}`;
+    return `${opening}, and nothing says how large this one is, so there is no knowing what opening it would cost.${PARAGRAPH}${ADVICE}`;
   }
   if (size <= WHOLE_FILE_LIMIT_BYTES) return null;
-  return `${opening}, and at ${bytes(size)} this one is past the ${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file download. ${ADVICE}`;
+  return `${opening}, and at ${bytes(size)} this one is past the ${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file download.${PARAGRAPH}${ADVICE}`;
 }
 
 /**
@@ -119,12 +123,14 @@ export function unstreamableRefusal(name: string, size: number | null): string |
  * `reason` is what the streaming open failed with, quoted so the page says which of those it was
  * rather than leaving it in a console nobody has open.
  */
-export function wholeFileRefusal(name: string, size: number | null, reason?: string): string | null {
+export function wholeFileRefusal(size: number | null, reason?: string): string | null {
   if (size === null || size <= WHOLE_FILE_LIMIT_BYTES) return null;
   const because = reason ? ` (${reason})` : "";
+  // The file is named by the line above this one wherever this is shown, so it opens on what is
+  // wrong rather than repeating whose fault it is.
   return (
-    `${name} ${CANNOT_STREAM}${because}, and at ${bytes(size)} it is past the ` +
-    `${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file download. ${ADVICE}`
+    `This file ${CANNOT_STREAM}${because}, and at ${bytes(size)} it is past the ` +
+    `${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file download.${PARAGRAPH}${ADVICE}`
   );
 }
 

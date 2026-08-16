@@ -65,10 +65,16 @@ test("a large remote file in a container that cannot stream is refused before it
   await page.locator("#emberUrl").fill(HUGE_AVI_URL);
   await page.locator("#emberLoadBtn").click();
 
-  await expect(page.locator("#emptyStage")).toContainText("3.00 GB");
-  await expect(page.locator("#emptyStage")).toContainText("cannot be opened efficiently through streaming");
-  // The way out of it is a link rather than a URL nobody can click.
-  await expect(page.locator("#emptyStage a")).toHaveAttribute("href", "https://encoding-helper.emberarchive.org");
+  // Three lines: the file that will not open, what is wrong with it, and what to do about it.
+  const lines = page.locator("#emptyStage p.message-line");
+  await expect(lines).toHaveCount(3);
+  await expect(lines.nth(0)).toContainText("recording.avi");
+  await expect(lines.nth(1)).toContainText("cannot be opened efficiently through streaming");
+  await expect(lines.nth(1)).toContainText("3.00 GB");
+  // The way out of it is a link, named rather than spelled out as a URL.
+  const helper = page.locator("#emptyStage a");
+  await expect(helper).toHaveText("Encoding Helper");
+  await expect(helper).toHaveAttribute("href", "https://encoding-helper.emberarchive.org");
   await expect(page.locator("#stageBusy")).toBeHidden();
   expect(methods).toEqual(["HEAD"]);
 });

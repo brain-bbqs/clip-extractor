@@ -33,7 +33,18 @@ const harness = vi.hoisted(() => ({
   windows: [] as { start: number; end: number }[],
   /** Set by a test to hand out range samples one at a time. */
   gate: null as null | { next: () => Promise<FakeSample | null> },
+  /** Whoever the backend has watching the source's reads. */
+  readListeners: [] as ((range: { start: number; end: number }) => void)[],
+  /** Bytes the fake container reports reading per packet it is asked for — how a seek that is
+   * really a walk through the file shows up from outside. */
+  bytesPerPacket: 0,
 }));
+
+/** Reports `bytes` read from the source, as mediabunny does while it works through a container. */
+function reportRead(bytes: number): void {
+  if (!bytes) return;
+  for (const listener of harness.readListeners) listener({ start: 0, end: bytes });
+}
 
 function sample(timestamp: number): FakeSample {
   const s: FakeSample = {
@@ -49,8 +60,11 @@ function sample(timestamp: number): FakeSample {
 
 vi.mock("mediabunny", () => {
   class FakeSource {
-    on(): () => void {
-      return () => {};
+    on(_event: string, listener: (range: { start: number; end: number }) => void): () => void {
+      harness.readListeners.push(listener);
+      return () => {
+        harness.readListeners = harness.readListeners.filter((l) => l !== listener);
+      };
     }
   }
   return {
@@ -70,6 +84,7 @@ vi.mock("mediabunny", () => {
         harness.packetOptions = options;
         for (const timestamp of harness.timestamps) {
           harness.packetsWalked++;
+          reportRead(harness.bytesPerPacket);
           yield { timestamp };
         }
       }
@@ -79,6 +94,9 @@ vi.mock("mediabunny", () => {
       }
       /** The last packet at or before `timestamp`, which is what mediabunny's does. */
       getPacket(timestamp: number): Promise<{ timestamp: number } | null> {
+        // A container with nothing to seek by walks to the packet instead, which is what the bytes
+        // reported here stand for.
+        reportRead(harness.bytesPerPacket);
         const at = harness.timestamps.filter((t) => t <= timestamp + 1e-9).sort((a, b) => b - a)[0];
         return Promise.resolve(at === undefined ? null : { timestamp: at });
       }
@@ -139,6 +157,8 @@ beforeEach(() => {
   harness.sampled = [];
   harness.windows = [];
   harness.gate = null;
+  harness.readListeners = [];
+  harness.bytesPerPacket = 0;
   bitmaps = [];
   vi.stubGlobal("createImageBitmap", (frame: unknown) => {
     const bitmap: FakeBitmap = {
@@ -196,6 +216,52 @@ describe("StreamingVideoBackend.open, on a constant-rate file", () => {
     expect(harness.packetsWalked).toBe(5);
     expect(backend.numFrames).toBe(5);
     expect(await backend.getFrameTimes()).toEqual([0, 0.1, 0.2, 0.3, 0.4]);
+  });
+});
+
+describe("StreamingVideoBackend.open, against a budget on what indexing may read", () => {
+  // What a long archived recording does when its container does not say where its frames are: the
+  // model cannot be built from the header, and finding the frames by reading them means reading the
+  // recording. Over a URL that is hours of a byte count going up with no frame ever drawn, so it is
+  // bounded — and what is left is a file that will not open, which someone can at least be told.
+  beforeEach(() => {
+    harness.metadataDuration = null;
+    harness.bytesPerPacket = 400;
+  });
+
+  it("gives up rather than reading past the budget to find where the frames are", async () => {
+    await expect(openStreamingUrl("https://videos.test/recording.mkv", { maxIndexBytes: 1000 })).rejects.toThrow(
+      /reading the file itself to find out passed/,
+    );
+  });
+
+  it("says how much it was allowed to read, so the refusal above it can quote a limit", async () => {
+    harness.bytesPerPacket = 700 * 1024;
+    await expect(openStreamingUrl("https://videos.test/recording.mkv", { maxIndexBytes: 1024 * 1024 })).rejects.toThrow(/1\.00 MB/);
+  });
+
+  it("disposes the input it gave up on, leaving no requests behind it", async () => {
+    await expect(openStreamingUrl("https://videos.test/recording.mkv", { maxIndexBytes: 1000 })).rejects.toThrow();
+    expect(harness.disposed).toBe(1);
+  });
+
+  it("opens a file that fits inside the budget, walking it as before", async () => {
+    const backend = await openStreamingUrl("https://videos.test/clip.mkv", { maxIndexBytes: 10_000 });
+    expect(backend.numFrames).toBe(5);
+  });
+
+  it("leaves a file already on the machine unbounded, its bytes costing nothing to read", async () => {
+    const backend = await open();
+    expect(backend.numFrames).toBe(5);
+  });
+
+  it("bounds the checks against a recorded rate too, which walk the file just as far", async () => {
+    // The rate is recorded here, so the model is built and then probed — and on a container with
+    // nothing to seek by, those probes are themselves a walk from one end to the other.
+    harness.metadataDuration = 0.5;
+    await expect(openStreamingUrl("https://videos.test/recording.mkv", { maxIndexBytes: 500 })).rejects.toThrow(
+      /reading the file itself to find out passed/,
+    );
   });
 });
 

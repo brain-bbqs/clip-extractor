@@ -273,8 +273,11 @@ test("a video in a container that cannot stream is marked in the listing and ref
   await expect(videos.first()).toContainText("no streaming");
 
   await videos.first().click();
-  await expect(page.locator("#browseStatus")).toContainText("session.avi cannot be opened");
-  await expect(page.locator("#browseStatus")).toContainText("1.00 GB");
+  const lines = page.locator("#browseStatus p.message-line");
+  await expect(lines).toHaveCount(3);
+  await expect(lines.nth(0)).toHaveText("session.avi cannot be opened.");
+  await expect(lines.nth(1)).toContainText("1.00 GB");
+  await expect(lines.nth(2).locator("a")).toHaveText("Encoding Helper");
   await expect(page.locator("#view")).toBeHidden();
 });
 

@@ -7,6 +7,7 @@ import {
   unstreamableRefusal,
   wholeFileRefusal,
   ENCODING_HELPER_URL,
+  PARAGRAPH,
   WHOLE_FILE_LIMIT_BYTES,
 } from "../../src/lib/streamable";
 
@@ -81,7 +82,13 @@ describe("unstreamableRefusal", () => {
     expect(refusal).toContain("cannot be opened efficiently through streaming");
     expect(refusal).toContain("2.00 GB");
     expect(refusal).toContain("1.00 GB");
-    expect(refusal).toContain(ENCODING_HELPER_URL);
+    expect(refusal).toContain(`[Encoding Helper](${ENCODING_HELPER_URL})`);
+  });
+
+  it("leaves the way out as its own paragraph, so the page can set it on its own line", () => {
+    const paragraphs = unstreamableRefusal("mice.avi", 2 * GB)!.split(PARAGRAPH);
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs[1].startsWith("Please use the")).toBe(true);
   });
 
   it("refuses one whose size nobody reports, an unbounded read being the same as too large a one", () => {
@@ -91,22 +98,23 @@ describe("unstreamableRefusal", () => {
 
 describe("wholeFileRefusal", () => {
   it("allows what fits, including a size nobody reported", () => {
-    expect(wholeFileRefusal("mice.mp4", 900 * 1024 * 1024)).toBeNull();
-    expect(wholeFileRefusal("mice.mp4", WHOLE_FILE_LIMIT_BYTES)).toBeNull();
-    expect(wholeFileRefusal("mice.mp4", null)).toBeNull();
+    expect(wholeFileRefusal(900 * 1024 * 1024)).toBeNull();
+    expect(wholeFileRefusal(WHOLE_FILE_LIMIT_BYTES)).toBeNull();
+    expect(wholeFileRefusal(null)).toBeNull();
   });
 
   it("refuses to download a file past the limit, whatever container it is in", () => {
-    const refusal = wholeFileRefusal("mice.mp4", 4 * GB);
-    expect(refusal).toContain("mice.mp4");
+    const refusal = wholeFileRefusal(4 * GB);
     expect(refusal).toContain("4.00 GB");
-    expect(refusal).toContain(ENCODING_HELPER_URL);
+    expect(refusal).toContain(`[Encoding Helper](${ENCODING_HELPER_URL})`);
+    // The file is named by the line above this one wherever it is shown.
+    expect(refusal!.split(PARAGRAPH)[0].startsWith("This file")).toBe(true);
   });
 
   it("quotes what the streaming open failed with, which is the only place that reason is visible", () => {
     // What a 300 GB MKV in an archival codec fails with: a streamable container the browser still
     // has no decoder for, which nothing but the open itself can report.
-    const refusal = wholeFileRefusal("recording.mkv", 300 * GB, "Cannot decode video codec ffv1");
+    const refusal = wholeFileRefusal(300 * GB, "Cannot decode video codec ffv1");
     expect(refusal).toContain("(Cannot decode video codec ffv1)");
     expect(refusal).toContain("300.00 GB");
   });

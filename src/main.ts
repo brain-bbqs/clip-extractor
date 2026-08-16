@@ -22,9 +22,10 @@ import {
   unstreamableRefusal,
   wholeFileRefusal,
   ENCODING_HELPER_URL,
+  PARAGRAPH,
   WHOLE_FILE_LIMIT_BYTES,
 } from "./lib/streamable";
-import { setTextWithLinks } from "./ui/linkify";
+import { setMessage } from "./ui/linkify";
 import { drawPose, labelsToPose } from "./lib/pose";
 import {
   slpSourceMeta,
@@ -284,7 +285,7 @@ async function fetchWholeVideo(url: string, name: string, reason?: string): Prom
   // Only a server that declares the length can be counted down to; without one the count still says
   // the download is moving.
   const total = Number(resp.headers.get("content-length")) || 0;
-  const declared = wholeFileRefusal(name, total || null, reason);
+  const declared = wholeFileRefusal(total || null, reason);
   if (declared) {
     // The headers are in but the body is not, and an abandoned one goes on being received until
     // the collector gets to it — which for the recordings this refuses is the whole problem.
@@ -359,7 +360,14 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
   if (typeof source === "string") {
     await refuseUnstreamable(source, name);
     try {
-      const backend = await openStreamingUrl(source, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
+      const backend = await openStreamingUrl(source, {
+        cacheSize: FRAME_CACHE_SIZE,
+        onIndexProgress: indexProgress(name),
+        // A URL's frames are found by reading the container, and a file whose container does not
+        // say where they are leaves reading the file itself as the only way — which over a network
+        // is the recording pulled through it whole, silently, for as long as that takes.
+        maxIndexBytes: WHOLE_FILE_LIMIT_BYTES,
+      });
       return { backend, file: null };
     } catch (e) {
       const reason = (e as Error).message;
@@ -434,7 +442,7 @@ async function loadVideo(source: File | string, name: string, url: string | null
     // indicator comes down and the player goes back to inviting a file as though nothing happened.
     // Set through linkify because a refusal names where the file can be re-encoded, and a URL
     // nobody can click is only half an answer.
-    if (!state.backend) setTextWithLinks(els.emptyStage, `"${name}" could not be loaded: ${friendlyError(e)}`, APP_LINKS);
+    if (!state.backend) setMessage(els.emptyStage, `"${name}" could not be loaded.${PARAGRAPH}${friendlyError(e)}`, APP_LINKS);
   } finally {
     stageStatus.hide();
   }
@@ -1708,7 +1716,7 @@ function browseConfig(): ArchiveConfig {
 }
 
 function browseSay(message: string, cls: "" | "err" = ""): void {
-  setTextWithLinks(els.browseStatus, message, APP_LINKS);
+  setMessage(els.browseStatus, message, APP_LINKS);
   els.browseStatus.classList.toggle("err", cls === "err");
 }
 
@@ -2026,7 +2034,7 @@ async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
   const refusal = unstreamableRefusal(video.path, video.size);
   if (refusal) {
     log(`${name} will not be opened: ${refusal}`, "err");
-    browseSay(`${name} cannot be opened. ${refusal}`, "err");
+    browseSay(`${name} cannot be opened.${PARAGRAPH}${refusal}`, "err");
     return;
   }
   let streamUrl = video.streamUrl;
