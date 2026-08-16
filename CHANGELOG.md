@@ -12,6 +12,10 @@
 - A refusal now reads as three centered lines — the file, what is wrong with it, and the Encoding Helper as a named link — rather than as one paragraph ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
 - A remote recording over 1 GB whose container does not record where its frames are is now refused as soon as its header says so, rather than looking for them by reading the file itself — which for a 300 GB `.mkv` was hours of a byte count going up with nothing on the stage ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
 
+#### 🐛 Bug Fix
+
+- A video that will not open now says so in one place — the browse pane for a video picked out of it, the stage for a URL or a dropped file — and each attempt clears the last one's message, so two refusals are never read side by side ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+
 ## 0.1.12
 
 #### 🐛 Bug Fix

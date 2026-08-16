@@ -104,6 +104,10 @@ const els = getElements();
 
 els.versionIndicator.textContent = `v${__APP_VERSION__}`;
 
+/** What the stage says with nothing loaded and nothing gone wrong, kept from the markup so a fresh
+ * attempt can put it back over the last one's refusal. */
+const EMPTY_STAGE_DEFAULT = els.emptyStage.textContent;
+
 // The links the app may put in a message. A message can quote a name taken from the `?url=`
 // parameter or an error a server wrote, so what is turned into a link is chosen from this list
 // rather than from whatever in the text reads like a URL — see ui/linkify.ts.
@@ -383,8 +387,51 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
   return { backend: await openLocalBackend(source, name), file: source };
 }
 
-async function loadVideo(source: File | string, name: string, url: string | null = null): Promise<void> {
+/**
+ * Where a video that would not open says so.
+ *
+ * There are two places it can be said, and the one to use is wherever the video was asked for. The
+ * stage answers for a URL and a dropped file, which is what the picker above it opened; the browse
+ * pane answers for a video picked out of a list, since that list is what is being read at the time
+ * and the pane goes on standing whether or not another video is already playing behind it.
+ *
+ * What must not happen is both at once. Every attempt starts by clearing the pair (see
+ * {@link clearLoadMessages}), so a refusal is never read beside the one before it.
+ */
+type LoadFailureReport = (name: string, message: string) => void;
+
+/** The refusal's first line, the same wherever the rest of it is set out. */
+function failureHeadline(name: string): string {
+  return `${name} cannot be opened.`;
+}
+
+/** Says so on the stage. Only where there is no video on it: with one loaded the stage is the
+ * picture, and a line written under it would be written where nobody is looking. */
+const stageFailure: LoadFailureReport = (name, message) => {
+  if (state.backend) return;
+  setMessage(els.emptyStage, `${failureHeadline(name)}${PARAGRAPH}${message}`, APP_LINKS);
+};
+
+/** Says so in the browse pane, for a video picked out of it. */
+const browseFailure: LoadFailureReport = (name, message) => {
+  browseSay(`${failureHeadline(name)}${PARAGRAPH}${message}`, "err");
+};
+
+/** Takes down whatever the last attempt left behind, on both surfaces. Called as an attempt
+ * begins, so the two can never be on screen together. */
+function clearLoadMessages(): void {
+  browseSay("");
+  if (!state.backend) els.emptyStage.textContent = EMPTY_STAGE_DEFAULT;
+}
+
+async function loadVideo(
+  source: File | string,
+  name: string,
+  url: string | null = null,
+  report: LoadFailureReport = stageFailure,
+): Promise<void> {
   stopPlay();
+  clearLoadMessages();
   log(`Loading video: ${name}…`);
   // Raised before the first await, and lowered once there is a frame on the stage — or an error in
   // the console — so the wait is never unaccounted for.
@@ -437,11 +484,11 @@ async function loadVideo(source: File | string, name: string, url: string | null
   } catch (e) {
     log(`Video error: ${(e as Error).message}`, "err");
     console.error(e);
-    // A load that failed with nothing on the stage has to say so where the stage is: otherwise the
-    // indicator comes down and the player goes back to inviting a file as though nothing happened.
+    // A load that failed has to say so where it was asked for: otherwise the indicator comes down
+    // and the page goes back to inviting a file as though nothing had happened.
     // Set through linkify because a refusal names where the file can be re-encoded, and a URL
     // nobody can click is only half an answer.
-    if (!state.backend) setMessage(els.emptyStage, `"${name}" could not be loaded.${PARAGRAPH}${friendlyError(e)}`, APP_LINKS);
+    report(name, friendlyError(e));
   } finally {
     stageStatus.hide();
   }
@@ -2031,9 +2078,11 @@ async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
   // Settled against the size the archive reports, so an embargoed file is refused without a signed
   // link being asked for on its behalf.
   const refusal = unstreamableRefusal(video.path, video.size);
+  // Refused or not, this is an attempt: whatever the last one left on the stage comes down first.
+  clearLoadMessages();
   if (refusal) {
     log(`${name} will not be opened: ${refusal}`, "err");
-    browseSay(`${name} cannot be opened.${PARAGRAPH}${refusal}`, "err");
+    browseFailure(name, refusal);
     return;
   }
   let streamUrl = video.streamUrl;
@@ -2046,7 +2095,7 @@ async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
       streamUrl = await resolveEmbargoedStreamUrl(browseConfig(), video.assetUrl);
     } catch (e) {
       log(`Could not open the embargoed file ${video.path}: ${(e as Error).message}`, "err");
-      browseSay(`${name} could not be opened: ${friendlyError(e)}`, "err");
+      browseFailure(name, friendlyError(e));
       return;
     }
     browseSay("");
@@ -2054,7 +2103,9 @@ async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
   // Streamed from the bucket, which answers range requests cross-origin without a redirect, but
   // recorded against the archive's own asset URL: that is the one naming the file rather than its
   // content hash — and for an embargoed file, the only one that will still resolve tomorrow.
-  void loadVideo(streamUrl, name, video.assetUrl);
+  // Reported in the pane, like the refusals above it: a video picked out of a list is answered for
+  // where the list is, whether or not another one is already playing on the stage.
+  void loadVideo(streamUrl, name, video.assetUrl, browseFailure);
 }
 
 /**
