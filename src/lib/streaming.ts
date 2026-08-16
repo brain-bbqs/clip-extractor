@@ -67,9 +67,13 @@ export interface StreamingBackendOptions {
    * out where its frames are, which is to read them, and a Matroska file with no cue points makes
    * even the checks against that model walk the clusters one by one from wherever the last one
    * left off. Over a URL that is the whole recording pulled through the network in range requests:
-   * hours of a progress count going up, no frame ever drawn, and no error to say why. This bounds
-   * it. What is left is a file that cannot be opened, which is at least something a person can be
-   * told.
+   * hours of a progress count going up, no frame ever drawn, and no error to say why.
+   *
+   * This settles both halves of that. A source larger than this has to be describable from its
+   * header, and one that turns out not to be is refused there and then — before a packet is
+   * walked, on the strength of what the header already said, which is the same answer an `.avi`
+   * gets and just as cheaply. The figure is also a ceiling on what indexing may read, for the
+   * container that describes itself and then makes the checking of it a walk.
    */
   maxIndexBytes?: number;
 }
@@ -379,9 +383,19 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       const packets = new EncodedPacketSink(track);
       const constant = await constantRateFor(track, packets, budget);
       // Nothing in the container says where the frames are, so the only way left to find out is to
-      // read them. Checked before that starts as well as during it, since the walk that established
-      // there was no model may already have been the expensive part.
-      if (!constant) budget();
+      // read them — all of them, in order, before the first one can be drawn. For a file past the
+      // budget that is not a slow open but an open that does not finish, so it is refused here,
+      // where the only thing read so far is the header. Checked against the budget too, since the
+      // walk that established there was no model may already have been the expensive part.
+      if (!constant) {
+        budget();
+        const size = await source.getSizeOrNull().catch(() => null);
+        if (size !== null && size > allowed) {
+          throw new Error(
+            `where its frames are is not recorded in the container, and finding out would mean reading all ${bytes(size)} of it`,
+          );
+        }
+      }
       const index = constant ?? enumeratedIndex(await enumerateFrameTimes(packets, budget));
       if (!index.count) throw new Error("No frames found in video track");
       return new StreamingVideoBackend(input, track, index, options.cacheSize ?? DEFAULT_CACHE_SIZE);

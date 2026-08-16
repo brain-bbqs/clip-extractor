@@ -10,7 +10,7 @@
 - A refused video now points at the Encoding Helper, as a link rather than a bare URL, instead of describing a conversion to make by hand ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
 - Only the app's own links are made clickable in a message, so a crafted `?url=` cannot put a link to somewhere else on the page ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
 - A refusal now reads as three centered lines — the file, what is wrong with it, and the Encoding Helper as a named link — rather than as one paragraph ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
-- A remote recording whose container does not record where its frames are no longer reads the whole file over the network looking for them: it stops at 1 GB and says so, instead of counting bytes up for hours with nothing on the stage ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
+- A remote recording over 1 GB whose container does not record where its frames are is now refused as soon as its header says so, rather than looking for them by reading the file itself — which for a 300 GB `.mkv` was hours of a byte count going up with nothing on the stage ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
 - A file in a streamable container that still cannot be streamed, such as an MKV in a codec the browser cannot decode, now says on the page what stopped it rather than only in the console ([#29](https://github.com/brain-bbqs/clip-extractor/pull/29))
 
 ## 0.1.12

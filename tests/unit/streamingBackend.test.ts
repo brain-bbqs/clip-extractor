@@ -38,6 +38,8 @@ const harness = vi.hoisted(() => ({
   /** Bytes the fake container reports reading per packet it is asked for — how a seek that is
    * really a walk through the file shows up from outside. */
   bytesPerPacket: 0,
+  /** What the source says the whole file is, or null for one that will not say. */
+  sourceSize: null as number | null,
 }));
 
 /** Reports `bytes` read from the source, as mediabunny does while it works through a container. */
@@ -60,6 +62,9 @@ function sample(timestamp: number): FakeSample {
 
 vi.mock("mediabunny", () => {
   class FakeSource {
+    getSizeOrNull(): Promise<number | null> {
+      return Promise.resolve(harness.sourceSize);
+    }
     on(_event: string, listener: (range: { start: number; end: number }) => void): () => void {
       harness.readListeners.push(listener);
       return () => {
@@ -159,6 +164,7 @@ beforeEach(() => {
   harness.gate = null;
   harness.readListeners = [];
   harness.bytesPerPacket = 0;
+  harness.sourceSize = null;
   bitmaps = [];
   vi.stubGlobal("createImageBitmap", (frame: unknown) => {
     const bitmap: FakeBitmap = {
@@ -227,6 +233,24 @@ describe("StreamingVideoBackend.open, against a budget on what indexing may read
   beforeEach(() => {
     harness.metadataDuration = null;
     harness.bytesPerPacket = 400;
+  });
+
+  it("refuses a file too large to index the moment its header turns out not to say where its frames are", async () => {
+    // The case the archive's long recordings hit: the header carries no duration, so the frames
+    // could only be found by reading them. Answered from the header, before a packet is walked —
+    // the same refusal, and just as cheap, as the one a container on the unstreamable list gets.
+    harness.sourceSize = 300 * 1024 ** 3;
+    await expect(openStreamingUrl("https://videos.test/recording.mkv", { maxIndexBytes: 1024 ** 3 })).rejects.toThrow(
+      /not recorded in the container, and finding out would mean reading all 300\.00 GB/,
+    );
+    expect(harness.packetsWalked).toBe(0);
+  });
+
+  it("still walks a file small enough to be worth walking, size known or not", async () => {
+    harness.sourceSize = 500 * 1024 * 1024;
+    const backend = await openStreamingUrl("https://videos.test/clip.mkv", { maxIndexBytes: 1024 ** 3 });
+    expect(backend.numFrames).toBe(5);
+    expect(harness.packetsWalked).toBe(5);
   });
 
   it("gives up rather than reading past the budget to find where the frames are", async () => {
