@@ -103,6 +103,11 @@ const els = getElements();
 
 els.versionIndicator.textContent = `v${__APP_VERSION__}`;
 
+// The links the app may put in a message. A message can quote a name taken from the `?url=`
+// parameter or an error a server wrote, so what is turned into a link is chosen from this list
+// rather than from whatever in the text reads like a URL — see ui/linkify.ts.
+const APP_LINKS: readonly string[] = [ENCODING_HELPER_URL];
+
 // Load/seek diagnostics go to the browser console — the interface deliberately has no on-page
 // log panel.
 type LogClass = "err" | "ok" | "warn" | "";
@@ -429,7 +434,7 @@ async function loadVideo(source: File | string, name: string, url: string | null
     // indicator comes down and the player goes back to inviting a file as though nothing happened.
     // Set through linkify because a refusal names where the file can be re-encoded, and a URL
     // nobody can click is only half an answer.
-    if (!state.backend) setTextWithLinks(els.emptyStage, `"${name}" could not be loaded: ${friendlyError(e)}`);
+    if (!state.backend) setTextWithLinks(els.emptyStage, `"${name}" could not be loaded: ${friendlyError(e)}`, APP_LINKS);
   } finally {
     stageStatus.hide();
   }
@@ -1703,7 +1708,7 @@ function browseConfig(): ArchiveConfig {
 }
 
 function browseSay(message: string, cls: "" | "err" = ""): void {
-  setTextWithLinks(els.browseStatus, message);
+  setTextWithLinks(els.browseStatus, message, APP_LINKS);
   els.browseStatus.classList.toggle("err", cls === "err");
 }
 
