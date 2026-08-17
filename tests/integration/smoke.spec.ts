@@ -1,9 +1,13 @@
 import { test, expect } from "@playwright/test";
+import { stubArchive } from "./helpers";
 
 test("loads the app shell with the player disabled", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveTitle("Clip Extractor");
   await expect(page.locator("h1")).toContainText("Clip Extractor");
+  await expect(page.locator(".site-subtitle")).toHaveText(
+    "Extract and share short clips or individual frames which are causing trouble with behavioral annotations",
+  );
   await expect(page.locator("#dropzone")).toBeVisible();
   await expect(page.locator("#emptyStage")).toBeVisible();
   await expect(page.locator("#view")).toBeHidden();
@@ -104,22 +108,27 @@ test("SLEAP annotations card is revealed by its toggle (default off)", async ({ 
   await expect(page.locator("#slpCard")).toBeHidden();
 });
 
-test("delivery card defaults to Save while signed out", async ({ page }) => {
+test("delivery card offers only Save while signed out", async ({ page }) => {
   await page.goto("/");
-  // The stored setting is still "download"; only the label reads "Save".
-  await expect(page.locator('#deliverSeg button[data-deliver="download"]')).toHaveText("Save");
-  await expect(page.locator('#deliverSeg button[data-deliver="download"]')).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#btnDownload")).toHaveText("Save");
-  await expect(page.locator("#downloadPane")).toBeVisible();
+  await expect(page.locator("#oauthSigninBtn")).toBeVisible();
+  // Upload is the only side the toggle leads to, so signed out there is no choice to offer.
+  await expect(page.locator("#deliverToggleRow")).toBeHidden();
   await expect(page.locator("#uploadPane")).toBeHidden();
+  await expect(page.locator("#downloadPane")).toBeVisible();
+  await expect(page.locator("#btnDownload")).toHaveText("Save");
   await expect(page.locator("#btnDownload")).toBeDisabled();
   await expect(page.locator("#downloadStatus")).toContainText("Load a video");
 });
 
-test("delivery toggle swaps between the save and upload panes", async ({ page }) => {
+test("delivery toggle appears once signed in and swaps between the save and upload panes", async ({ page }) => {
+  await stubArchive(page);
   await page.goto("/");
+  await expect(page.locator("#deliverToggleRow")).toBeVisible();
+  // The stored setting is still "download"/"upload"; only one label reads "Save".
+  await expect(page.locator('#deliverSeg button[data-deliver="download"]')).toHaveText("Save");
 
   await page.locator('#deliverSeg button[data-deliver="upload"]').click();
+  await expect(page.locator('#deliverSeg button[data-deliver="upload"]')).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#uploadPane")).toBeVisible();
   await expect(page.locator("#downloadPane")).toBeHidden();
   // The recommended companion upload is on by default, and covers the video and any .slp.
@@ -132,6 +141,7 @@ test("delivery toggle swaps between the save and upload panes", async ({ page })
 });
 
 test("the chosen delivery side survives a refresh", async ({ page }) => {
+  await stubArchive(page);
   await page.goto("/");
   await page.locator('#deliverSeg button[data-deliver="upload"]').click();
   await expect(page.locator("#uploadPane")).toBeVisible();
@@ -149,15 +159,19 @@ test("the chosen delivery side survives a refresh", async ({ page }) => {
   await expect(page.locator("#uploadPane")).toBeHidden();
 });
 
-test("upload pane prompts for sign-in while signed out", async ({ page }) => {
+test("signing out takes the delivery toggle away and falls back to Save", async ({ page }) => {
+  await stubArchive(page);
   await page.goto("/");
+  await expect(page.locator("#uploadPane")).toBeVisible();
+
+  // The sign-out action lives in the avatar's hover popover.
+  await page.locator("#oauthAvatar").hover();
+  await page.locator("#oauthSignoutBtn").click();
+
   await expect(page.locator("#oauthSigninBtn")).toBeVisible();
-  await expect(page.locator("#oauthSignedIn")).toBeHidden();
-  await page.locator('#deliverSeg button[data-deliver="upload"]').click();
-  await expect(page.locator("#dandisetMessage")).toContainText("sign in");
-  await expect(page.locator("#dandisetId")).toBeHidden();
-  await expect(page.locator("#viewDatasetLink")).toBeHidden();
-  await expect(page.locator("#btnUpload")).toBeDisabled();
+  await expect(page.locator("#deliverToggleRow")).toBeHidden();
+  await expect(page.locator("#downloadPane")).toBeVisible();
+  await expect(page.locator("#uploadPane")).toBeHidden();
 });
 
 test("sign-in button starts the EMBER OAuth redirect", async ({ page }) => {

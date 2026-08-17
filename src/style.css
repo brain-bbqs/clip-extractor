@@ -144,6 +144,42 @@ header h1 {
   text-align: center;
 }
 
+/* The middle column of the header grid, capped so a long subtitle wraps instead of squeezing the
+   logo and the header actions flanking it. */
+.site-title {
+  min-width: 0;
+  max-width: 32rem;
+  text-align: center;
+}
+
+.site-subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+/* On a phone the three columns cannot hold the logo, a wrapping title block and the sign-in button
+   side by side, so the title block drops to a full-width second row under the other two. */
+@media (max-width: 640px) {
+  .site-header {
+    grid-template-columns: auto 1fr;
+  }
+  .brand-logo {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .header-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .site-title {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    max-width: none;
+  }
+}
+
 .header-actions {
   display: flex;
   align-items: center;
@@ -175,6 +211,12 @@ header h1 {
 }
 :root[data-signed-in="1"] #oauthSignedIn[hidden] {
   display: inline-flex !important;
+}
+/* Same pre-paint stand-in for the delivery card's Save/Upload toggle, which is only on screen while
+   signed in: a refresh with stored tokens keeps it in place rather than dropping it for a frame and
+   sliding the card's contents up. */
+:root[data-signed-in="1"] #deliverToggleRow[hidden] {
+  display: flex !important;
 }
 .oauth-signed-in {
   position: relative;

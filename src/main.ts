@@ -2312,6 +2312,9 @@ function renderAuthUI(): void {
   const signedIn = oauthTokens !== null;
   els.oauthSigninBtn.hidden = signedIn;
   els.oauthSignedIn.hidden = !signedIn;
+  // Upload is the only thing the delivery toggle leads to, and there is nowhere to upload to while
+  // signed out — so the choice is not offered at all rather than offered and then refused.
+  els.deliverToggleRow.hidden = !signedIn;
   // Once the real auth state is known, this element-level hidden state is authoritative; the
   // pre-paint script's stand-in attribute (see index.html) is no longer needed.
   delete document.documentElement.dataset.signedIn;
@@ -2489,9 +2492,13 @@ function setDeliveryMode(mode: DeliveryMode): void {
 /** Shows the side the visitor last picked — including across a refresh, which is why the choice is
  * persisted rather than kept in memory. With no choice on record, Upload leads whenever it is
  * actually usable (signed in, with at least one incoming dataset) and Download leads otherwise,
- * since there would be nowhere to upload to. */
+ * since there would be nowhere to upload to.
+ *
+ * Signing out forces Download without touching the stored choice: the toggle is off screen then
+ * (see renderAuthUI), so Upload would otherwise be stuck on with no way back — and signing in again
+ * still lands on the side that was picked. */
 function applyDeliveryMode(): void {
-  const mode = storedDeliveryMode ?? defaultDeliveryMode(currentDatasets.length);
+  const mode = oauthTokens === null ? "download" : (storedDeliveryMode ?? defaultDeliveryMode(currentDatasets.length));
   selectSeg(els.deliverSeg, mode);
   setDeliveryMode(mode);
 }
