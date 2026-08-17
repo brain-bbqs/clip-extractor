@@ -9,6 +9,11 @@
   --border: #dde1ec;
   --accent: #4f46e5;
   --accent-soft: #eef0ff;
+  /* The scrolling panes tint their thumb with the accent rather than leaving it the platform gray,
+     so it reads as part of the pane. Held as its own variable because it is the accent at an
+     opacity, and rgba() cannot be built from the hex above. */
+  --scrollbar-thumb: rgba(79, 70, 229, 0.45);
+  --scrollbar-thumb-hover: rgba(79, 70, 229, 0.75);
   /* EMBER's flame red, matched from the logo mark — used for the archive sign-in button and the
      signed-in avatar/sign-out accents. Brand colors, so identical in both themes. */
   --ember-red: #c81a24;
@@ -37,6 +42,8 @@
     --border: #2c3245;
     --accent: #818cf8;
     --accent-soft: #262b45;
+    --scrollbar-thumb: rgba(129, 140, 248, 0.35);
+    --scrollbar-thumb-hover: rgba(129, 140, 248, 0.65);
     --ok: #4ade80;
     --ok-soft: #16321f;
     --warn: #fbbf24;
@@ -56,6 +63,8 @@
   --border: #2c3245;
   --accent: #818cf8;
   --accent-soft: #262b45;
+  --scrollbar-thumb: rgba(129, 140, 248, 0.35);
+  --scrollbar-thumb-hover: rgba(129, 140, 248, 0.65);
   --ok: #4ade80;
   --ok-soft: #16321f;
   --warn: #fbbf24;
@@ -615,6 +624,44 @@ input[type="url"] {
 .browse-list:empty {
   border-style: dashed;
   min-height: 3rem;
+}
+/* The platform default is a wide gray slab with stepper arrows at both ends, which reads as a
+   foreign element pasted onto the list — most glaringly in dark mode. It is replaced with a slim,
+   rounded, accent-tinted thumb on a transparent track, so the list's own background runs to its
+   edge and the thumb reads as part of the list.
+
+   The ::-webkit-scrollbar rules are used wherever they are understood (Chrome, Safari), since they
+   can also drop the stepper arrows; browsers without them (Firefox) get the standard `scrollbar-*`
+   properties instead. Both paths are needed because Chrome ignores the pseudo-elements as soon as
+   the standard properties are set, and Firefox supports only the standard ones. */
+@supports not selector(::-webkit-scrollbar) {
+  .browse-list {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+}
+.browse-list::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.browse-list::-webkit-scrollbar-track,
+.browse-list::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* The transparent border, together with the padding-box clip, insets the thumb from the edges of
+   its track without a second element to color. */
+.browse-list::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+.browse-list::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+/* Drops the stepper arrows at the ends of the track. */
+.browse-list::-webkit-scrollbar-button {
+  display: none;
 }
 .browse-list li + li {
   border-top: 1px solid var(--border);
