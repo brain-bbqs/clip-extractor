@@ -95,10 +95,15 @@ export async function stubArchive(page: Page, { humanSubjects = false }: StubArc
   });
 
   await page.addInitScript(() => {
-    localStorage.setItem(
-      "clip-extractor.settings.v1",
-      JSON.stringify({ oauth: { accessToken: "test-token", expiresAt: Date.now() + 3_600_000 }, deliveryMode: "upload" }),
-    );
+    // Seeded only when there is nothing stored yet, since this runs before every navigation: a
+    // reload has to read back what the app itself saved, or no persisted choice could be tested.
+    const key = "clip-extractor.settings.v1";
+    if (!localStorage.getItem(key)) {
+      localStorage.setItem(
+        key,
+        JSON.stringify({ oauth: { accessToken: "test-token", expiresAt: Date.now() + 3_600_000 }, deliveryMode: "upload" }),
+      );
+    }
     localStorage.setItem("clip-extractor.analytics-consent", "declined");
   });
 

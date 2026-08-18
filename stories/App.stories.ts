@@ -35,6 +35,8 @@ function applySignedIn(wrapper: HTMLElement): void {
       select.append(option);
     }
   }
+  // The Save/Upload toggle only exists for a signed-in visitor, so it is revealed alongside the rest.
+  wrapper.querySelector("#deliverToggleRow")?.removeAttribute("hidden");
   const link = wrapper.querySelector<HTMLAnchorElement>("#viewDatasetLink");
   if (link) {
     link.hidden = false;

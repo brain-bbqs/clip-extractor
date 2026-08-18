@@ -90,6 +90,7 @@ export function getElements() {
     showPose: required<HTMLInputElement>("showPose"),
 
     // Delivery card (Download / Upload)
+    deliverToggleRow: required<HTMLDivElement>("deliverToggleRow"),
     deliverSeg: required<HTMLDivElement>("deliverSeg"),
     selectionDescription: required<HTMLTextAreaElement>("selectionDescription"),
     uploadOriginalRow: required<HTMLLabelElement>("uploadOriginalRow"),

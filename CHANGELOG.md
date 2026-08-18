@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.15
+
+#### 🚀 Enhancement
+
+- The header now carries a one-line description of what the app is for, under the title ([#31](https://github.com/brain-bbqs/clip-extractor/pull/31))
+- The Save/Upload toggle is only shown once you are signed in with EMBER, since signed out there is nowhere to upload to; signing out falls back to Save and signing back in returns to the side you had picked ([#31](https://github.com/brain-bbqs/clip-extractor/pull/31))
+
 ## 0.1.14
 
 #### 🚀 Enhancement
