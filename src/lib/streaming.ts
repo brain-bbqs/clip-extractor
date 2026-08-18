@@ -48,15 +48,21 @@ const LOOP_SECONDS = 20;
  * never the whole of a big enough one — regardless of what the video turns out to be. */
 const MAX_CACHE_BYTES = 512 * 1024 * 1024;
 
+/** How many frames of `width x height` fit under {@link MAX_CACHE_BYTES}. Shared by
+ * {@link defaultCacheSize} and {@link StreamingVideoBackend.ensureCacheCapacity}, so a cache grown
+ * for a particular loop is held to the same ceiling the default was sized against. */
+function affordableFrames(width: number, height: number): number {
+  const bytesPerFrame = Math.max(1, width * height * 4);
+  return Math.floor(MAX_CACHE_BYTES / bytesPerFrame);
+}
+
 /** How many decoded frames to keep by default: enough for a {@link LOOP_SECONDS} playback loop to
  * play without a re-decode at the wrap, held to {@link MAX_CACHE_BYTES} and never under
  * {@link DEFAULT_CACHE_SIZE}. A caller who knows better can still say so directly via
  * {@link StreamingBackendOptions.cacheSize}. */
 export function defaultCacheSize(fps: number, width: number, height: number): number {
   const wanted = Math.ceil(fps * LOOP_SECONDS);
-  const bytesPerFrame = Math.max(1, width * height * 4);
-  const affordable = Math.floor(MAX_CACHE_BYTES / bytesPerFrame);
-  return Math.max(DEFAULT_CACHE_SIZE, Math.min(wanted, affordable));
+  return Math.max(DEFAULT_CACHE_SIZE, Math.min(wanted, affordableFrames(width, height)));
 }
 
 /** Packets the frame rate is measured over. The rate is a property of the container, not of the
@@ -114,10 +120,27 @@ interface Closable {
 export class FrameCache<T extends Closable> {
   private readonly entries = new Map<number, T>();
 
-  constructor(private readonly limit: number) {}
+  constructor(private limit: number) {}
 
   get size(): number {
     return this.entries.size;
+  }
+
+  get capacity(): number {
+    return this.limit;
+  }
+
+  /** Grows or shrinks how many frames the cache may hold. Growing never evicts — it only changes
+   * how much room later insertions have before eviction starts; shrinking evicts from the front,
+   * same as a normal `set()` over the new limit would. */
+  setCapacity(limit: number): void {
+    this.limit = Math.max(1, limit);
+    while (this.entries.size > this.limit) {
+      const oldest = this.entries.keys().next();
+      if (oldest.done) break;
+      this.entries.get(oldest.value)?.close();
+      this.entries.delete(oldest.value);
+    }
   }
 
   has(index: number): boolean {
@@ -454,6 +477,17 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       if (arrived) return arrived;
     }
     return this.decodeOne(index);
+  }
+
+  /** Grows the frame cache to hold at least `frames` decoded frames at once, held to the same
+   * {@link MAX_CACHE_BYTES} ceiling {@link defaultCacheSize} sizes the default cache against. Never
+   * shrinks it: a caller sizing the cache for one loop should not undo a larger one asked for
+   * earlier. Meant to run once, just ahead of a {@link prefetch} of the same range — otherwise a
+   * loop longer than the default cache would decode its whole self and still evict the frames at its
+   * own start before the first playback pass even reaches its end. */
+  ensureCacheCapacity(frames: number): void {
+    const size = Math.max(DEFAULT_CACHE_SIZE, Math.min(frames, affordableFrames(this.width, this.height)));
+    if (size > this.cache.capacity) this.cache.setCapacity(size);
   }
 
   /** Decodes `startIndex..endIndex` into the cache, ahead of anyone asking for them. */

@@ -93,6 +93,10 @@ export interface SleapVideoBackend {
   // depends on that being a real possibility as far as the type checker is concerned.
   getFrameTimes?(): Promise<number[] | null | undefined>;
   prefetch?(startIndex: number, endIndex: number): Promise<void>;
+  /** Grows the decoded-frame cache to hold at least `frames` at once, ahead of a {@link prefetch} of
+   * that many. Optional: not every backend caches decoded frames, let alone lets a caller resize
+   * that cache. */
+  ensureCacheCapacity?(frames: number): void;
   /** Releases decoded frames and any reads still in flight. Optional: not every backend has one. */
   close?(): void;
 }

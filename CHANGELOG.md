@@ -4,7 +4,7 @@
 
 #### 🐛 Bug Fix
 
-- Streamed video now sizes its decoded-frame cache off the clip's own frame rate and picture size, enough to hold about a 20 second playback loop, so looping playback no longer stutters every time it wraps back to the start ([#37](https://github.com/brain-bbqs/clip-extractor/pull/37))
+- Streamed video now sizes its decoded-frame cache off the clip's own frame rate and picture size, and primes a marked snippet's whole range into it before playback starts, so a looped selection up to about 20 seconds no longer stutters back into "Loading frame…" on frames it has already shown once this loop ([#37](https://github.com/brain-bbqs/clip-extractor/pull/37))
 
 ## 0.1.18
 

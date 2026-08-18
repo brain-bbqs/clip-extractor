@@ -1135,6 +1135,30 @@ function playLoop(t: number): void {
   }
   rafId = requestAnimationFrame(playLoop);
 }
+// A snippet longer than this is not primed ahead of playback: fetching and decoding that much
+// before the first frame is even drawn would be a wait nobody asked for, worse than the stutter it
+// is meant to avoid. Well past LOOP_SECONDS in lib/streaming.ts, so an ordinary loop is always
+// primed — this only excludes a snippet long enough that holding it whole would cost real memory.
+const PRIME_LOOP_MAX_SECONDS = 60;
+
+/** Grows the backend's frame cache to hold `lo..hi` and decodes the range ahead of playback, so a
+ * looped snippet that fits plays its second pass onward straight from the cache instead of
+ * decoding — one frame at a time, off the playhead — the same stretch it already showed once this
+ * loop. Without this, ordinary forward playback only ever caches what it happens to decode as it
+ * goes, in playhead order; nothing primes the range before the wrap needs it, so a loop bigger than
+ * the cache's default size never lands every frame in memory before the read pressure of decoding
+ * the next ones evicts the first. */
+function primeLoopCache(lo: number, hi: number): void {
+  const backend = state.backend;
+  if (!backend?.ensureCacheCapacity || !backend.prefetch) return;
+  const frames = hi - lo + 1;
+  if (frames > state.fps * PRIME_LOOP_MAX_SECONDS) return;
+  backend.ensureCacheCapacity(frames);
+  const a = decodeIndex(state.frameOrder, lo);
+  const b = decodeIndex(state.frameOrder, hi);
+  backend.prefetch(Math.min(a, b), Math.max(a, b)).catch(() => {});
+}
+
 function startPlay(): void {
   if (state.playing || !state.backend) return;
   // Start inside the snippet rather than wherever the playhead was left: the handles are dragged
@@ -1142,6 +1166,7 @@ function startPlay(): void {
   if (state.mode === "video") {
     const [lo, hi] = selRange();
     if (state.cur < lo || state.cur > hi) void seek(lo);
+    primeLoopCache(lo, hi);
   }
   state.playing = true;
   lastT = 0;

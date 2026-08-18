@@ -406,6 +406,31 @@ describe("StreamingVideoBackend.prefetch", () => {
   });
 });
 
+describe("StreamingVideoBackend.ensureCacheCapacity", () => {
+  it("keeps a frame the old capacity would have evicted", async () => {
+    const backend = await openStreamingBlob(new Blob([]), { cacheSize: 2 });
+    await backend.getFrame(0);
+    backend.ensureCacheCapacity(5);
+    await backend.getFrame(1);
+    await backend.getFrame(2);
+    // Under the original 2-frame capacity this would have pushed frame 0 out; grown to 5 it does not.
+    expect(await backend.getFrame(0)).toBe(bitmaps[0]);
+    expect(harness.sampled).toEqual([0, 0.1, 0.2]);
+  });
+
+  it("never shrinks the cache a caller already grew", async () => {
+    const backend = await openStreamingBlob(new Blob([]), { cacheSize: 2 });
+    backend.ensureCacheCapacity(5);
+    backend.ensureCacheCapacity(3);
+    await backend.getFrame(0);
+    await backend.getFrame(1);
+    await backend.getFrame(2);
+    // All three still fit: a smaller ask after the bigger one left the 5-frame capacity in place.
+    expect(await backend.getFrame(0)).toBe(bitmaps[0]);
+    expect(harness.sampled).toEqual([0, 0.1, 0.2]);
+  });
+});
+
 describe("StreamingVideoBackend.close", () => {
   it("releases the decoded frames and the source behind them", async () => {
     const backend = await open();

@@ -76,6 +76,34 @@ describe("FrameCache", () => {
     expect(a.closed).toBe(true);
     expect(b.closed).toBe(true);
   });
+
+  it("grows without evicting anything already held", () => {
+    const cache = new FrameCache(2);
+    const [a, b] = [frame(), frame()];
+    cache.set(0, a);
+    cache.set(1, b);
+    cache.setCapacity(4);
+    expect(cache.capacity).toBe(4);
+    expect(a.closed).toBe(false);
+    expect(b.closed).toBe(false);
+    cache.set(2, frame());
+    cache.set(3, frame());
+    expect(cache.size).toBe(4);
+    expect(a.closed).toBe(false);
+  });
+
+  it("shrinking evicts from the front, same as running over the old limit would", () => {
+    const cache = new FrameCache(4);
+    const [a, b, c] = [frame(), frame(), frame()];
+    cache.set(0, a);
+    cache.set(1, b);
+    cache.set(2, c);
+    cache.setCapacity(2);
+    expect(cache.size).toBe(2);
+    expect(a.closed).toBe(true);
+    expect(cache.get(1)).toBe(b);
+    expect(cache.get(2)).toBe(c);
+  });
 });
 
 describe("fpsFromSpan", () => {
