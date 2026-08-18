@@ -55,9 +55,9 @@ describe("writeUrlState", () => {
   });
 
   it("leaves params it does not own exactly where they were", () => {
-    expect(writeUrlState("?code=abc&url=https://videos.test/old.mp4", session({ inF: null, outF: null, frame: null, description: "" }))).toBe(
-      `?code=abc&url=${encodeURIComponent(VIDEO)}`,
-    );
+    expect(
+      writeUrlState("?code=abc&url=https://videos.test/old.mp4", session({ inF: null, outF: null, frame: null, description: "" })),
+    ).toBe(`?code=abc&url=${encodeURIComponent(VIDEO)}`);
   });
 
   it("carries frame 0 only where it is the selection, since every video opens on it", () => {
