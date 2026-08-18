@@ -79,7 +79,7 @@ export function streamsEfficiently(nameOrUrl: string): boolean {
 
 /** Where a video that will not open is re-encoded into one that will. Named in every refusal:
  * nobody is helped by being told only that their file cannot be read. */
-export const ENCODING_HELPER_URL = "https://encoding-helper.emberarchive.org";
+export const ENCODING_HELPER_URL = "https://encoding-helper.brain-bbqs.org/";
 
 /** Separates a message's paragraphs. What the page breaks a refusal into lines on, and no more
  * than a blank line anywhere else it is read. */
