@@ -62,7 +62,7 @@ import {
   type ArchiveDandiset,
   type ArchiveVideo,
 } from "./lib/archives";
-import { listEmbargoedVideos, listOwnedEmbargoedDandisets, resolveEmbargoedStreamUrl } from "./lib/embargoed";
+import { isAssetDownloadUrl, listEmbargoedVideos, listOwnedEmbargoedDandisets, resolveEmbargoedStreamUrl } from "./lib/embargoed";
 import { loadCachedNames, saveCachedNames } from "./lib/archiveNames";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
 import {
@@ -95,7 +95,8 @@ import { friendlyError } from "./lib/errors";
 import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
 import { StageStatus } from "./ui/stageStatus";
-import type { ArchiveConfig, OAuthTokenSet, PoseModel, SleapLabels, SleapVideoBackend } from "./lib/types";
+import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type UrlState } from "./lib/urlState";
+import type { ArchiveConfig, OAuthTokenSet, PoseModel, SelectorMode, SleapLabels, SleapVideoBackend } from "./lib/types";
 
 // Injected at build time from package.json's version (see configs/appVersion.ts).
 declare const __APP_VERSION__: string;
@@ -151,10 +152,6 @@ els.themeToggle.addEventListener("click", () => {
 // ============================================================
 // State
 // ============================================================
-// "video" selects an in/out range (streamed directly, no re-encoding); "frame" selects a single
-// frame. The mode only changes what the selector means — playback works the same in both.
-type SelectorMode = "video" | "frame";
-
 interface AppState {
   backend: SleapVideoBackend | null;
   frameOrder: number[] | null;
@@ -174,6 +171,9 @@ interface AppState {
   /** The pose file behind `pose`, when it came from a local file — kept so it can ride along with
    * an upload. Null for one fetched from a URL, whose bytes were never held locally. */
   slpFile: File | null;
+  /** Where `pose` was fetched from, when it came from a URL — the other half of slpFile above, and
+   * the only half a link can carry. Null for a local file, and whenever `pose` is null. */
+  poseUrl: string | null;
   /** Display name of the loaded pose file, including one loaded from a URL, so a later mismatch can
    * name it. Null whenever `pose` is null. */
   slpName: string | null;
@@ -214,6 +214,7 @@ const state: AppState = {
   speed: 1,
   pose: null,
   slpFile: null,
+  poseUrl: null,
   slpName: null,
   slpKind: null,
   slpMeta: null,
@@ -232,6 +233,48 @@ let poseGeneration = 0;
 // Same idea for the blur areas: moving, resizing or removing one changes every pixel an extraction
 // would write, so anything already extracted has to be re-made rather than re-used.
 let blurGeneration = 0;
+
+// ============================================================
+// The address bar (see lib/urlState.ts)
+// ============================================================
+// The session is written into the query string as it moves, so the address always links back to
+// what is on screen: the streamed video and pose file, the marks made in them, and the description
+// typed for the delivery. Reading it back is initFromUrl(), at the bottom of this file.
+
+/** What the bar should be showing, as of now. */
+function urlState(): UrlState {
+  return {
+    url: state.sourceUrl,
+    pose: state.poseUrl,
+    mode: state.mode,
+    inF: state.inF,
+    outF: state.outF,
+    frame: state.backend ? state.cur : null,
+    description: els.selectionDescription.value,
+  };
+}
+
+/** Puts a session in the bar, without adding a history entry: this is one session being adjusted,
+ * not a trail of pages to press Back through. Defaults to the one on screen; the restore below
+ * passes the link it was opening when that link did not open. */
+function writeUrl(next: UrlState = urlState()): void {
+  const search = writeUrlState(location.search, next);
+  if (search === location.search) return;
+  history.replaceState(history.state, "", `${location.pathname}${search}${location.hash}`);
+}
+
+// How long the writes are coalesced for. Every seek, every drag of a handle and every keystroke in
+// the description moves the session, and browsers do not take an address change per animation frame
+// — Safari counts them and throws once a hundred land inside thirty seconds. Trailing-only, so a
+// drag, or a stretch of playback, writes once when it comes to rest.
+const URL_SYNC_MS = 400;
+let urlSyncTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Schedules a write of the bar. Safe to call from anything that moves the session. */
+function syncUrl(): void {
+  clearTimeout(urlSyncTimer);
+  urlSyncTimer = setTimeout(writeUrl, URL_SYNC_MS);
+}
 
 // ============================================================
 // Video loading (remote URL + local file)
@@ -507,6 +550,7 @@ function loadedVideoMeta(): LoadedVideoMeta | null {
 function clearPose(): void {
   state.pose = null;
   state.slpFile = null;
+  state.poseUrl = null;
   state.slpName = null;
   state.slpKind = null;
   state.slpMeta = null;
@@ -515,6 +559,7 @@ function clearPose(): void {
   els.slpStatus.hidden = true;
   // Nothing is loaded, so there is no pair left to caution anyone about.
   els.slpWarning.hidden = true;
+  syncUrl();
 }
 
 /** Fills one of the card's notice blocks with a headline and a line per reason. */
@@ -643,6 +688,7 @@ async function loadPoseFile(source: File | string, name: string): Promise<void> 
     // Only after a successful parse: a file this app could not read is not one to hand to the
     // archive.
     state.slpFile = source instanceof File ? source : null;
+    state.poseUrl = source instanceof File ? null : source;
     poseGeneration++;
     clearDeliveryOutcomes();
     const nFrames = state.pose.byFrame.size;
@@ -655,6 +701,7 @@ async function loadPoseFile(source: File | string, name: string): Promise<void> 
     if (video) showSlpWarnings(name, video, slpVideoWarnings(meta, video, kind));
     else els.slpWarning.hidden = true;
     renderFrame();
+    syncUrl();
   } catch (e) {
     // A file that could not be read has to say so on the card too: the console is not where someone
     // dropping a pose file is looking, and a silent failure is indistinguishable from a check that
@@ -1249,6 +1296,9 @@ function positionHandle(handle: HTMLElement, frame: number, at: TimelineView, un
 }
 
 function updateSelUI(): void {
+  // Every move of the marks, the playhead, the selector mode or the loaded video ends up here, so
+  // this is where the address is kept in step with them.
+  syncUrl();
   setFrameField(els.curVal, state.backend ? state.cur : null);
   setFrameField(els.inVal, state.inF);
   setFrameField(els.outVal, state.outF);
@@ -1707,7 +1757,7 @@ function loadFromEmberUrl(): void {
   const url = els.emberUrl.value.trim();
   if (!url) return;
   state.sourceFile = null;
-  void loadVideo(url, url.split("/").pop()?.split("?")[0] || "video.mp4", url);
+  void loadVideo(url, nameFromUrl(url, "video.mp4"), url);
 }
 els.emberLoadBtn.addEventListener("click", loadFromEmberUrl);
 els.emberUrl.addEventListener("keydown", (e) => {
@@ -2424,7 +2474,11 @@ async function refreshDandisetOptions(): Promise<void> {
   syncBrowseToAuth();
 }
 
-async function initEmberAuth(): Promise<void> {
+/** Finishes a sign-in that is landing on this load: the redirect back from the archive's authorize
+ * page arrives as an ordinary page load carrying a `code`. Kept apart from the dataset listing that
+ * follows it, so that anything needing only a token can wait for only the token (see
+ * streamUrlFor, which opens a link naming an embargoed asset). */
+async function resumeSignIn(): Promise<void> {
   const callbackTokens = await handleRedirectCallback().catch((e) => {
     log(`OAuth sign-in callback failed: ${(e as Error).message}`, "err");
     return null;
@@ -2434,10 +2488,21 @@ async function initEmberAuth(): Promise<void> {
     saveSettings();
     renderAuthUI();
   }
+}
+
+async function initEmberAuth(): Promise<void> {
+  await signInReady;
   await refreshDandisetOptions();
 }
 
-els.oauthSigninBtn.addEventListener("click", () => void startLogin());
+els.oauthSigninBtn.addEventListener("click", () => {
+  // The archive can only return to the bare page address (see lib/oauth.ts), so the session in the
+  // bar is held here for the load that comes back — signing in to upload a clip is no way to lose
+  // the clip. Written out first, since a keystroke or a nudge of a handle may still be coalesced.
+  writeUrl();
+  stashUrlState(location.search);
+  void startLogin();
+});
 els.oauthSignoutBtn.addEventListener("click", () => {
   const tokens = oauthTokens;
   oauthTokens = null;
@@ -2510,7 +2575,10 @@ wireSeg(els.deliverSeg, (v) => {
 });
 
 // Both buttons wait on a description, so the gate is re-read as it is typed rather than on blur.
-els.selectionDescription.addEventListener("input", updateDeliveryGate);
+els.selectionDescription.addEventListener("input", () => {
+  updateDeliveryGate();
+  syncUrl();
+});
 els.uploadOriginal.addEventListener("change", () => {
   // Only when the switch is the visitor's to set: the blur tool turns it off and disables it, and
   // that is not a preference to remember.
@@ -3168,22 +3236,104 @@ renderAuthUI();
 // Applied before the archive is consulted so a restored choice is the first thing painted, rather
 // than the default briefly winning and being corrected once the dataset listing lands.
 applyDeliveryMode();
+// Started here and awaited in both directions: by the dataset listing, which needs whichever token
+// this load ends up holding, and by a link being opened below against an archive asset.
+const signInReady = resumeSignIn();
 void initEmberAuth();
 
-// URL params: ?url=<video>&pose=<.slp or .nwb> (?slp= is the older spelling of the same thing)
-function initFromUrlParams(): void {
-  const p = new URLSearchParams(location.search);
-  const url = p.get("url");
-  if (url) {
+/**
+ * The address a remote video's bytes are read from, which is not always the address a link names.
+ *
+ * The archive's own asset URL is what a link carries (see lib/embargoed.ts), but its bytes sit
+ * behind a redirect — and for an embargoed file, behind a signature the archive only issues to a
+ * signed-in token. So a signed-in visitor makes the same exchange the browse pane makes when a row
+ * is picked, and streams from the bucket the archive points at. Anything else, and any exchange
+ * that fails, is opened at the address given: that is what a URL param has always done, and a
+ * failure then reports itself on the stage rather than here.
+ */
+async function streamUrlFor(url: string): Promise<string> {
+  if (!isAssetDownloadUrl(currentConfig(), url)) return url;
+  // Waited on rather than read straight off: this load may be the one a sign-in is landing on, and
+  // a link shared out of the browse pane is very often one only a signed-in visitor can open.
+  await signInReady;
+  if (!oauthTokens) return url;
+  try {
+    await ensureFreshOAuth();
+    return await resolveEmbargoedStreamUrl(currentConfig(), url);
+  } catch (e) {
+    // The address is logged as an argument rather than interpolated into the message: it comes off
+    // the query string, and console.warn reads its first argument as a format string.
+    console.warn("Could not ask EMBER where this asset is streamed from; opening the address as given:", url, e);
+    return url;
+  }
+}
+
+/** A file name for a URL: its last path segment, or `fallback` where that names nothing — the
+ * archive's asset endpoints end in `/download/`, which is not a file name. */
+function nameFromUrl(url: string, fallback: string): string {
+  const last = url.split("?")[0].split("#")[0].split("/").filter(Boolean).pop() ?? "";
+  return /\.[a-z0-9]{2,5}$/i.test(last) ? last : fallback;
+}
+
+/** Puts a link's marks back on the video it just opened. Held to the video's own bounds, like every
+ * other way a frame is set here, so a link made against a longer recording lands at the end of this
+ * one rather than off it. */
+async function applyUrlMarks(link: UrlState): Promise<void> {
+  if (!state.backend) return;
+  const last = Math.max(0, state.totalFrames - 1);
+  const held = (frame: number | null): number | null => (frame === null ? null : Math.max(0, Math.min(last, frame)));
+  const lo = held(link.inF);
+  const hi = held(link.outF);
+  // Ends the wrong way round are put back in order rather than refused: which is In and which is
+  // Out is what the two numbers say, not which of them a hand-written link put first.
+  state.inF = lo !== null && hi !== null ? Math.min(lo, hi) : lo;
+  state.outF = lo !== null && hi !== null ? Math.max(lo, hi) : hi;
+  if (link.mode === "frame") {
+    selectSeg(els.modeSeg, "frame");
+    setMode("frame");
+  }
+  selectionChanged();
+  const frame = held(link.frame);
+  // Forced, because the video opened on frame 0 and a link naming it would otherwise be a seek to
+  // where the player already is.
+  if (frame !== null) await seek(frame, true);
+}
+
+/**
+ * Opens whatever the address describes: the streamed video and pose file, the marks made in them,
+ * and the description typed for the delivery (see lib/urlState.ts).
+ *
+ * `?url=` and `?pose=` on their own are the older, hand-written spelling of the same thing (`?slp=`
+ * older still) and still mean what they always did — a video and a pose file, with nothing marked.
+ */
+async function initFromUrl(): Promise<void> {
+  // Read before anything below can rewrite it, and before the first coalesced write lands.
+  const held = takeStashedUrlState();
+  const inBar = readUrlState(location.search);
+  // An address with no video in it and a session held from a sign-in means this is the load that
+  // came back from the archive's authorize page, which can only return to the bare page address:
+  // the session that was left behind is picked back up here.
+  const link = inBar.url ? inBar : held ? readUrlState(held) : inBar;
+  if (link.description) {
+    els.selectionDescription.value = link.description;
+    updateDeliveryGate();
+  }
+  if (link.url) {
     // A remote URL is the EMBER-stream path — reflect it in the source toggle.
     selectSeg(els.srcSeg, "ember");
     setSrcPane("ember");
-    els.emberUrl.value = url;
-    void loadVideo(url, url.split("/").pop() || "video.mp4", url);
+    els.emberUrl.value = link.url;
+    await loadVideo(await streamUrlFor(link.url), nameFromUrl(link.url, "video.mp4"), link.url);
+    // Before the pose file, which is the slower half of a link and has nothing to do with where the
+    // marks go.
+    await applyUrlMarks(link);
   }
-  const pose = p.get("pose") ?? p.get("slp");
-  if (pose) setTimeout(() => void loadPoseFile(pose, pose.split("/").pop() || "labels.slp"), 600);
+  if (link.pose) await loadPoseFile(link.pose, nameFromUrl(link.pose, "labels.slp"));
+  // Whatever was restored is now the session, so the bar says so — it may have come out of the
+  // sign-in stash rather than out of the bar itself. A video that did not open leaves the link
+  // there all the same: a reload is then another go at it rather than the end of it.
+  writeUrl(state.sourceUrl ? urlState() : link);
 }
-initFromUrlParams();
+void initFromUrl();
 
 log("Ready. Load a local video or stream one from EMBER to begin.");

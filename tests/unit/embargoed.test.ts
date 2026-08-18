@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listEmbargoedVideos, listOwnedEmbargoedDandisets, resolveEmbargoedStreamUrl } from "../../src/lib/embargoed";
+import { isAssetDownloadUrl, listEmbargoedVideos, listOwnedEmbargoedDandisets, resolveEmbargoedStreamUrl } from "../../src/lib/embargoed";
 import type { ArchiveConfig } from "../../src/lib/types";
 
 const cfg: ArchiveConfig = {
@@ -139,6 +139,19 @@ describe("listEmbargoedVideos", () => {
       vi.fn(() => Promise.resolve(jsonResponse({ results: [{ asset_id: "a1", path: "a.mp4" }], next: null }))),
     );
     expect((await listEmbargoedVideos(cfg, "000900"))[0].size).toBe(null);
+  });
+});
+
+describe("isAssetDownloadUrl", () => {
+  it("recognises this archive's own asset download endpoint, with or without its trailing slash", () => {
+    expect(isAssetDownloadUrl(cfg, `${cfg.api}/assets/2f0f/download/`)).toBe(true);
+    expect(isAssetDownloadUrl(cfg, `${cfg.api}/assets/2f0f/download`)).toBe(true);
+  });
+
+  it("leaves anything else alone, including another archive's assets and the bucket itself", () => {
+    expect(isAssetDownloadUrl(cfg, "https://api.other.org/api/assets/2f0f/download/")).toBe(false);
+    expect(isAssetDownloadUrl(cfg, "https://bucket.example.org/blobs/2f/0f/2f0f")).toBe(false);
+    expect(isAssetDownloadUrl(cfg, `${cfg.api}/dandisets/000123/`)).toBe(false);
   });
 });
 

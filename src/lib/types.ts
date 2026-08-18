@@ -101,6 +101,11 @@ export interface SleapVideoBackend {
  * hand back any of these depending on codec/backend. */
 export type VideoFrameLike = ImageBitmap | ImageData | ArrayBuffer | { buffer: ArrayBufferLike };
 
+/** Which selector the player is on: "video" marks an in/out range (streamed directly, with no
+ * re-encoding), "frame" marks a single frame. The mode only changes what the selector means —
+ * playback works the same in both. */
+export type SelectorMode = "video" | "frame";
+
 export interface SleapPoint {
   xy: [number, number];
   visible: boolean;

@@ -127,6 +127,18 @@ export async function listEmbargoedVideos(cfg: ArchiveConfig, dandisetId: string
 }
 
 /**
+ * Whether `url` is this archive's own download endpoint for an asset.
+ *
+ * That is the address a video picked out of the browse pane is recorded against, and so the one a
+ * shared link carries: it names the asset rather than its content hash, and for an embargoed file
+ * it is the only one still resolving tomorrow. The bytes are somewhere else — see below — so an
+ * address of this shape has to be exchanged for a bucket URL before a player can read it.
+ */
+export function isAssetDownloadUrl(cfg: ArchiveConfig, url: string): boolean {
+  return url.startsWith(`${cfg.api}/assets/`) && /\/assets\/[^/]+\/download\/?$/.test(url);
+}
+
+/**
  * Turns an embargoed asset's download URL into the signed bucket URL its bytes are actually at.
  *
  * The archive answers the download endpoint with a redirect to a short-lived signed URL. The
