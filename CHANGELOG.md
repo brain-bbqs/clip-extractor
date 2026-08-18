@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.18
+
+#### 🐛 Bug Fix
+
+- A video whose container and size looked fine but whose network request or decoder never answered used to leave the player loading forever; it now gives up after 30 seconds with a message pointing at the likely codec or connection problem ([#36](https://github.com/brain-bbqs/clip-extractor/pull/36))
+
 ## 0.1.17
 
 #### 🚀 Enhancement

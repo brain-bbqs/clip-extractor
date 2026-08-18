@@ -87,8 +87,10 @@ export const PARAGRAPH = "\n\n";
 
 /** How to get out of this, its own paragraph at the end of every refusal. The link is written in
  * markdown because these messages are read in the console and in a `title` as well as on the page,
- * where it becomes a real link on its way in (see ui/linkify.ts). */
-const ADVICE = `Please use the [Encoding Helper](${ENCODING_HELPER_URL}) to improve the video accessibility.`;
+ * where it becomes a real link on its way in (see ui/linkify.ts). Exported for {@link loadTimeoutRefusal}
+ * below, which is not a refusal decided up front like the rest of this module but one discovered
+ * only once an open that looked fine on paper has actually been tried. */
+export const ADVICE = `Please use the [Encoding Helper](${ENCODING_HELPER_URL}) to improve the video accessibility.`;
 
 /** What every refusal opens with. Deliberately says nothing about the container: what a person can
  * do about the file is the same either way, and the extension is already in the name beside it. */
@@ -132,6 +134,34 @@ export function wholeFileRefusal(size: number | null): string | null {
   return (
     `This file ${CANNOT_STREAM}, and at ${bytes(size)} it is past the ` +
     `${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file download.${PARAGRAPH}${ADVICE}`
+  );
+}
+
+/**
+ * How long a video that passed every up-front check may take to actually open before the attempt is
+ * judged stuck rather than merely slow.
+ *
+ * Everything above this decides whether a source is worth opening at all, from its container and
+ * its declared size — and once a file clears those, the app believes it should just play. The
+ * backends it is handed to either produce a frame or fail outright, ordinarily within moments, so a
+ * source that instead sits doing neither — a network request nothing ever answers, a decoder handed
+ * a header it waits on the rest of forever — looks identical to a normal wait for as long as nobody
+ * cuts it off. Thirty seconds is a bet that nothing this app opens well should ever need longer.
+ */
+export const LOAD_TIMEOUT_MS = 30_000;
+
+/**
+ * Why a video that looked fine on paper was given up on partway through opening it.
+ *
+ * Unlike the rest of this module's refusals, nothing about the file said this was coming — its
+ * container streams, its size is within every limit — so the wording says only that the wait ran
+ * out, not what specifically went wrong: that is for whatever the failed attempt itself logged.
+ */
+export function loadTimeoutRefusal(name: string): string {
+  const seconds = LOAD_TIMEOUT_MS / 1000;
+  return (
+    `${name} could not be opened within ${seconds} seconds. This usually means it holds a codec ` +
+    `nothing here can decode, or that the connection to it stalled outright.${PARAGRAPH}${ADVICE}`
   );
 }
 
