@@ -93,8 +93,8 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-Dyeuf_pw.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-B-cvncCh.css">
+    <script type="module" crossorigin src="./assets/index-B_t_L0XF.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-5M9P2FnA.css">
   </head>
   <body>
     <a class="brand-watermark-link" href="https://brain-bbqs.org" target="_blank" rel="noopener" aria-label="BBQS" title="BBQS">
@@ -104,7 +104,12 @@
     <main>
       <header class="site-header">
         <img class="brand-logo" src="./assets/clip-extractor-icon-DF8u0q4x.svg" alt="" width="48" height="48" />
-        <h1>Clip Extractor</h1>
+        <!-- Title and its one-line description share the header's middle column (mirrors
+             bbqs-uploader), so the subtitle sits under the title instead of beside it. -->
+        <div class="site-title">
+          <h1>Clip Extractor</h1>
+          <p class="site-subtitle">Extract, describe, and share short clips or individual frames of behavioral recordings</p>
+        </div>
         <div class="header-actions">
           <button type="button" id="themeToggle" class="theme-toggle" aria-label="Toggle light/dark mode" title="Toggle light/dark mode">
             <svg
@@ -513,7 +518,11 @@
       <!-- Delivery: save the extracted selection locally, or upload it to EMBER. main.ts picks the
            starting side once sign-in resolves (Upload when there is a dataset to upload to). -->
       <section class="card" id="deliverCard">
-        <div class="toggle-row">
+        <!-- Hidden until an EMBER sign-in resolves: Upload is the only side it leads to, and there
+             is nothing to upload to while signed out. Starts hidden so a signed-out visitor never
+             sees it flash; the pre-paint `data-signed-in` attribute (see the script above) holds it
+             on screen for a signed-in refresh until main.ts settles the real state. -->
+        <div class="toggle-row" id="deliverToggleRow" hidden>
           <div class="seg" id="deliverSeg" role="group" aria-label="Delivery">
             <!-- The data-deliver values are the persisted setting (see StoredSettings.deliveryMode),
                  so they stay "download"/"upload" even though this side now reads "Save". -->
