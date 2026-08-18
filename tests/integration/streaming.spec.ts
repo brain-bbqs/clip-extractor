@@ -74,7 +74,7 @@ test("a large remote file in a container that cannot stream is refused before it
   // The way out of it is a link, named rather than spelled out as a URL.
   const helper = page.locator("#emptyStage a");
   await expect(helper).toHaveText("Encoding Helper");
-  await expect(helper).toHaveAttribute("href", "https://encoding-helper.emberarchive.org");
+  await expect(helper).toHaveAttribute("href", "https://encoding-helper.brain-bbqs.org/");
   await expect(page.locator("#stageBusy")).toBeHidden();
   expect(methods).toEqual(["HEAD"]);
 });

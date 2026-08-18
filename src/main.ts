@@ -16,12 +16,15 @@ import {
 } from "./lib/timeline";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { openStreamingBlob, openStreamingUrl, StreamingVideoBackend } from "./lib/streaming";
+import { withTimeout } from "./lib/timeout";
 import {
+  loadTimeoutRefusal,
   remoteFileSize,
   streamsEfficiently,
   unstreamableRefusal,
   wholeFileRefusal,
   ENCODING_HELPER_URL,
+  LOAD_TIMEOUT_MS,
   PARAGRAPH,
   WHOLE_FILE_LIMIT_BYTES,
 } from "./lib/streamable";
@@ -481,7 +484,11 @@ async function loadVideo(
   // the console — so the wait is never unaccounted for.
   stageStatus.show(`Loading ${name}…`);
   try {
-    const { backend, file } = await openVideoBackend(source, name);
+    // A file that reaches here already looks like it should play — its container streams, or it
+    // arrived as bytes the picker accepted — so nothing beyond this point is expected to run long.
+    // A hang inside it (a stalled request, a decoder waiting on a frame that never comes) would
+    // otherwise look exactly like an ordinary wait for as long as nobody cuts it off.
+    const { backend, file } = await withTimeout(openVideoBackend(source, name), LOAD_TIMEOUT_MS, loadTimeoutRefusal(name));
     // Dropping the reference to the outgoing backend frees neither its decoded frames — ImageBitmaps
     // hold memory the collector does not account for — nor, for a streamed URL, the requests its
     // source still has in flight. Closed only once the replacement is open, so a load that fails

@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   containerOf,
+  loadTimeoutRefusal,
   parseContentRangeSize,
   remoteFileSize,
   streamsEfficiently,
   unstreamableRefusal,
   wholeFileRefusal,
   ENCODING_HELPER_URL,
+  LOAD_TIMEOUT_MS,
   PARAGRAPH,
   WHOLE_FILE_LIMIT_BYTES,
 } from "../../src/lib/streamable";
@@ -93,6 +95,28 @@ describe("unstreamableRefusal", () => {
 
   it("refuses one whose size nobody reports, an unbounded read being the same as too large a one", () => {
     expect(unstreamableRefusal("mice.avi", null)).toContain("nothing says how large");
+  });
+});
+
+describe("loadTimeoutRefusal", () => {
+  it("names the file, the time it was given and where to re-encode it", () => {
+    const refusal = loadTimeoutRefusal("mice.mp4");
+    expect(refusal).toContain("mice.mp4");
+    expect(refusal).toContain(`${LOAD_TIMEOUT_MS / 1000} seconds`);
+    expect(refusal).toContain(`[Encoding Helper](${ENCODING_HELPER_URL})`);
+  });
+
+  it("leaves the way out as its own paragraph, like every other refusal in this module", () => {
+    const paragraphs = loadTimeoutRefusal("mice.mp4").split(PARAGRAPH);
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs[1].startsWith("Please use the")).toBe(true);
+  });
+
+  it("says nothing about the container, unlike the refusals decided before an open is even tried", () => {
+    // Nothing about the file said this was coming — it streams, it is small enough — so the
+    // wording is generic where the size- and container-based refusals above can be specific.
+    expect(loadTimeoutRefusal("mice.mp4")).not.toContain("streamed");
+    expect(loadTimeoutRefusal("mice.mp4")).not.toContain("efficiently");
   });
 });
 
