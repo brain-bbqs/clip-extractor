@@ -93,8 +93,8 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-Dx_60U5Q.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-5M9P2FnA.css">
+    <script type="module" crossorigin src="./assets/index-C0MA3c64.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DbQjhPz0.css">
   </head>
   <body>
     <a class="brand-watermark-link" href="https://brain-bbqs.org" target="_blank" rel="noopener" aria-label="BBQS" title="BBQS">
@@ -289,17 +289,24 @@
         </div>
         <div class="slp-status" id="slpStatus" hidden>
           <span class="badge" id="slpBadge"></span>
-          <label class="hint pose-toggle"><input type="checkbox" id="showPose" checked /> Show overlay</label>
         </div>
       </section>
 
       <!-- Player -->
       <section class="card" id="playerCard">
-        <div class="toggle-row">
+        <div class="card-toprow">
+          <span></span>
           <div class="seg" id="modeSeg" role="group" aria-label="Selector mode">
             <button type="button" data-mode="video" class="active" aria-pressed="true">Snippet</button>
             <button type="button" data-mode="frame" aria-pressed="false">Frame</button>
           </div>
+          <!-- Sits beside the picture it draws on rather than on the pose card, since it is the
+               stage it changes. Raised with the pose step itself: with the step off there is no
+               overlay to show or hide. -->
+          <label class="hint pose-toggle" id="showPoseRow" hidden>
+            <span>Show overlay</span>
+            <input type="checkbox" id="showPose" class="switch" role="switch" checked />
+          </label>
         </div>
 
         <div id="stage">
