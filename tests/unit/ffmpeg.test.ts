@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodedFraction, ffmpegArgs } from "../../src/lib/ffmpeg";
+import { encodedFraction, ffmpegArgs, loggedDuration, transcodeArgs } from "../../src/lib/ffmpeg";
 
 describe("ffmpegArgs", () => {
   it("builds a frame-exact trim filter in precise mode", () => {
@@ -79,5 +79,46 @@ describe("encodedFraction", () => {
 
   it("holds at full rather than overshooting it", () => {
     expect(encodedFraction({ progress: 1, time: 3100000 }, 3)).toBe(1);
+  });
+});
+
+describe("transcodeArgs", () => {
+  it("re-encodes the whole file into a faststart MP4 with no audio", () => {
+    const args = transcodeArgs("source.avi", "converted.mp4");
+    expect(args).toEqual([
+      "-i",
+      "source.avi",
+      "-an",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "23",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+      "converted.mp4",
+    ]);
+  });
+
+  it("never copies the source's frames across, since the codec is half of why it would not open", () => {
+    // An AVI holding MJPEG or DivX remuxes into an MP4 that opens and then decodes nothing.
+    expect(transcodeArgs("source.avi", "converted.mp4")).not.toContain("copy");
+  });
+});
+
+describe("loggedDuration", () => {
+  it("reads the source duration off the line ffmpeg probes it with", () => {
+    expect(loggedDuration("  Duration: 00:00:12.34, start: 0.000000, bitrate: 1200 kb/s")).toBeCloseTo(12.34, 5);
+    expect(loggedDuration("  Duration: 01:02:03.00, start: 0.000000, bitrate: 900 kb/s")).toBeCloseTo(3723, 5);
+  });
+
+  it("reports nothing for a line carrying no duration, or a duration of none", () => {
+    expect(loggedDuration("frame=  120 fps=0.0 q=28.0 size=     256kB")).toBeNull();
+    expect(loggedDuration("  Duration: N/A, start: 0.000000, bitrate: N/A")).toBeNull();
+    // A source ffmpeg cannot time is no more measurable than one it cannot read.
+    expect(loggedDuration("  Duration: 00:00:00.00, start: 0.000000, bitrate: N/A")).toBeNull();
   });
 });

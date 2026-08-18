@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bidsLabel,
   bundleFileName,
@@ -12,17 +12,22 @@ import {
 import type { StreamingVideoBackend } from "../../src/lib/streaming";
 
 // A streamed source must never reach ffmpeg: it works out of a virtual filesystem, so it would
-// need the whole container downloaded into memory first. The stub fails loudly if it is asked for.
-const ffmpeg = vi.hoisted(() => ({ loaded: 0 }));
+// need the whole container downloaded into memory first. The stub fails loudly if it is asked for,
+// unless a spec has put an instance in its way to be handed one.
+const ffmpeg = vi.hoisted(() => ({ loaded: 0, instance: null as unknown }));
 vi.mock("../../src/lib/ffmpeg", () => ({
   ensureFfmpeg: () => {
     ffmpeg.loaded++;
-    return Promise.reject(new Error("ffmpeg stub"));
+    return ffmpeg.instance ? Promise.resolve(ffmpeg.instance) : Promise.reject(new Error("ffmpeg stub"));
   },
-  ffmpegArgs: () => [],
+  ffmpegArgs: () => ["-i", "in.mp4", "clip.mp4"],
   streamCopies: () => false,
   encodedFraction: () => null,
 }));
+
+afterEach(() => {
+  ffmpeg.instance = null;
+});
 
 describe("sourceBaseName", () => {
   it("drops the extension", () => {
@@ -182,5 +187,46 @@ describe("extractClip, on a streamed source", () => {
     await expect(extractClip({ ...selection, sourceFile: new File(["bytes"], "v.mp4"), backend })).rejects.toThrow(/ffmpeg stub/);
     expect(ffmpeg.loaded).toBe(1);
     expect(backend.extractRange).not.toHaveBeenCalled();
+  });
+});
+
+describe("extractClip, on a source ffmpeg had to convert before it would open", () => {
+  /** ffmpeg only ever reads the bytes out of the source, and jsdom's File cannot hand them over. */
+  const bytes = { arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) } as unknown as File;
+
+  function stubFfmpeg(): void {
+    ffmpeg.instance = {
+      writeFile: vi.fn(() => Promise.resolve()),
+      exec: vi.fn(() => Promise.resolve(0)),
+      readFile: vi.fn(() => Promise.resolve(new Uint8Array([1, 2, 3]))),
+      deleteFile: vi.fn(() => Promise.resolve()),
+    };
+  }
+
+  it("records the conversion ahead of the trim, so the provenance names every command the frames passed through", async () => {
+    stubFfmpeg();
+    const media = await extractClip({
+      sourceFile: bytes,
+      sourceUrl: null,
+      sourceName: "mice.avi",
+      sourcePreparation: "ffmpeg -i source.avi converted.mp4",
+      lo: 0,
+      hi: 29,
+      fps: 30,
+    });
+    expect(media.encoding).toBe("ffmpeg -i source.avi converted.mp4, then ffmpeg -i in.mp4 clip.mp4");
+  });
+
+  it("says only what ffmpeg did when the source opened as it came", async () => {
+    stubFfmpeg();
+    const media = await extractClip({
+      sourceFile: bytes,
+      sourceUrl: null,
+      sourceName: "mice.mp4",
+      lo: 0,
+      hi: 29,
+      fps: 30,
+    });
+    expect(media.encoding).toBe("ffmpeg -i in.mp4 clip.mp4");
   });
 });

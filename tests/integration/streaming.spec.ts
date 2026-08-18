@@ -79,6 +79,35 @@ test("a large remote file in a container that cannot stream is refused before it
   expect(methods).toEqual(["HEAD"]);
 });
 
+const SMALL_AVI_URL = "https://videos.test/clip.avi";
+
+test("a small remote file nothing can read ends in a message rather than a load that never finishes", async ({ page }) => {
+  await page.goto("/");
+  // Not an AVI's bytes, only its leading `RIFF`: what matters is that no backend can read them and
+  // that they are not an MP4, which is what mp4box used to be handed and then wait on forever.
+  const body = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(2048)]);
+  await page.route(SMALL_AVI_URL, (route) =>
+    route.request().method() === "HEAD"
+      ? route.fulfill({ status: 200, headers: { "content-length": String(body.length), "accept-ranges": "bytes" } })
+      : route.fulfill({ status: 200, contentType: "video/x-msvideo", body }),
+  );
+  // Converting it is the last thing tried, and ffmpeg.wasm's core comes from a CDN this spec will
+  // not reach for; refusing to serve it is what makes the conversion fail quickly here. That the
+  // conversion opens the file when it does succeed is not something a spec can show without the
+  // 30 MB core, so it is left to a real browser.
+  await page.route("**/cdn.jsdelivr.net/npm/@ffmpeg/core*/**", (route) => route.fulfill({ status: 404, body: "" }));
+
+  await page.locator('#srcSeg button[data-src="ember"]').click();
+  await page.locator("#emberUrl").fill(SMALL_AVI_URL);
+  await page.locator("#emberLoadBtn").click();
+
+  await expect(page.locator("#emptyStage")).toContainText("clip.avi cannot be opened", { timeout: 30_000 });
+  // The point of the spec: the wait ends. Before the mp4box guard it never did, since mp4box
+  // answers a file that is not an MP4 by waiting for the rest of a box that never arrives.
+  await expect(page.locator("#stageBusy")).toBeHidden();
+  await expect(page.locator("#view")).toBeHidden();
+});
+
 // The other half of the guard — a file in a streamable container that still cannot be streamed, an
 // MKV in a codec the browser has no decoder for being the case the archive actually hits — is not
 // exercised here. That refusal reads the size off the whole-file fetch's own `Content-Length`, and

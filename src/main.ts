@@ -14,9 +14,11 @@ import {
   DEFAULT_WINDOW_HALF_SECONDS,
   type TimelineView,
 } from "./lib/timeline";
-import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
+import { buildFrameOrder, decodeIndex, drawVideoFrame, looksLikeIsoBmff } from "./lib/video";
 import { openStreamingBlob, openStreamingUrl, StreamingVideoBackend } from "./lib/streaming";
 import {
+  conversionRefusal,
+  needsConversion,
   remoteFileSize,
   streamsEfficiently,
   unstreamableRefusal,
@@ -85,6 +87,7 @@ import {
   type ExtractedMedia,
   type ExtractProgress,
 } from "./lib/extract";
+import { convertToMp4 } from "./lib/ffmpeg";
 import { tarGzip, type BundleEntry } from "./lib/bundle";
 import { memoOne } from "./lib/memo";
 import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./lib/upload";
@@ -161,7 +164,15 @@ interface AppState {
   height: number;
   sourceName: string;
   sourceUrl: string | null;
+  /** The local bytes a selection is cut out of. */
   sourceFile: File | null;
+  /** The bytes as they arrived, which is what "include the original content" sends. The same file as
+   * `sourceFile` unless the source had to be converted before it would open (see openLocalSource). */
+  originalFile: File | null;
+  /** The command that converted the source into something playable, or null when it was playable as
+   * it came. Recorded in the provenance of anything cut out of it, since those frames were not
+   * encoded by the file the archive holds. */
+  sourcePreparation: string | null;
   cur: number;
   inF: number | null;
   outF: number | null;
@@ -207,6 +218,8 @@ const state: AppState = {
   sourceName: "",
   sourceUrl: null,
   sourceFile: null,
+  originalFile: null,
+  sourcePreparation: null,
   cur: 0,
   inF: null,
   outF: null,
@@ -280,12 +293,18 @@ function syncUrl(): void {
 // ============================================================
 // Video loading (remote URL + local file)
 // ============================================================
-/** An opened source plus the local bytes behind it, if any: `file` is null only for a URL that is
- * genuinely being range-streamed, so extraction and the "upload the original too" option can tell
- * "bytes in hand" from "would have to be fetched". */
+/** An opened source plus the local bytes behind it, if any.
+ *
+ * `file` is the bytes a selection is cut out of, and is null only for a URL that is genuinely being
+ * range-streamed, so extraction can tell "bytes in hand" from "would have to be fetched". `original`
+ * is what arrived before anything was done to it, which is what the "upload the original too" option
+ * sends: the two are the same file except where the source had to be converted before it would open
+ * at all, and `preparation` is the command that converted it. */
 interface OpenedSource {
   backend: SleapVideoBackend;
   file: File | null;
+  original: File | null;
+  preparation: string | null;
 }
 
 // Decoded frames the backend keeps as ImageBitmaps. Each one costs width*height*4 bytes of
@@ -366,10 +385,15 @@ async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
   return new Blob(chunks, { type });
 }
 
+/** Bytes of a file read to tell what it is: one box header, which is all {@link looksLikeIsoBmff}
+ * looks at. */
+const CONTAINER_HEAD_BYTES = 8;
+
 /** Opens bytes already in hand, falling back through sleap-io.js's backends: its MediaBunny one
  * reads the whole file to index it (see lib/streaming.ts), which is slow but not wrong, and its
- * mp4box one covers files MediaBunny will not open at all. */
-async function openLocalBackend(file: File, name: string): Promise<SleapVideoBackend> {
+ * mp4box one covers files MediaBunny will not open at all. Throws once none of them will have it,
+ * which is where {@link openLocalSource} takes over. */
+async function openIndexedBackend(file: File, name: string): Promise<SleapVideoBackend> {
   try {
     return await openStreamingBlob(file, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
   } catch (e) {
@@ -379,11 +403,61 @@ async function openLocalBackend(file: File, name: string): Promise<SleapVideoBac
     return await sio.MediaBunnyVideoBackend.fromBlob(file, name, { cacheSize: FRAME_CACHE_SIZE });
   } catch (e) {
     log(`MediaBunny failed (${(e as Error).message}); trying mp4box…`, "warn");
-    const vb = await sio.createVideoBackend(file, { backend: "mp4box" });
-    const maybeReady = (vb as { ready?: Promise<unknown> }).ready;
-    if (maybeReady) await maybeReady;
-    return vb;
   }
+  // mp4box reads MP4 and reports nothing at all about a file that is not one — it waits on the rest
+  // of a box that will never arrive, and the load hangs where an error would have been useful. So
+  // it is only offered what is plainly an MP4; see looksLikeIsoBmff.
+  const head = new Uint8Array(await file.slice(0, CONTAINER_HEAD_BYTES).arrayBuffer());
+  if (!looksLikeIsoBmff(head)) throw new Error(`${name} is not in a container any of the video backends can read`);
+  const vb = await sio.createVideoBackend(file, { backend: "mp4box" });
+  const maybeReady = (vb as { ready?: Promise<unknown> }).ready;
+  if (maybeReady) await maybeReady;
+  return vb;
+}
+
+/** A throttled reporter for how far a conversion has got. It is the longest thing the app does to a
+ * file before showing any of it, and ffmpeg speaks only to the console, so the count on the stage is
+ * the only sign of it there is. */
+function conversionProgress(name: string): (fraction: number | null) => void {
+  let lastLog = 0;
+  let lastPaint = 0;
+  return (fraction) => {
+    const now = Date.now();
+    const done = fraction === null ? "" : `${(fraction * 100).toFixed(0)}%`;
+    if (now - lastPaint >= STAGE_PROGRESS_MS) {
+      lastPaint = now;
+      stageStatus.show(`Converting ${name}…`, done);
+    }
+    if (now - lastLog < INDEX_PROGRESS_MS) return;
+    lastLog = now;
+    log(`Converting ${name} to MP4… ${done}`);
+  };
+}
+
+/**
+ * Opens local bytes, re-encoding them into an MP4 first when nothing will read them as they are.
+ *
+ * An AVI is the case this exists for: mediabunny does not parse the container, mp4box reads MP4 and
+ * nothing else, and until now a file like that was fetched in full and then failed to open, which is
+ * the whole cost of the download for none of the result. ffmpeg.wasm does read it, so a small one is
+ * converted here and played from the conversion — while the file that arrived is kept as it was,
+ * since that, not the copy this made, is what an upload should carry as the original.
+ */
+async function openLocalSource(file: File, name: string): Promise<OpenedSource> {
+  try {
+    return { backend: await openIndexedBackend(file, name), file, original: file, preparation: null };
+  } catch (e) {
+    // Converting is bounded by what ffmpeg.wasm can hold, so a large file stops here rather than
+    // spending minutes finding that out.
+    const refusal = conversionRefusal(name, file.size);
+    if (refusal) throw new Error(refusal);
+    log(`Nothing could open ${name} as it is (${(e as Error).message}); converting it to MP4…`, "warn");
+  }
+  stageStatus.show(`Converting ${name}…`, "loading ffmpeg.wasm");
+  const { blob, command } = await convertToMp4(file, name, conversionProgress(name));
+  log(`Converted ${name} to MP4 (${bytes(blob.size)})`);
+  const converted = new File([blob], `${name.replace(/\.[^.]+$/, "")}.mp4`, { type: "video/mp4" });
+  return { backend: await openIndexedBackend(converted, name), file: converted, original: file, preparation: command };
 }
 
 /**
@@ -401,7 +475,8 @@ async function refuseUnstreamable(url: string, name: string): Promise<void> {
   const size = await remoteFileSize(url);
   const refusal = unstreamableRefusal(name, size);
   if (refusal) throw new Error(refusal);
-  log(`${name} cannot be streamed, so all ${bytes(size)} of it will be downloaded first`, "warn");
+  const then = needsConversion(name) ? " and then converted, since nothing here can read it as it is" : "";
+  log(`${name} cannot be streamed, so all ${bytes(size)} of it will be downloaded first${then}`, "warn");
 }
 
 async function openVideoBackend(source: File | string, name: string): Promise<OpenedSource> {
@@ -416,7 +491,7 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
         // is the recording pulled through it whole, silently, for as long as that takes.
         maxIndexBytes: WHOLE_FILE_LIMIT_BYTES,
       });
-      return { backend, file: null };
+      return { backend, file: null, original: null, preparation: null };
     } catch (e) {
       // What the open failed with is left here rather than carried into the refusal: it is a
       // sentence about container internals, and the refusal is about a file being too large to
@@ -425,10 +500,10 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
       stageStatus.show(`Downloading ${name}…`);
       const blob = await fetchWholeVideo(source, name);
       const file = new File([blob], name, { type: blob.type || "video/mp4" });
-      return { backend: await openLocalBackend(file, name), file };
+      return await openLocalSource(file, name);
     }
   }
-  return { backend: await openLocalBackend(source, name), file: source };
+  return await openLocalSource(source, name);
 }
 
 /**
@@ -481,7 +556,7 @@ async function loadVideo(
   // the console — so the wait is never unaccounted for.
   stageStatus.show(`Loading ${name}…`);
   try {
-    const { backend, file } = await openVideoBackend(source, name);
+    const { backend, file, original, preparation } = await openVideoBackend(source, name);
     // Dropping the reference to the outgoing backend frees neither its decoded frames — ImageBitmaps
     // hold memory the collector does not account for — nor, for a streamed URL, the requests its
     // source still has in flight. Closed only once the replacement is open, so a load that fails
@@ -502,6 +577,8 @@ async function loadVideo(
     // loadVideo fully owns source state: this is either the dropped File, the one the stream
     // fallback materialized, or null for a live-streamed URL — never a previous load's leftover.
     state.sourceFile = file;
+    state.originalFile = original;
+    state.sourcePreparation = preparation;
     sourceGeneration++;
     clearDeliveryOutcomes();
     state.cur = 0;
@@ -1758,6 +1835,7 @@ function loadFromEmberUrl(): void {
   const url = els.emberUrl.value.trim();
   if (!url) return;
   state.sourceFile = null;
+  state.originalFile = null;
   void loadVideo(url, nameFromUrl(url, "video.mp4"), url);
 }
 els.emberLoadBtn.addEventListener("click", loadFromEmberUrl);
@@ -2746,7 +2824,7 @@ function updateDeliveryCopy(kind: SelectionKind): void {
 function updateOriginalContentRow(): void {
   // Original content can only ride along when its bytes are already in the browser; a range-streamed
   // URL is remote-hosted already, and re-fetching a whole video to push it back is not worth it.
-  const canSendOriginal = state.sourceFile !== null || state.slpFile !== null;
+  const canSendOriginal = state.originalFile !== null || state.slpFile !== null;
   const blurred = state.blurRegions.length > 0;
   els.uploadOriginalRow.hidden = !canSendOriginal;
   els.uploadOriginal.disabled = blurred;
@@ -2844,6 +2922,7 @@ async function extractSelection(
   return extractClip({
     sourceFile: state.sourceFile,
     sourceUrl: state.sourceUrl,
+    sourcePreparation: state.sourcePreparation,
     // Only the streaming backend can cut a selection out of a source it never downloaded; the
     // sleap-io.js fallbacks hold no such thing, and fall through to ffmpeg as before.
     backend: backend instanceof StreamingVideoBackend ? backend : null,
@@ -2992,7 +3071,7 @@ async function deliverOriginalVideo(
   directory: string,
   onProgress: ExtractProgress,
 ): Promise<{ original: File | null; originalDigest: BlobDigest | null; originalPath: string | null }> {
-  const original = state.sourceFile;
+  const original = state.originalFile;
   if (!original) return { original: null, originalDigest: null, originalPath: null };
   const label = "the original video";
   // Keyed to the load rather than the selection: the same bytes hash to the same digest however

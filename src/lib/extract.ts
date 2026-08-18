@@ -138,6 +138,10 @@ export interface ExtractClipParams {
   trim?: TrimMode;
   /** Areas blurred into every frame on the way out, in source pixels. */
   blur?: BlurRegion[];
+  /** How `sourceFile` came to be, when it is not the file that was opened but a conversion of it
+   * (see openLocalSource in main.ts). Recorded ahead of the trim in the clip's `encoding`, so the
+   * provenance names every command the frames passed through rather than only the last one. */
+  sourcePreparation?: string | null;
   onProgress?: ExtractProgress;
 }
 
@@ -183,7 +187,7 @@ async function extractStreamedClip(params: ExtractClipParams & { backend: Stream
 /** Trims [lo, hi] out of the source video and returns it as an MP4: straight out of the stream when
  * that is what is open, and through ffmpeg.wasm when the bytes are already in the browser. */
 export async function extractClip(params: ExtractClipParams): Promise<ExtractedMedia> {
-  const { sourceFile, sourceUrl, backend, sourceName, lo, hi, fps, trim = "precise", blur = [], onProgress } = params;
+  const { sourceFile, sourceUrl, backend, sourceName, lo, hi, fps, trim = "precise", blur = [], sourcePreparation, onProgress } = params;
   // Checked before ffmpeg is even loaded: it works out of a virtual filesystem, so it would need
   // the whole container written into memory first, which for a streamed recording means downloading
   // all of it however few frames were selected.
@@ -236,7 +240,8 @@ export async function extractClip(params: ExtractClipParams): Promise<ExtractedM
     const data = await ff.readFile(outName);
     const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
     if (!blob.size) throw new Error("ffmpeg produced an empty clip — try a different selection");
-    return { blob, filename: clipFileName(sourceName, lo, hi), mime: "video/mp4", encoding: command };
+    const encoding = sourcePreparation ? `${sourcePreparation}, then ${command}` : command;
+    return { blob, filename: clipFileName(sourceName, lo, hi), mime: "video/mp4", encoding };
   } finally {
     try {
       await ff.deleteFile(inName);

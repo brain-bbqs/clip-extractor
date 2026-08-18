@@ -3,6 +3,27 @@ import type { SleapVideoBackend, VideoFrameLike } from "./types";
 // Video source opening + the B-frame decode->display reorder, factored out of main.ts so both
 // halves can be unit tested without a real sleap-io.js backend or DOM.
 
+/** The box types an ISO base media file (MP4, and QuickTime beside it) can open with. `ftyp` is the
+ * one a well-formed file leads with; the rest turn up on files written before it was required, or
+ * by a muxer that put the metadata first. */
+const ISO_BMFF_BOXES = new Set(["ftyp", "moov", "mdat", "free", "skip", "wide", "styp", "pnot"]);
+
+/**
+ * Whether the first bytes of a file are the start of an ISO base media file.
+ *
+ * Asked before mp4box is handed anything, because mp4box does not refuse what it cannot read. Its
+ * parser reads a box header — four bytes of length, four of type — and waits for the rest of a box
+ * that never comes: an AVI leads with `RIFF`, which reads as a box 1.4 GB long, so the file is fed
+ * in to the last byte and neither the ready nor the error callback ever fires. What the person
+ * sees is a video that stays at "loading" for as long as the tab is open, which is worse than any
+ * error, so a file that is plainly not an MP4 is never offered to it.
+ */
+export function looksLikeIsoBmff(head: Uint8Array): boolean {
+  if (head.length < 8) return false;
+  const type = String.fromCharCode(...head.subarray(4, 8));
+  return ISO_BMFF_BOXES.has(type);
+}
+
 /** True iff `times` is already non-decreasing, i.e. decode order matches display order. */
 function isOrdered(times: number[]): boolean {
   for (let i = 1; i < times.length; i++) {

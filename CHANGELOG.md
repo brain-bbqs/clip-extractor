@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.18
+
+#### 🐛 Bug Fix
+
+- A remote AVI (and other containers no backend in the browser can parse) that used to hang forever trying to open now falls back to converting itself into a playable MP4 with ffmpeg.wasm, or is refused up front with a clear reason when it is too large to convert ([#34](https://github.com/brain-bbqs/clip-extractor/pull/34))
+
 ## 0.1.17
 
 #### 🚀 Enhancement

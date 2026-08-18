@@ -1,6 +1,7 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import { blurFilterChain, type BlurRegion } from "./blur";
+import { containerOf } from "./streamable";
 import type { TrimMode } from "./types";
 
 // ffmpeg.wasm is loaded lazily (only when an MP4 clip is actually extracted) and its ~30MB core
@@ -114,4 +115,73 @@ export async function ensureFfmpeg(handlers: EnsureFfmpegHandlers = {}): Promise
     });
   }
   return ff;
+}
+
+/** The ffmpeg CLI args that turn a whole video into an MP4 the rest of the app can open.
+ *
+ * Every frame is re-encoded rather than copied across into the new container. A stream copy would
+ * be far quicker, but the containers this rescues — AVI most of all — usually hold a codec no
+ * browser decodes (MJPEG, DivX, MPEG-4 part 2), and remuxing one of those produces an MP4 that
+ * opens and then cannot show a single frame. */
+export function transcodeArgs(inName: string, outName: string): string[] {
+  return ["-i", inName, ...ENCODE_ARGS, outName];
+}
+
+/** The input duration in seconds an ffmpeg log line reports, or null for a line that reports none.
+ * ffmpeg writes it once, as `Duration: 00:00:12.34`, while it is probing the source — which is the
+ * only place a conversion learns how long the thing it is converting runs for. */
+export function loggedDuration(message: string): number | null {
+  const match = /Duration:\s*(\d+):(\d\d):(\d\d(?:\.\d+)?)/.exec(message);
+  if (!match) return null;
+  const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
+/** A converted source: the MP4 itself, and the command that wrote it, which goes into the
+ * provenance record of anything later cut out of those bytes. */
+export interface ConvertedVideo {
+  blob: Blob;
+  command: string;
+}
+
+/**
+ * Re-encodes a whole video into an MP4, for a source no backend in the browser could open.
+ *
+ * This is the last thing tried before a file is given up on, and it is not cheap: the bytes are
+ * copied into ffmpeg.wasm's filesystem and every frame is decoded and encoded again, which is why
+ * only a file under {@link TRANSCODE_LIMIT_BYTES} is brought here and why `onProgress` exists.
+ * `onProgress` is called with the fraction converted, or null while ffmpeg has not yet said enough
+ * for there to be one.
+ */
+export async function convertToMp4(source: Blob, name: string, onProgress?: (fraction: number | null) => void): Promise<ConvertedVideo> {
+  const container = containerOf(name);
+  // ffmpeg picks the demuxer by probing the bytes, but a name it recognizes settles the ties.
+  const inName = container ? `source.${container}` : "source";
+  const outName = "converted.mp4";
+  let sourceSeconds = 0;
+  const ff = await ensureFfmpeg({
+    onLog: (message) => {
+      sourceSeconds = loggedDuration(message) ?? sourceSeconds;
+      console.debug("[ffmpeg]", message);
+    },
+    onProgress: (event) => onProgress?.(encodedFraction(event, sourceSeconds)),
+  });
+  await ff.writeFile(inName, new Uint8Array(await source.arrayBuffer()));
+  const args = transcodeArgs(inName, outName);
+  const command = `ffmpeg ${args.join(" ")}`;
+  console.info(`$ ${command}`);
+  try {
+    await ff.exec(args);
+    const data = await ff.readFile(outName);
+    const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
+    if (!blob.size) throw new Error(`ffmpeg could not convert ${name} into a playable video`);
+    return { blob, command };
+  } finally {
+    try {
+      await ff.deleteFile(inName);
+      await ff.deleteFile(outName);
+    } catch {
+      // Best-effort cleanup of ffmpeg's virtual filesystem; a leftover temp file is harmless.
+    }
+  }
 }

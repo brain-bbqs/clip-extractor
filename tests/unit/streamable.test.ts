@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   containerOf,
+  conversionRefusal,
+  needsConversion,
   parseContentRangeSize,
   remoteFileSize,
   streamsEfficiently,
@@ -8,6 +10,7 @@ import {
   wholeFileRefusal,
   ENCODING_HELPER_URL,
   PARAGRAPH,
+  TRANSCODE_LIMIT_BYTES,
   WHOLE_FILE_LIMIT_BYTES,
 } from "../../src/lib/streamable";
 
@@ -67,6 +70,20 @@ describe("streamsEfficiently", () => {
   });
 });
 
+describe("needsConversion", () => {
+  it("names the containers nothing in the browser parses", () => {
+    for (const name of ["mice.avi", "mice.wmv", "mice.mpg", "mice.vob", "mice.flv"]) {
+      expect(needsConversion(name)).toBe(true);
+    }
+  });
+
+  it("leaves out the ones that open once they have arrived, however badly they stream", () => {
+    for (const name of ["mice.ts", "mice.m2ts", "mice.ogv", "mice.mp4", "mice.mkv"]) {
+      expect(needsConversion(name)).toBe(false);
+    }
+  });
+});
+
 describe("unstreamableRefusal", () => {
   it("has nothing to say about a container that streams, however large it is", () => {
     expect(unstreamableRefusal("mice.mp4", 400 * GB)).toBeNull();
@@ -74,14 +91,27 @@ describe("unstreamableRefusal", () => {
 
   it("lets a small file in a container that does not stream be downloaded whole", () => {
     expect(unstreamableRefusal("mice.avi", 200 * 1024 * 1024)).toBeNull();
-    expect(unstreamableRefusal("mice.avi", WHOLE_FILE_LIMIT_BYTES)).toBeNull();
+    expect(unstreamableRefusal("mice.avi", TRANSCODE_LIMIT_BYTES)).toBeNull();
+  });
+
+  it("allows a transport stream the whole gigabyte, since it opens once it is here", () => {
+    expect(unstreamableRefusal("mice.ts", WHOLE_FILE_LIMIT_BYTES)).toBeNull();
+    expect(unstreamableRefusal("mice.ts", 2 * GB)).toContain("1.00 GB");
+  });
+
+  it("holds a container nothing parses to what converting one costs, not to the download", () => {
+    // It would arrive whole and still not open, so the ceiling that decides is the conversion's.
+    const refusal = unstreamableRefusal("mice.avi", 512 * 1024 * 1024);
+    expect(refusal).toContain("512.00 MB");
+    expect(refusal).toContain("256.00 MB");
+    expect(refusal).toContain("converting one in the browser");
   });
 
   it("refuses a large one, naming its size, the limit and where to re-encode it", () => {
     const refusal = unstreamableRefusal("mice.avi", 2 * GB);
     expect(refusal).toContain("cannot be opened efficiently through streaming");
     expect(refusal).toContain("2.00 GB");
-    expect(refusal).toContain("1.00 GB");
+    expect(refusal).toContain("256.00 MB");
     expect(refusal).toContain(`[Encoding Helper](${ENCODING_HELPER_URL})`);
   });
 
@@ -93,6 +123,23 @@ describe("unstreamableRefusal", () => {
 
   it("refuses one whose size nobody reports, an unbounded read being the same as too large a one", () => {
     expect(unstreamableRefusal("mice.avi", null)).toContain("nothing says how large");
+  });
+});
+
+describe("conversionRefusal", () => {
+  it("converts what fits", () => {
+    expect(conversionRefusal("mice.avi", 1024)).toBeNull();
+    expect(conversionRefusal("mice.avi", TRANSCODE_LIMIT_BYTES)).toBeNull();
+  });
+
+  it("refuses what would not fit through ffmpeg.wasm, naming the file, its size and the limit", () => {
+    // Reached with the bytes in hand, so it answers for whatever arrived rather than for a name: a
+    // URL naming no container at all still ends up here.
+    const refusal = conversionRefusal("download", 700 * 1024 * 1024);
+    expect(refusal).toContain("download");
+    expect(refusal).toContain("700.00 MB");
+    expect(refusal).toContain("256.00 MB");
+    expect(refusal).toContain(`[Encoding Helper](${ENCODING_HELPER_URL})`);
   });
 });
 

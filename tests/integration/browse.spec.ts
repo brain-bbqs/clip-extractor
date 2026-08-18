@@ -276,7 +276,9 @@ test("a video in a container that cannot stream is marked in the listing and ref
   const lines = page.locator("#browseStatus p.message-line");
   await expect(lines).toHaveCount(3);
   await expect(lines.nth(0)).toHaveText("session.avi cannot be opened.");
-  await expect(lines.nth(1)).toContainText("1.00 GB");
+  // An AVI is a container nothing in the browser parses, so the ceiling it meets is the smaller one
+  // converting it in the browser is held to, not the download limit a merely unindexed file would.
+  await expect(lines.nth(1)).toContainText("256.00 MB");
   await expect(lines.nth(2).locator("a")).toHaveText("Encoding Helper");
   await expect(page.locator("#view")).toBeHidden();
 });

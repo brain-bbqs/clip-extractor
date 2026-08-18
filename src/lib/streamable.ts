@@ -10,9 +10,10 @@ import { bytes } from "./format";
 // so that fallback is not a slower path to the same result — it is a tab that fills memory until it
 // dies.
 //
-// For the containers below the download is futile as well as expensive, since none of the backends
-// can open them once they have arrived. So a remote source is judged on what it is and how big it
-// is, up front, rather than after a gigabyte has already been spent on it.
+// For some of the containers below the download does not even end in a playable video: nothing in
+// the browser parses them, so the file has to be re-encoded once it has arrived, which costs more
+// again and can only be done to a much smaller file. So a remote source is judged on what it is and
+// how big it is, up front, rather than after a gigabyte has already been spent on it.
 
 /**
  * The most of a remote video the app will read in one go — as a whole-file download, or as the
@@ -22,43 +23,52 @@ import { bytes } from "./format";
 export const WHOLE_FILE_LIMIT_BYTES = 1024 * 1024 * 1024;
 
 /**
- * Containers a remote video cannot be opened from without reading all of it.
+ * The most of a video the app will convert into a playable one in the browser.
  *
- * Two kinds of file end up here. AVI, the MPEG program-stream family, ASF/WMV, Flash, RealMedia and
- * the rest are containers mediabunny does not parse at all, so opening one means the whole-file
- * fallback — which then fails in sleap-io.js's backends too, since those read MP4 and nothing else.
- * MPEG transport streams do open, but carry no index and no recorded duration, so every frame's
- * timestamp has to be enumerated packet by packet: the same whole file, read as thousands of range
- * requests instead of as one download.
- *
- * Everything not named here is treated as streamable until it proves otherwise. A container is only
- * half of what decides that — an MP4 written with its index at the end of the file streams no
- * better than an AVI — and the file itself answers that question when it is opened, so the list
- * stays to what is known in advance rather than guessing from an extension.
+ * A file no backend can open is put through ffmpeg.wasm and re-encoded into an MP4 (see
+ * lib/ffmpeg.ts). That runs in a 32-bit address space holding the whole source, every frame it
+ * decodes and the MP4 it writes at once, so the ceiling is lower than the one on a download: a file
+ * past it would spend its whole conversion filling memory before failing.
  */
-const UNSEEKABLE_CONTAINERS = new Set([
+export const TRANSCODE_LIMIT_BYTES = 256 * 1024 * 1024;
+
+/**
+ * Containers nothing in the browser will parse, so a file in one has to be converted before it can
+ * be played at all.
+ *
+ * AVI, the MPEG program-stream family, ASF/WMV, Flash, RealMedia and the rest are containers
+ * mediabunny does not read, and sleap-io.js's backends are no help either since those read MP4 and
+ * nothing else. The whole file is fetched, none of it opens, and what is left is to re-encode it —
+ * which is why these are held to {@link TRANSCODE_LIMIT_BYTES} rather than to the download limit.
+ */
+const UNREADABLE_CONTAINERS = new Set([
+  "asf",
   "avi",
   "divx",
   "dv",
   "flv",
   "m1v",
-  "m2t",
-  "m2ts",
   "m2v",
   "mod",
   "mpe",
   "mpeg",
   "mpg",
-  "mts",
   "mxf",
-  "ogv",
   "rm",
   "rmvb",
-  "ts",
   "vob",
   "wmv",
-  "asf",
 ]);
+
+/**
+ * Containers that open but cost the whole file to index.
+ *
+ * MPEG transport streams and Ogg carry no index and no recorded duration, so every frame's
+ * timestamp has to be enumerated packet by packet: the same whole file, read as thousands of range
+ * requests instead of as one download. They do open once they have arrived, so these are held to
+ * the download limit alone.
+ */
+const UNINDEXED_CONTAINERS = new Set(["m2t", "m2ts", "mts", "ogv", "ts"]);
 
 /** The lowercase extension of a file name or URL, or "" when it has none. Query strings and
  * fragments are dropped first: a signed bucket URL carries its signature after the `?`, and an
@@ -72,9 +82,21 @@ export function containerOf(nameOrUrl: string): string {
 }
 
 /** Whether a name or URL is in a container that can be read a piece at a time. True for anything
- * unrecognized: what the file turns out to be is settled when it is opened. */
+ * unrecognized: what the file turns out to be is settled when it is opened.
+ *
+ * A container is only half of what decides that — an MP4 written with its index at the end of the
+ * file streams no better than an AVI — and the file itself answers that question when it is opened,
+ * so the lists above stay to what is known in advance rather than guessing from an extension. */
 export function streamsEfficiently(nameOrUrl: string): boolean {
-  return !UNSEEKABLE_CONTAINERS.has(containerOf(nameOrUrl));
+  const container = containerOf(nameOrUrl);
+  return !UNREADABLE_CONTAINERS.has(container) && !UNINDEXED_CONTAINERS.has(container);
+}
+
+/** Whether a name or URL is in a container that has to be converted before anything can play it.
+ * False for anything unrecognized, the same way {@link streamsEfficiently} is generous: a file that
+ * turns out to need converting after all is found out when every backend has refused it. */
+export function needsConversion(nameOrUrl: string): boolean {
+  return UNREADABLE_CONTAINERS.has(containerOf(nameOrUrl));
 }
 
 /** Where a video that will not open is re-encoded into one that will. Named in every refusal:
@@ -95,14 +117,25 @@ const ADVICE = `Please use the [Encoding Helper](${ENCODING_HELPER_URL}) to impr
 const CANNOT_STREAM = "cannot be opened efficiently through streaming";
 
 /**
+ * The most of a file in `container` the app will take on, and the words for what that ceiling is a
+ * ceiling on. A container the browser cannot parse has to be converted after it is downloaded, and
+ * that conversion, not the download, is what runs out first.
+ */
+function ceilingFor(nameOrUrl: string): { limit: number; what: string } {
+  return needsConversion(nameOrUrl)
+    ? { limit: TRANSCODE_LIMIT_BYTES, what: "converting one in the browser" }
+    : { limit: WHOLE_FILE_LIMIT_BYTES, what: "a whole-file download" };
+}
+
+/**
  * Why a remote source will not be opened at all, or null when it will be. `size` is the file's byte
  * count where the archive or the server has reported one, and null when nobody has.
  *
- * A file in one of the {@link UNSEEKABLE_CONTAINERS} costs its whole self to open, so what is
- * really being asked is whether the app is willing to read that much. A small one it will, since
- * the fallback that downloads it is quick and the failure it may end in is quicker still. A large
- * one it will not — and neither will it for a size nobody has reported, which is the same thing as
- * an unbounded one.
+ * A file in one of the containers above costs its whole self to open, and one the browser cannot
+ * parse costs a conversion on top of that, so what is really being asked is whether the app is
+ * willing to spend that much. On a small file it is, since the download that follows is quick and
+ * the conversion is bounded by what a browser tab can hold. On a large one it is not — and neither
+ * is it for a size nobody has reported, which is the same thing as an unbounded one.
  */
 export function unstreamableRefusal(name: string, size: number | null): string | null {
   if (streamsEfficiently(name)) return null;
@@ -110,8 +143,22 @@ export function unstreamableRefusal(name: string, size: number | null): string |
   if (size === null) {
     return `${opening}, and nothing says how large this one is, so there is no knowing what opening it would cost.${PARAGRAPH}${ADVICE}`;
   }
-  if (size <= WHOLE_FILE_LIMIT_BYTES) return null;
-  return `${opening}, and at ${bytes(size)} this one is past the ${bytes(WHOLE_FILE_LIMIT_BYTES)} limit on a whole-file download.${PARAGRAPH}${ADVICE}`;
+  const { limit, what } = ceilingFor(name);
+  if (size <= limit) return null;
+  return `${opening}, and at ${bytes(size)} this one is past the ${bytes(limit)} limit on ${what}.${PARAGRAPH}${ADVICE}`;
+}
+
+/**
+ * Why a file that arrived in one piece will not be converted into a playable one, or null when it
+ * will be. The size that matters here is the file's own, whatever the name on it said: bytes
+ * downloaded from a URL that named no container at all still have to fit through ffmpeg.wasm.
+ */
+export function conversionRefusal(name: string, size: number): string | null {
+  if (size <= TRANSCODE_LIMIT_BYTES) return null;
+  return (
+    `${name} is in a container nothing in the browser can read, and at ${bytes(size)} it is past ` +
+    `the ${bytes(TRANSCODE_LIMIT_BYTES)} limit on converting one here.${PARAGRAPH}${ADVICE}`
+  );
 }
 
 /**
