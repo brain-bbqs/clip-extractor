@@ -25,7 +25,7 @@ test("a .slp labeled against another video is refused, naming what does not matc
   await expect(problems.nth(0)).toContainText("Frame count: 1100 frames in the .slp");
   await expect(problems.nth(1)).toContainText("Frame size: 1024×1024 in the .slp");
   await expect(page.locator("#slpError")).toContainText("Select another");
-  // Nothing was loaded, so there is no badge and no overlay toggle to reach.
+  // Nothing was loaded, so there is no badge to read.
   await expect(page.locator("#slpStatus")).toBeHidden();
 
   // The matching file clears the refusal and loads normally, with nothing left to caution about.

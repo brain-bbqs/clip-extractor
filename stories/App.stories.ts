@@ -75,6 +75,7 @@ function buildApp({ withSlp = false, signedIn = false }: AppStoryOptions = {}): 
     const toggle = wrapper.querySelector<HTMLInputElement>("#slpToggle");
     if (toggle) toggle.checked = true;
     wrapper.querySelector("#slpCard")?.removeAttribute("hidden");
+    wrapper.querySelector("#showPoseRow")?.removeAttribute("hidden");
   }
   if (signedIn) applySignedIn(wrapper);
   return wrapper;

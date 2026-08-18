@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.17
+
+#### 🚀 Enhancement
+
+- The Show overlay control is now a switch in the top right of the player card, beside the picture it draws on, and it only appears while the pose annotations step is switched on ([#33](https://github.com/brain-bbqs/clip-extractor/pull/33))
+
 ## 0.1.16
 
 #### 🚀 Enhancement

@@ -2172,13 +2172,18 @@ els.browseFilter.addEventListener("input", () => {
   browseFilterTimer = setTimeout(renderDandisetList, 150);
 });
 
-// SLEAP annotations step: hidden until the toggle above the player is switched on.
+// SLEAP annotations step: hidden until the toggle above the player is switched on. The overlay
+// switch on the player card follows it, since with the step off there is no overlay to show.
+function syncSlpStep(): void {
+  els.slpCard.hidden = !els.slpToggle.checked;
+  els.showPoseRow.hidden = !els.slpToggle.checked;
+}
 function enableSlpStep(): void {
   els.slpToggle.checked = true;
-  els.slpCard.hidden = false;
+  syncSlpStep();
 }
 els.slpToggle.addEventListener("change", () => {
-  els.slpCard.hidden = !els.slpToggle.checked;
+  syncSlpStep();
   // The overlay is only drawn while the step is enabled, so re-render on either flip.
   renderFrame();
 });

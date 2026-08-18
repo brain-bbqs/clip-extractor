@@ -99,13 +99,18 @@ test("SLEAP annotations card is revealed by its toggle (default off)", async ({ 
   await page.goto("/");
   await expect(page.locator("#slpToggle")).not.toBeChecked();
   await expect(page.locator("#slpCard")).toBeHidden();
+  // With the step off there is no overlay to show, so the player's switch is off screen too.
+  await expect(page.locator("#showPoseRow")).toBeHidden();
 
   await page.locator("#slpToggle").check();
   await expect(page.locator("#slpCard")).toBeVisible();
   await expect(page.locator("#slpDropzone")).toBeVisible();
+  await expect(page.locator("#showPoseRow")).toBeVisible();
+  await expect(page.locator("#showPose")).toBeChecked();
 
   await page.locator("#slpToggle").uncheck();
   await expect(page.locator("#slpCard")).toBeHidden();
+  await expect(page.locator("#showPoseRow")).toBeHidden();
 });
 
 test("delivery card offers only Save while signed out", async ({ page }) => {
