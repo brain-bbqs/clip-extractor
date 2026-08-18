@@ -3261,7 +3261,9 @@ async function streamUrlFor(url: string): Promise<string> {
     await ensureFreshOAuth();
     return await resolveEmbargoedStreamUrl(currentConfig(), url);
   } catch (e) {
-    console.warn(`Could not ask EMBER where ${url} is streamed from; opening it directly.`, e);
+    // The address is logged as an argument rather than interpolated into the message: it comes off
+    // the query string, and console.warn reads its first argument as a format string.
+    console.warn("Could not ask EMBER where this asset is streamed from; opening the address as given:", url, e);
     return url;
   }
 }
