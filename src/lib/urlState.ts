@@ -26,15 +26,26 @@ export interface UrlState {
   outF: number | null;
   /** Where the playhead is — which in frame mode is the selection itself. */
   frame: number | null;
+  /** Whether the pose overlay is drawn over the picture. On is the default, so only off travels. */
+  overlay: boolean;
   description: string;
 }
 
 /** Nothing loaded and nothing marked: what an address with none of these params describes. */
-export const EMPTY_URL_STATE: UrlState = { url: null, pose: null, mode: "video", inF: null, outF: null, frame: null, description: "" };
+export const EMPTY_URL_STATE: UrlState = {
+  url: null,
+  pose: null,
+  mode: "video",
+  inF: null,
+  outF: null,
+  frame: null,
+  overlay: true,
+  description: "",
+};
 
 /** The params this module owns. Anything else in the query string belongs to somebody else — the
  * OAuth callback's `code`/`state` most of all — and is carried through untouched. */
-const OWNED_PARAMS = ["url", "pose", "slp", "mode", "in", "out", "frame", "description"] as const;
+const OWNED_PARAMS = ["url", "pose", "slp", "mode", "in", "out", "frame", "overlay", "description"] as const;
 
 /** Where the query string is kept across the sign-in round trip (see stashUrlState). */
 const STASH_KEY = "clip-extractor.url-state.v1";
@@ -63,6 +74,9 @@ export function readUrlState(search: string): UrlState {
     inF: frameParam(params, "in"),
     outF: frameParam(params, "out"),
     frame: frameParam(params, "frame"),
+    // Drawn unless the link says otherwise, since that is what the switch does when nobody has
+    // touched it — and a link written before this param existed means the overlay as it was then.
+    overlay: text(params, "overlay") !== "0",
     description: params.get("description") ?? "",
   };
 }
@@ -88,6 +102,9 @@ export function writeUrlState(search: string, state: UrlState): string {
     if (state.outF !== null) params.set("out", String(state.outF));
     // Frame 0 is where every video opens, so it is only worth carrying when it is the selection.
     if (state.frame !== null && (state.frame > 0 || state.mode === "frame")) params.set("frame", String(state.frame));
+    // Written beside the video rather than beside the pose file, so the switch survives the case it
+    // is most needed in: a link to a streamed recording, with the pose file sent along by hand.
+    if (!state.overlay) params.set("overlay", "0");
     if (state.description) params.set("description", state.description);
   }
   const query = params.toString();

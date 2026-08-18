@@ -11,7 +11,7 @@ function session(overrides: Partial<UrlState> = {}): UrlState {
 describe("readUrlState", () => {
   it("reads the whole session out of the query string", () => {
     const state = readUrlState("?url=https%3A%2F%2Fvideos.test%2Fclip.mp4&mode=frame&in=10&out=40&frame=25&description=a%20bout");
-    expect(state).toEqual({ url: VIDEO, pose: null, mode: "frame", inF: 10, outF: 40, frame: 25, description: "a bout" });
+    expect(state).toEqual({ url: VIDEO, pose: null, mode: "frame", inF: 10, outF: 40, frame: 25, overlay: true, description: "a bout" });
   });
 
   it("reads nothing out of an empty address", () => {
@@ -33,6 +33,12 @@ describe("readUrlState", () => {
     expect(readUrlState("?in=-4&out=twelve&frame=1.5").inF).toBe(null);
     expect(readUrlState("?in=-4&out=twelve&frame=1.5").outF).toBe(null);
     expect(readUrlState("?in=-4&out=twelve&frame=1.5").frame).toBe(null);
+  });
+
+  it("draws the overlay unless the link says not to, which is what the switch does untouched", () => {
+    expect(readUrlState("?url=x").overlay).toBe(true);
+    expect(readUrlState("?url=x&overlay=1").overlay).toBe(true);
+    expect(readUrlState("?url=x&overlay=0").overlay).toBe(false);
   });
 
   it("keeps a description's own whitespace, which is the note somebody typed", () => {
@@ -67,6 +73,15 @@ describe("writeUrlState", () => {
 
   it("says nothing about the snippet selector, which is the default the player is already on", () => {
     expect(writeUrlState("", session({ mode: "video" })).includes("mode=")).toBe(false);
+  });
+
+  it("says nothing about an overlay that is drawn, which is the switch as the player opens it", () => {
+    expect(writeUrlState("", session({ overlay: true })).includes("overlay=")).toBe(false);
+    expect(readUrlState(writeUrlState("", session({ overlay: false }))).overlay).toBe(false);
+  });
+
+  it("carries a switched-off overlay beside a video with no pose file of its own, since the pose may be sent by hand", () => {
+    expect(writeUrlState("", session({ pose: null, overlay: false })).includes("overlay=0")).toBe(true);
   });
 
   it("does not repeat itself when the same session is written twice", () => {

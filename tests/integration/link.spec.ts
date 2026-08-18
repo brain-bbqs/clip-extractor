@@ -50,6 +50,25 @@ test("a streamed video, its snippet and its description survive a reload", async
   await expect(page.locator("#selectionDescription")).toHaveValue("the mouse rears");
 });
 
+test("the overlay switch travels in the link, and waits for a pose file to matter", async ({ page }) => {
+  await page.goto("/");
+  await serveClip(page);
+  await streamClip(page);
+
+  // The switch is on the player card, revealed along with the pose annotations step.
+  await page.locator("#slpToggle").check();
+  await page.locator("#showPose").uncheck();
+  await expect.poll(() => page.url()).toContain("overlay=0");
+
+  await page.reload();
+  await expect(page.locator("#view")).toBeVisible();
+  // Nothing on screen followed it back: with no pose loaded there is no overlay and no switch.
+  await expect(page.locator("#showPoseRow")).toBeHidden();
+  // It is what the switch reads once a pose does arrive — a file dropped in, or the step reopened.
+  await page.locator("#slpToggle").check();
+  await expect(page.locator("#showPose")).not.toBeChecked();
+});
+
 test("a link made in Frame mode opens back on the frame, in Frame mode", async ({ page }) => {
   await page.goto("/");
   await serveClip(page);

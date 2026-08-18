@@ -8,4 +8,5 @@
 - Keep `CHANGELOG.md` entries concise: one sentence each, naming what changed and what it means for someone using the app. Leave the reasoning, the measurements and the mechanism to the code comments and the PR
 - PR titles should be human-readable and in the past tense; they should NOT use conventional commit style
 - Keep PR descriptions short and to the point
+- End every PR description with the prompts that asked for the work, verbatim, inside a collapsed `<details>` block titled `Original prompt`; when follow-up prompts refine the same PR, append each one to that block
 - Limit use of em-dashes in all text

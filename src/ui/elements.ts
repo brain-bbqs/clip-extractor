@@ -37,6 +37,8 @@ export function getElements() {
     // Player
     playerCard: required<HTMLElement>("playerCard"),
     modeSeg: required<HTMLDivElement>("modeSeg"),
+    showPoseRow: required<HTMLLabelElement>("showPoseRow"),
+    showPose: required<HTMLInputElement>("showPose"),
     stage: required<HTMLDivElement>("stage"),
     emptyStage: required<HTMLDivElement>("emptyStage"),
     view: required<HTMLCanvasElement>("view"),
@@ -87,7 +89,6 @@ export function getElements() {
     slpWarningList: required<HTMLUListElement>("slpWarningList"),
     slpStatus: required<HTMLDivElement>("slpStatus"),
     slpBadge: required<HTMLSpanElement>("slpBadge"),
-    showPose: required<HTMLInputElement>("showPose"),
 
     // Delivery card (Download / Upload)
     deliverToggleRow: required<HTMLDivElement>("deliverToggleRow"),

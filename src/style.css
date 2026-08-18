@@ -463,8 +463,18 @@ select {
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
-.card-toprow .slp-toggle {
+.card-toprow .slp-toggle,
+.card-toprow .pose-toggle {
   justify-self: end;
+}
+/* The player's overlay switch, pinned to the right of the mode picker the same way the pose-file
+   switch is pinned on the load card, so the two read as the same control. */
+.pose-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
 }
 .slp-toggle {
   display: inline-flex;
