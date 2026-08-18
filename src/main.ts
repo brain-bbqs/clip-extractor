@@ -250,6 +250,7 @@ function urlState(): UrlState {
     inF: state.inF,
     outF: state.outF,
     frame: state.backend ? state.cur : null,
+    overlay: els.showPose.checked,
     description: els.selectionDescription.value,
   };
 }
@@ -2206,7 +2207,12 @@ els.btnClearSel.addEventListener("click", () => {
   state.outF = null;
   selectionChanged();
 });
-els.showPose.addEventListener("change", renderFrame);
+els.showPose.addEventListener("change", () => {
+  renderFrame();
+  // Carried in the address like the rest of the session, so a link opens on the picture that was
+  // being talked about rather than on the overlay whoever follows it happens to default to.
+  syncUrl();
+});
 
 // Track Shift globally (regardless of focus) so shift-seeking extends the range. Anchor at the
 // current frame when Shift is first pressed.
@@ -3323,6 +3329,11 @@ async function initFromUrl(): Promise<void> {
     els.selectionDescription.value = link.description;
     updateDeliveryGate();
   }
+  // Set before the video, so the first frame is drawn the way the link asks for. On its own this
+  // changes nothing on screen: with no pose loaded there is no overlay and no switch to see. It is
+  // what the switch reads once one arrives — including a local pose file dropped in beside a link
+  // to a streamed recording, which is the pairing a link cannot carry by itself.
+  els.showPose.checked = link.overlay;
   if (link.url) {
     // A remote URL is the EMBER-stream path — reflect it in the source toggle.
     selectSeg(els.srcSeg, "ember");
