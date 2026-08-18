@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.16
+
+#### 🚀 Enhancement
+
+- The address bar now carries the streamed video, the pose file, the marks and the description, so reloading the tab or sending somebody the link opens on the same clip instead of an empty page ([#32](https://github.com/brain-bbqs/clip-extractor/pull/32))
+- Signing in with EMBER no longer costs you what was on screen: the session is held across the round trip to the archive and put back on the way in ([#32](https://github.com/brain-bbqs/clip-extractor/pull/32))
+- A link naming an embargoed archive asset now opens for a signed-in visitor, by asking EMBER for the same signed link the browse pane asks for ([#32](https://github.com/brain-bbqs/clip-extractor/pull/32))
+
 ## 0.1.15
 
 #### 🚀 Enhancement
