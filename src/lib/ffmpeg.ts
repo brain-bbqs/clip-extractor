@@ -1,7 +1,7 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import { blurFilterChain, type BlurRegion } from "./blur";
-import { containerOf } from "./streamable";
+import { containerOf, ADVICE, PARAGRAPH } from "./streamable";
 import type { TrimMode } from "./types";
 
 // ffmpeg.wasm is loaded lazily (only when an MP4 clip is actually extracted) and its ~30MB core
@@ -145,11 +145,28 @@ export interface ConvertedVideo {
 }
 
 /**
+ * How long a conversion may run before it is judged stuck rather than merely slow.
+ *
+ * ffmpeg.wasm decodes and encodes single-threaded in a web worker, and this app only ever brings
+ * it a source under {@link TRANSCODE_LIMIT_BYTES} — small enough that even modest hardware finishes
+ * well inside this. Past it, the likelier explanation is a codec the wasm build reads at a crawl or
+ * not at all (some of the FourCCs an old AVI carries decode orders of magnitude slower than H.264,
+ * or hang outright on a malformed frame) rather than an ordinary conversion that is merely slow —
+ * and a "Converting…" that never resolves either way is worse than a refusal naming what to do.
+ */
+const CONVERSION_TIMEOUT_MS = 2 * 60 * 1000;
+
+/** Rejects {@link convertToMp4}'s race once {@link CONVERSION_TIMEOUT_MS} has passed, so its catch
+ * can tell a stall apart from ffmpeg's own errors reaching the same race. */
+class ConversionStalled extends Error {}
+
+/**
  * Re-encodes a whole video into an MP4, for a source no backend in the browser could open.
  *
  * This is the last thing tried before a file is given up on, and it is not cheap: the bytes are
  * copied into ffmpeg.wasm's filesystem and every frame is decoded and encoded again, which is why
- * only a file under {@link TRANSCODE_LIMIT_BYTES} is brought here and why `onProgress` exists.
+ * only a file under {@link TRANSCODE_LIMIT_BYTES} is brought here, why `onProgress` exists, and why
+ * the attempt is bounded by {@link CONVERSION_TIMEOUT_MS} rather than left to run indefinitely.
  * `onProgress` is called with the fraction converted, or null while ffmpeg has not yet said enough
  * for there to be one.
  */
@@ -159,29 +176,56 @@ export async function convertToMp4(source: Blob, name: string, onProgress?: (fra
   const inName = container ? `source.${container}` : "source";
   const outName = "converted.mp4";
   let sourceSeconds = 0;
-  const ff = await ensureFfmpeg({
-    onLog: (message) => {
-      sourceSeconds = loggedDuration(message) ?? sourceSeconds;
-      console.debug("[ffmpeg]", message);
-    },
-    onProgress: (event) => onProgress?.(encodedFraction(event, sourceSeconds)),
-  });
-  await ff.writeFile(inName, new Uint8Array(await source.arrayBuffer()));
-  const args = transcodeArgs(inName, outName);
-  const command = `ffmpeg ${args.join(" ")}`;
-  console.info(`$ ${command}`);
-  try {
-    await ff.exec(args);
-    const data = await ff.readFile(outName);
-    const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
-    if (!blob.size) throw new Error(`ffmpeg could not convert ${name} into a playable video`);
-    return { blob, command };
-  } finally {
+
+  const run = async (): Promise<ConvertedVideo> => {
+    const ff = await ensureFfmpeg({
+      onLog: (message) => {
+        sourceSeconds = loggedDuration(message) ?? sourceSeconds;
+        console.debug("[ffmpeg]", message);
+      },
+      onProgress: (event) => onProgress?.(encodedFraction(event, sourceSeconds)),
+    });
+    await ff.writeFile(inName, new Uint8Array(await source.arrayBuffer()));
+    const args = transcodeArgs(inName, outName);
+    const command = `ffmpeg ${args.join(" ")}`;
+    console.info(`$ ${command}`);
     try {
-      await ff.deleteFile(inName);
-      await ff.deleteFile(outName);
-    } catch {
-      // Best-effort cleanup of ffmpeg's virtual filesystem; a leftover temp file is harmless.
+      await ff.exec(args);
+      const data = await ff.readFile(outName);
+      const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
+      if (!blob.size) throw new Error(`ffmpeg could not convert ${name} into a playable video`);
+      return { blob, command };
+    } finally {
+      try {
+        await ff.deleteFile(inName);
+        await ff.deleteFile(outName);
+      } catch {
+        // Best-effort cleanup of ffmpeg's virtual filesystem; a leftover temp file is harmless.
+      }
     }
+  };
+
+  let timer: ReturnType<typeof setTimeout>;
+  const stall = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new ConversionStalled()), CONVERSION_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([run(), stall]);
+  } catch (e) {
+    if (!(e instanceof ConversionStalled)) throw e;
+    // Terminated outright rather than merely abandoned: a wasm encode gives the event loop no
+    // chance to check anything short of finishing on its own, so leaving the promise behind would
+    // keep the worker spending CPU — a real fan, on a real machine — on a result nobody is
+    // waiting for any more. This also drops whatever `ffmpegInstance` was mid-load or mid-exec, so
+    // the next attempt (this file retried, or an unrelated one) starts a fresh worker rather than
+    // finding this one wedged.
+    ffmpegInstance?.terminate();
+    const minutes = (CONVERSION_TIMEOUT_MS / 60_000).toFixed(1).replace(/\.0$/, "");
+    throw new Error(
+      `${name} has been converting for over ${minutes} minute${minutes === "1" ? "" : "s"} without finishing, which usually means ` +
+        `it holds a codec ffmpeg struggles with rather than simply being a slow conversion.${PARAGRAPH}${ADVICE}`,
+    );
+  } finally {
+    clearTimeout(timer!);
   }
 }

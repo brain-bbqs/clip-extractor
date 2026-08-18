@@ -109,8 +109,10 @@ export const PARAGRAPH = "\n\n";
 
 /** How to get out of this, its own paragraph at the end of every refusal. The link is written in
  * markdown because these messages are read in the console and in a `title` as well as on the page,
- * where it becomes a real link on its way in (see ui/linkify.ts). */
-const ADVICE = `Please use the [Encoding Helper](${ENCODING_HELPER_URL}) to improve the video accessibility.`;
+ * where it becomes a real link on its way in (see ui/linkify.ts). Exported for lib/ffmpeg.ts's own
+ * refusal, discovered only once a conversion is already running rather than known up front like the
+ * refusals in this module. */
+export const ADVICE = `Please use the [Encoding Helper](${ENCODING_HELPER_URL}) to improve the video accessibility.`;
 
 /** What every refusal opens with. Deliberately says nothing about the container: what a person can
  * do about the file is the same either way, and the extension is already in the name beside it. */

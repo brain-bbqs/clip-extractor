@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.19
+
+#### 🐛 Bug Fix
+
+- Converting an unreadable remote video now gives up after two minutes instead of running indefinitely, killing the stuck work and saying the codec is the likely reason ([#35](https://github.com/brain-bbqs/clip-extractor/pull/35))
+
 ## 0.1.18
 
 #### 🐛 Bug Fix
