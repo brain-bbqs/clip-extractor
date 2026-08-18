@@ -6,7 +6,7 @@ test("loads the app shell with the player disabled", async ({ page }) => {
   await expect(page).toHaveTitle("Clip Extractor");
   await expect(page.locator("h1")).toContainText("Clip Extractor");
   await expect(page.locator(".site-subtitle")).toHaveText(
-    "Extract and share short clips or individual frames which are causing trouble with behavioral annotations",
+    "Extract, describe, and share short clips or individual frames of behavioral recordings",
   );
   await expect(page.locator("#dropzone")).toBeVisible();
   await expect(page.locator("#emptyStage")).toBeVisible();
