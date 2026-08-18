@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.19
+
+#### 🐛 Bug Fix
+
+- Streamed video now sizes its decoded-frame cache off the clip's own frame rate and picture size, enough to hold about a 20 second playback loop, so looping playback no longer stutters every time it wraps back to the start ([#37](https://github.com/brain-bbqs/clip-extractor/pull/37))
+
 ## 0.1.18
 
 #### 🐛 Bug Fix

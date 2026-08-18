@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { FrameCache, constantRateIndex, enumeratedIndex, fpsFromSpan, modelHolds, nearestIndex } from "../../src/lib/streaming";
+import {
+  FrameCache,
+  constantRateIndex,
+  defaultCacheSize,
+  enumeratedIndex,
+  fpsFromSpan,
+  modelHolds,
+  nearestIndex,
+} from "../../src/lib/streaming";
 
 /** A stand-in for a decoded frame: jsdom has no ImageBitmap, and all the cache asks of one is that
  * it can be closed. */
@@ -188,5 +196,25 @@ describe("nearestIndex", () => {
 
   it("returns null for an empty range", () => {
     expect(nearestIndex(times, 2, 1, 0.1)).toBeNull();
+  });
+});
+
+describe("defaultCacheSize", () => {
+  it("covers a 20 second loop at an ordinary frame rate and picture size", () => {
+    // A small enough picture that the byte ceiling has no say: 30fps * 20s frames, exactly.
+    expect(defaultCacheSize(30, 320, 240)).toBe(600);
+  });
+
+  it("never drops below the read-ahead floor for a slow or tiny video", () => {
+    // 1fps * 20s wants only 20 frames, fewer than the read-ahead window needs held at once.
+    expect(defaultCacheSize(1, 320, 240)).toBe(32);
+  });
+
+  it("holds a large picture to a fraction of what a full 20 second loop would cost", () => {
+    // 20s @ 60fps of 4K frames would be 1200 * 3840*2160*4 bytes ≈ 39.6GB uncapped; the byte
+    // ceiling caps it well short of that, even though the read-ahead floor keeps it above zero.
+    const size = defaultCacheSize(60, 3840, 2160);
+    expect(size).toBeLessThan(1200);
+    expect(size * 3840 * 2160 * 4).toBeLessThan(1200 * 3840 * 2160 * 4);
   });
 });

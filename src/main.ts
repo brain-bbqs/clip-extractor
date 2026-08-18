@@ -291,7 +291,9 @@ interface OpenedSource {
   file: File | null;
 }
 
-// Decoded frames the backend keeps as ImageBitmaps. Each one costs width*height*4 bytes of
+// Decoded frames the sleap-io.js fallback backends keep as ImageBitmaps, used only when
+// lib/streaming.ts's own backend — which sizes its cache off the video itself, see
+// defaultCacheSize() there — could not open the file. Each frame costs width*height*4 bytes of
 // (non-JS-heap) memory, so at 1080p a 96-frame cache is ~800MB — enough that a large .slp on the
 // heap alongside it pushes the tab into thrashing. 32 still covers the read-ahead window below.
 const FRAME_CACHE_SIZE = 32;
@@ -374,7 +376,7 @@ async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
  * mp4box one covers files MediaBunny will not open at all. */
 async function openLocalBackend(file: File, name: string): Promise<SleapVideoBackend> {
   try {
-    return await openStreamingBlob(file, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
+    return await openStreamingBlob(file, { onIndexProgress: indexProgress(name) });
   } catch (e) {
     log(`Streaming open failed (${(e as Error).message}); indexing the whole file…`, "warn");
   }
@@ -412,7 +414,6 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
     await refuseUnstreamable(source, name);
     try {
       const backend = await openStreamingUrl(source, {
-        cacheSize: FRAME_CACHE_SIZE,
         onIndexProgress: indexProgress(name),
         // A URL's frames are found by reading the container, and a file whose container does not
         // say where they are leaves reading the file itself as the only way — which over a network

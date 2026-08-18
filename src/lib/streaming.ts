@@ -31,9 +31,33 @@ import type { SleapVideoBackend } from "./types";
 // and it is checked against frames spread through the file before it is trusted. Only a file the
 // check refuses is enumerated, and that walk now yields to the event loop as it goes.
 
-/** How many decoded frames a backend keeps. Each is an ImageBitmap costing width*height*4 bytes of
- * (non-JS-heap) memory, so the number is small on purpose — see FRAME_CACHE_SIZE in main.ts. */
+/** The fewest decoded frames a backend keeps, whatever the video's frame rate and picture size turn
+ * out to be. Each is an ImageBitmap costing width*height*4 bytes of (non-JS-heap) memory, so the
+ * floor is small on purpose — it exists to keep the read-ahead window below always fully cached, not
+ * to size the cache for playback. */
 const DEFAULT_CACHE_SIZE = 32;
+
+/** How long a played-back loop is expected to run before it wraps back to its start. Sized so the
+ * cache below can hold a whole loop: without that, the wrap seeks back to a frame long since evicted
+ * and playback stutters there every time round, on every loop rather than only the first. */
+const LOOP_SECONDS = 20;
+
+/** Ceiling on what the frame cache may cost in memory, in bytes. {@link LOOP_SECONDS} alone would
+ * size the cache in proportion to frame rate and picture size with nothing to stop either from
+ * making it large, so this keeps the cache "relatively small" — a fraction of a recording's frames,
+ * never the whole of a big enough one — regardless of what the video turns out to be. */
+const MAX_CACHE_BYTES = 512 * 1024 * 1024;
+
+/** How many decoded frames to keep by default: enough for a {@link LOOP_SECONDS} playback loop to
+ * play without a re-decode at the wrap, held to {@link MAX_CACHE_BYTES} and never under
+ * {@link DEFAULT_CACHE_SIZE}. A caller who knows better can still say so directly via
+ * {@link StreamingBackendOptions.cacheSize}. */
+export function defaultCacheSize(fps: number, width: number, height: number): number {
+  const wanted = Math.ceil(fps * LOOP_SECONDS);
+  const bytesPerFrame = Math.max(1, width * height * 4);
+  const affordable = Math.floor(MAX_CACHE_BYTES / bytesPerFrame);
+  return Math.max(DEFAULT_CACHE_SIZE, Math.min(wanted, affordable));
+}
 
 /** Packets the frame rate is measured over. The rate is a property of the container, not of the
  * sample, so this only has to be long enough to span a group of pictures. */
@@ -53,7 +77,8 @@ const COUNT_TOLERANCE = 0.5;
 const YIELD_EVERY = 20_000;
 
 export interface StreamingBackendOptions {
-  /** Decoded frames to keep. Defaults to {@link DEFAULT_CACHE_SIZE}. */
+  /** Decoded frames to keep. Defaults to {@link defaultCacheSize}, sized off the video's own frame
+   * rate and picture size once they are known. */
   cacheSize?: number;
   /** Called as the container index is read, with the bytes read from the source so far. Opening a
    * large file is not instant even when it streams, and this is what a caller can say so with. */
@@ -398,7 +423,8 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       }
       const index = constant ?? enumeratedIndex(await enumerateFrameTimes(packets, budget));
       if (!index.count) throw new Error("No frames found in video track");
-      return new StreamingVideoBackend(input, track, index, options.cacheSize ?? DEFAULT_CACHE_SIZE);
+      const cacheSize = options.cacheSize ?? defaultCacheSize(index.fps, track.displayWidth, track.displayHeight);
+      return new StreamingVideoBackend(input, track, index, cacheSize);
     } catch (e) {
       // Nothing was handed back, so nothing else can dispose the input or the requests behind it.
       input.dispose();
