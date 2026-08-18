@@ -161,7 +161,7 @@ export function loadTimeoutRefusal(name: string): string {
   const seconds = LOAD_TIMEOUT_MS / 1000;
   return (
     `${name} could not be opened within ${seconds} seconds. This usually means the video codec is ` +
-    `inefficient or that the connection to it stalled.${PARAGRAPH}${ADVICE}`
+    `inefficient or the connection stalled.${PARAGRAPH}${ADVICE}`
   );
 }
 
