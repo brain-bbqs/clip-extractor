@@ -12,10 +12,10 @@
   </p>
 </p>
 
-A web app for selecting a clip (a snippet range or a single frame) from a video and saving it or uploading directly to the EMBER Archive^[1].
-
-[1]: Direct upload is for BBQS teams only.
+A web app for selecting a clip (a snippet range or a single frame) from a video and saving it or uploading directly to the EMBER Archive[^1].
 
 ---
 
 Built by the [Center for Open Neuroscience](https://centerforopenneuroscience.org).
+
+[^1]: Direct upload is for BBQS teams only.
