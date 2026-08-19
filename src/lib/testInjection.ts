@@ -41,8 +41,10 @@ export interface TestInjection {
   /** Duration, in seconds, of a synthesized long recording to load instead of `mockVideoFrames` —
    * previews the sliding-window timeline (see `showsWindow` in lib/timeline.ts) without the minutes
    * of real-time capture a genuinely long `mockVideoFrames` clip would cost. Null when
-   * `mock_video_long` was not given; defaults to 2400 (40 minutes, comfortably past the half-hour
-   * threshold) when given with no value. */
+   * `mock_video_long` was not given; defaults to 14400 (4 hours) when given with no value, well past
+   * merely the half-hour threshold that turns the window on at all. The widest window setting
+   * (`±30 min`, a full hour) would otherwise still cover a 40-minute clip in its entirety, making the
+   * window indistinguishable from no window at all. */
   mockVideoLongSeconds: number | null;
   /** Synthesizes a pose model alongside the mock video, once it has loaded. */
   mockSlp: boolean;
@@ -86,14 +88,14 @@ export function readTestInjection(search: string): TestInjection | null {
   if (!params.has("test")) return null;
   const numDatasetsRaw = params.get("num_datasets");
   const mockVideoRaw = params.has("mock_video") ? intParam(params, "mock_video", 30) : null;
-  const mockVideoLongRaw = params.has("mock_video_long") ? intParam(params, "mock_video_long", 2400) : null;
+  const mockVideoLongRaw = params.has("mock_video_long") ? intParam(params, "mock_video_long", 14400) : null;
   return {
     signedOut: params.has("signed_out"),
     numDatasets: numDatasetsRaw !== null ? intParam(params, "num_datasets", 0) : null,
     embargoed: params.get("embargoed") !== "false",
     humanSubjects: params.has("human_subjects"),
     mockVideoFrames: mockVideoRaw !== null && mockVideoRaw > 0 ? mockVideoRaw : mockVideoRaw !== null ? 30 : null,
-    mockVideoLongSeconds: mockVideoLongRaw !== null && mockVideoLongRaw > 0 ? mockVideoLongRaw : mockVideoLongRaw !== null ? 2400 : null,
+    mockVideoLongSeconds: mockVideoLongRaw !== null && mockVideoLongRaw > 0 ? mockVideoLongRaw : mockVideoLongRaw !== null ? 14400 : null,
     mockSlp: params.has("mock_slp"),
     mismatch: params.has("mismatch"),
     remoteListing: params.has("remote_listing") ? intParam(params, "remote_listing", 8) : null,

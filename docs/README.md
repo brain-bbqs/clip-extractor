@@ -12,7 +12,7 @@
 | `?test&num_datasets=1&human_subjects`  | Flagged dataset: warning banner, blur tool, gated Upload | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1&human_subjects)  |
 | `?test&mock_video`                     | A synthesized 30-frame clip loaded, as if dropped        | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video)                     |
 | `?test&mock_video=200`                 | Same, 200 frames, enough to see the trim track           | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video=200)                 |
-| `?test&mock_video_long`                | A 40-minute clip: the sliding-window timeline and width  | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video_long)                |
+| `?test&mock_video_long`                | A 4-hour clip: the sliding-window timeline and width     | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video_long)                |
 | `?test&mock_video&mock_slp`            | Loaded clip with a synthesized, matching pose overlay    | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp)            |
 | `?test&mock_video&mock_slp&mismatch`   | Same, but refused: the SLEAP card's mismatch state       | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp&mismatch)   |
 | `?test&remote_listing=12`              | Browse pane, 12 fake videos across 3 fake datasets       | [Open](https://clip-extractor.brain-bbqs.org/?test&remote_listing=12)              |
@@ -41,11 +41,13 @@ once a video is on screen. Add `mock_slp` to also synthesize a matching pose mod
 through the same overlay code a real `.slp` would be, or `mock_slp&mismatch` to make that pose
 describe a different recording, previewing the SLEAP card's mismatch refusal.
 
-**A long recording**: `mock_video_long` (optionally `=N` for the duration in seconds, default 2400,
-40 minutes) previews the sliding-window timeline a recording past half an hour gets (see
+**A long recording**: `mock_video_long` (optionally `=N` for the duration in seconds, default 14400,
+4 hours) previews the sliding-window timeline a recording past half an hour gets (see
 `WINDOW_MIN_SECONDS` in lib/timeline.ts). It is a different clip from `mock_video`, built from only a
-handful of frames spread across the target duration rather than recorded in real time, so a 40-minute
-preview costs well under a second rather than 40 real minutes.
+handful of frames spread across the target duration rather than recorded in real time, so a 4-hour
+preview costs well under a second rather than 4 real hours. The default is well past the half-hour
+threshold that turns the window on, since the widest window setting (`±30 min`, a full hour) would
+otherwise still cover a merely 40-minute clip in its entirety, leaving nothing for the window to show.
 
 **Remote listing**: `remote_listing=N` fakes the EMBER browse pane's dataset/video listing with `N`
 fake video files spread across a handful of fake datasets, bypassing the real bucket listing and

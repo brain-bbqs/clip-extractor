@@ -256,10 +256,12 @@ test("a recording under half an hour carries no overview bar", async ({ page }) 
 });
 
 test("a recording over half an hour gets the sliding window and its width control", async ({ page }) => {
-  // `?test&mock_video_long` (default 2400s = 40 minutes) synthesizes a sparse, seconds-not-minutes
-  // clip built purely to land on the far side of the threshold — see synthesizeLongVideoFile in
-  // lib/testInjection.ts for why a few widely spaced frames read as forty long minutes rather than
-  // forty real ones of capture.
+  // `?test&mock_video_long` (default 14400s = 4 hours) synthesizes a sparse, seconds-not-minutes clip
+  // — see synthesizeLongVideoFile in lib/testInjection.ts for why a few widely spaced frames read as
+  // four long hours rather than four real ones of capture. The default duration matters as much as
+  // crossing the threshold: the widest window setting is a full hour (`±30 min`), so anything short
+  // of comfortably past that would leave the window covering the entire clip, indistinguishable from
+  // no window at all.
   await page.goto("/?test&mock_video_long");
   await expect(page.locator("#view")).toBeVisible();
 
@@ -268,6 +270,12 @@ test("a recording over half an hour gets the sliding window and its width contro
   await expect(page.locator("#windowSeg button.active")).toHaveAttribute("data-half", "1800");
   // The slider that stands in for the whole recording, distinct from the trim track above it.
   await expect(page.locator("#overbar")).toBeVisible();
+
+  // The window itself has to be a genuine fraction of the recording, not the whole of it stretched
+  // out — otherwise the sliding window and the un-windowed case would look identical.
+  const overbarBox = (await page.locator("#overbar").boundingBox())!;
+  const overwinBox = (await page.locator("#overwin").boundingBox())!;
+  expect(overwinBox.width).toBeLessThan(overbarBox.width * 0.5);
 });
 
 test("a snippet selection survives a trip through frame mode", async ({ page }) => {
