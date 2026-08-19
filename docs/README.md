@@ -2,14 +2,6 @@
 
 ## Live test injections
 
-Pasting a `?test&...` URL into the deployed app's address bar
-(<https://clip-extractor.brain-bbqs.org>) drives the UI into a specific state — without touching real
-EMBER network calls, real sign-in/`localStorage` state, or requiring a local video file — purely so a
-person can eyeball every important UI state live, and so Playwright specs can reach the same states
-without heavy `page.route` stubbing. This mirrors
-[bbqs-uploader's own `?test` scheme](https://github.com/brain-bbqs/bbqs-uploader/blob/main/docs/README.md#live-testing);
-the params below are this app's own, since its states differ.
-
 | URL                                                                     | Expected Appearance                                                   | Link                                                                                        |
 | ----------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `?test&signed_out`                                                      | Page as seen by an unsigned-in visitor                                | [Open](https://clip-extractor.brain-bbqs.org/?test&signed_out)                              |
