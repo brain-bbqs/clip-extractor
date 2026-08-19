@@ -1,11 +1,5 @@
 # Changelog
 
-## 0.1.19
-
-#### 🚀 Enhancement
-
-- Pasting a `?test&...` URL into the address bar now drives the app into a specific UI state (signed out, fake datasets, a synthesized loaded video with optional pose overlay or mismatch, a fake EMBER browse listing, or a frozen upload) with no real sign-in, network calls, or local file needed — see the new "Live Testing" section in `docs/README.md` ([#39](https://github.com/brain-bbqs/clip-extractor/pull/39))
-
 ## 0.1.18
 
 #### 🐛 Bug Fix
