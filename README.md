@@ -14,8 +14,6 @@
 
 A **fully static, backend-free** web app for selecting a clip range or a single frame from a video and downloading it or uploading it to the EMBER Archive.
 
-**Live:** https://clip-extractor.brain-bbqs.org
-
 ---
 
 Built by the [Center for Open Neuroscience](https://centerforopenneuroscience.org), styled and structured after [bbqs-uploader](https://github.com/brain-bbqs/bbqs-uploader). See [docs/README.md](docs/README.md) for project layout and dev commands, and [SECURITY.md](SECURITY.md) for the sign-in and trust-boundary details.
