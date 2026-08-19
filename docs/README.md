@@ -43,11 +43,14 @@ describe a different recording, previewing the SLEAP card's mismatch refusal.
 
 **A long recording**: `mock_video_long` (optionally `=N` for the duration in seconds, default 14400,
 4 hours) previews the sliding-window timeline a recording past half an hour gets (see
-`WINDOW_MIN_SECONDS` in lib/timeline.ts). It is a different clip from `mock_video`, built from only a
-handful of frames spread across the target duration rather than recorded in real time, so a 4-hour
-preview costs well under a second rather than 4 real hours. The default is well past the half-hour
-threshold that turns the window on, since the widest window setting (`±30 min`, a full hour) would
-otherwise still cover a merely 40-minute clip in its entirety, leaving nothing for the window to show.
+`WINDOW_MIN_SECONDS` in lib/timeline.ts). It is a different clip from `mock_video`, built from one
+frame every ten seconds of the target duration rather than recorded in real time, so a 4-hour preview
+costs a couple of seconds rather than 4 real hours. The default is well past the half-hour threshold
+that turns the window on, since the widest window setting (`±30 min`, a full hour) would otherwise
+still cover a merely 40-minute clip in its entirety, leaving nothing for the window to show — and the
+ten-second sampling matters as much as the duration: too sparse, and the trim track's own ruler ticks
+(which round a time to the nearest real frame) collapse onto the same one or two positions instead of
+spreading across it.
 
 **Remote listing**: `remote_listing=N` fakes the EMBER browse pane's dataset/video listing with `N`
 fake video files spread across a handful of fake datasets, bypassing the real bucket listing and

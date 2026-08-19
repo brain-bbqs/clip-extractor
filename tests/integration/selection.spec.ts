@@ -256,12 +256,13 @@ test("a recording under half an hour carries no overview bar", async ({ page }) 
 });
 
 test("a recording over half an hour gets the sliding window and its width control", async ({ page }) => {
-  // `?test&mock_video_long` (default 14400s = 4 hours) synthesizes a sparse, seconds-not-minutes clip
-  // — see synthesizeLongVideoFile in lib/testInjection.ts for why a few widely spaced frames read as
-  // four long hours rather than four real ones of capture. The default duration matters as much as
-  // crossing the threshold: the widest window setting is a full hour (`±30 min`), so anything short
-  // of comfortably past that would leave the window covering the entire clip, indistinguishable from
-  // no window at all.
+  // `?test&mock_video_long` (default 14400s = 4 hours) synthesizes a clip sampled once every ten
+  // seconds of the target duration — see synthesizeLongVideoFile in lib/testInjection.ts. Two things
+  // about it matter as much as crossing the half-hour threshold, and both broke this once: the
+  // widest window setting is a full hour (`±30 min`), so a duration too close to the threshold would
+  // leave the window covering the entire clip, indistinguishable from no window at all; and too
+  // sparse a sampling collapses the trim track's ruler ticks (each rounded to its nearest real frame)
+  // onto the same one or two screen positions instead of spreading across it.
   await page.goto("/?test&mock_video_long");
   await expect(page.locator("#view")).toBeVisible();
 
@@ -276,6 +277,16 @@ test("a recording over half an hour gets the sliding window and its width contro
   const overbarBox = (await page.locator("#overbar").boundingBox())!;
   const overwinBox = (await page.locator("#overwin").boundingBox())!;
   expect(overwinBox.width).toBeLessThan(overbarBox.width * 0.5);
+
+  // The trim track's own gradations have to be spread out too, not bunched at the edges: every major
+  // tick's left offset, in order, strictly increasing.
+  const tickLefts = await page
+    .locator("#selruler .sel-tick.major")
+    .evaluateAll((els) => els.map((el) => parseFloat((el as HTMLElement).style.left)));
+  expect(tickLefts.length).toBeGreaterThan(3);
+  for (let i = 1; i < tickLefts.length; i++) {
+    expect(tickLefts[i]).toBeGreaterThan(tickLefts[i - 1]);
+  }
 });
 
 test("a snippet selection survives a trip through frame mode", async ({ page }) => {
