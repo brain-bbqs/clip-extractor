@@ -12,9 +12,9 @@
 | `?test&num_datasets=1&human_subjects`  | Flagged dataset: warning banner, blur tool, gated Upload | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1&human_subjects)  |
 | `?test&mock_video`                     | A synthesized 30-frame clip loaded, as if dropped        | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video)                     |
 | `?test&mock_video=200`                 | Same, 200 frames, enough to see the trim track           | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video=200)                 |
+| `?test&mock_video_long`                | A 40-minute clip: the sliding-window timeline and width  | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video_long)                |
 | `?test&mock_video&mock_slp`            | Loaded clip with a synthesized, matching pose overlay    | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp)            |
 | `?test&mock_video&mock_slp&mismatch`   | Same, but refused: the SLEAP card's mismatch state       | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp&mismatch)   |
-| `?test&mock_video_long`                | A 40-minute clip: the sliding-window timeline and width  | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video_long)                |
 | `?test&remote_listing=12`              | Browse pane, 12 fake videos across 3 fake datasets       | [Open](https://clip-extractor.brain-bbqs.org/?test&remote_listing=12)              |
 
 **Safety**: `?test` alone, with none of the params below, is a no-op. Nothing here writes to real
