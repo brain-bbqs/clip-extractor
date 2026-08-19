@@ -14,6 +14,7 @@
 | `?test&mock_video=200`                 | Same, 200 frames, enough to see the trim track           | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video=200)                 |
 | `?test&mock_video&mock_slp`            | Loaded clip with a synthesized, matching pose overlay    | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp)            |
 | `?test&mock_video&mock_slp&mismatch`   | Same, but refused: the SLEAP card's mismatch state       | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp&mismatch)   |
+| `?test&mock_video_long`                | A 40-minute clip: the sliding-window timeline and width  | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video_long)                |
 | `?test&remote_listing=12`              | Browse pane, 12 fake videos across 3 fake datasets       | [Open](https://clip-extractor.brain-bbqs.org/?test&remote_listing=12)              |
 
 **Safety**: `?test` alone, with none of the params below, is a no-op. Nothing here writes to real
@@ -39,6 +40,12 @@ injection: the player, the timeline, the delivery panes and the SLEAP card are a
 once a video is on screen. Add `mock_slp` to also synthesize a matching pose model over it, drawn
 through the same overlay code a real `.slp` would be, or `mock_slp&mismatch` to make that pose
 describe a different recording, previewing the SLEAP card's mismatch refusal.
+
+**A long recording**: `mock_video_long` (optionally `=N` for the duration in seconds, default 2400,
+40 minutes) previews the sliding-window timeline a recording past half an hour gets (see
+`WINDOW_MIN_SECONDS` in lib/timeline.ts). It is a different clip from `mock_video`, built from only a
+handful of frames spread across the target duration rather than recorded in real time, so a 40-minute
+preview costs well under a second rather than 40 real minutes.
 
 **Remote listing**: `remote_listing=N` fakes the EMBER browse pane's dataset/video listing with `N`
 fake video files spread across a handful of fake datasets, bypassing the real bucket listing and

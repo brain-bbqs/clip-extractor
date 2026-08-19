@@ -255,6 +255,21 @@ test("a recording under half an hour carries no overview bar", async ({ page }) 
   }
 });
 
+test("a recording over half an hour gets the sliding window and its width control", async ({ page }) => {
+  // `?test&mock_video_long` (default 2400s = 40 minutes) synthesizes a sparse, seconds-not-minutes
+  // clip built purely to land on the far side of the threshold — see synthesizeLongVideoFile in
+  // lib/testInjection.ts for why a few widely spaced frames read as forty long minutes rather than
+  // forty real ones of capture.
+  await page.goto("/?test&mock_video_long");
+  await expect(page.locator("#view")).toBeVisible();
+
+  await expect(page.locator("#overviewWrap")).toBeVisible();
+  await expect(page.locator("#windowSeg")).toBeVisible();
+  await expect(page.locator("#windowSeg button.active")).toHaveAttribute("data-half", "1800");
+  // The slider that stands in for the whole recording, distinct from the trim track above it.
+  await expect(page.locator("#overbar")).toBeVisible();
+});
+
 test("a snippet selection survives a trip through frame mode", async ({ page }) => {
   await page.goto("/?test&mock_video");
   await expect(page.locator("#view")).toBeVisible();

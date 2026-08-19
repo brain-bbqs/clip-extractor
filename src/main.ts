@@ -99,7 +99,13 @@ import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
 import { StageStatus } from "./ui/stageStatus";
 import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type UrlState } from "./lib/urlState";
-import { fakeArchiveBrowse, fakeIncomingDatasets, readTestInjection, synthesizeVideoFile } from "./lib/testInjection";
+import {
+  fakeArchiveBrowse,
+  fakeIncomingDatasets,
+  readTestInjection,
+  synthesizeLongVideoFile,
+  synthesizeVideoFile,
+} from "./lib/testInjection";
 import type { ArchiveConfig, OAuthTokenSet, PoseInstance, PoseModel, SelectorMode, SleapLabels, SleapVideoBackend } from "./lib/types";
 
 // Injected at build time from package.json's version (see configs/appVersion.ts).
@@ -3425,12 +3431,20 @@ async function initFromUrl(): Promise<void> {
 // screen, and this is the only one that puts one there without a local file or a real stream.
 
 /** Loads a synthesized clip exactly as if it had been dropped onto the picker, so every real load
- * path (frame decode, timeline, delivery panes) runs against it unmodified. */
+ * path (frame decode, timeline, delivery panes) runs against it unmodified. `mock_video_long` takes
+ * the sparse, fast-to-build path instead (see `synthesizeLongVideoFile`) — the two are mutually
+ * exclusive, since both stand in for the same drop. */
 async function applyMockVideo(): Promise<void> {
-  if (testInjection?.mockVideoFrames == null) return;
-  const file = await synthesizeVideoFile(testInjection.mockVideoFrames);
-  await loadVideo(file, file.name);
-  if (testInjection.mockSlp) applyMockSlp();
+  if (testInjection?.mockVideoFrames != null) {
+    const file = await synthesizeVideoFile(testInjection.mockVideoFrames);
+    await loadVideo(file, file.name);
+    if (testInjection.mockSlp) applyMockSlp();
+    return;
+  }
+  if (testInjection?.mockVideoLongSeconds != null) {
+    const file = await synthesizeLongVideoFile(testInjection.mockVideoLongSeconds);
+    await loadVideo(file, file.name);
+  }
 }
 
 /**

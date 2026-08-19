@@ -1,3 +1,4 @@
+import { BufferTarget, CanvasSource, Output, QUALITY_LOW, WebMOutputFormat } from "mediabunny";
 import type { IncomingDandiset } from "./dandisets";
 import type { ArchiveDandiset, ArchiveVideo } from "./archives";
 
@@ -37,6 +38,12 @@ export interface TestInjection {
   /** Frame count for a synthesized, canvas-recorded clip to load as if it had been dropped in. Null
    * when `mock_video` was not given; defaults to 30 when given with no value. */
   mockVideoFrames: number | null;
+  /** Duration, in seconds, of a synthesized long recording to load instead of `mockVideoFrames` —
+   * previews the sliding-window timeline (see `showsWindow` in lib/timeline.ts) without the minutes
+   * of real-time capture a genuinely long `mockVideoFrames` clip would cost. Null when
+   * `mock_video_long` was not given; defaults to 2400 (40 minutes, comfortably past the half-hour
+   * threshold) when given with no value. */
+  mockVideoLongSeconds: number | null;
   /** Synthesizes a pose model alongside the mock video, once it has loaded. */
   mockSlp: boolean;
   /** Makes the synthesized pose deliberately describe a different recording than the mock video, so
@@ -55,6 +62,7 @@ const INERT: TestInjection = {
   embargoed: true,
   humanSubjects: false,
   mockVideoFrames: null,
+  mockVideoLongSeconds: null,
   mockSlp: false,
   mismatch: false,
   remoteListing: null,
@@ -78,12 +86,14 @@ export function readTestInjection(search: string): TestInjection | null {
   if (!params.has("test")) return null;
   const numDatasetsRaw = params.get("num_datasets");
   const mockVideoRaw = params.has("mock_video") ? intParam(params, "mock_video", 30) : null;
+  const mockVideoLongRaw = params.has("mock_video_long") ? intParam(params, "mock_video_long", 2400) : null;
   return {
     signedOut: params.has("signed_out"),
     numDatasets: numDatasetsRaw !== null ? intParam(params, "num_datasets", 0) : null,
     embargoed: params.get("embargoed") !== "false",
     humanSubjects: params.has("human_subjects"),
     mockVideoFrames: mockVideoRaw !== null && mockVideoRaw > 0 ? mockVideoRaw : mockVideoRaw !== null ? 30 : null,
+    mockVideoLongSeconds: mockVideoLongRaw !== null && mockVideoLongRaw > 0 ? mockVideoLongRaw : mockVideoLongRaw !== null ? 2400 : null,
     mockSlp: params.has("mock_slp"),
     mismatch: params.has("mismatch"),
     remoteListing: params.has("remote_listing") ? intParam(params, "remote_listing", 8) : null,
@@ -185,4 +195,47 @@ export async function synthesizeVideoFile(frames: number, filename = "test-injec
     recorder.stop();
   });
   return new File(chunks, filename, { type: "video/webm" });
+}
+
+/** How many real samples a synthesized long recording carries, regardless of the duration it spans.
+ * `MediaBunnyVideoBackend.initialize()` in `@talmolab/sleap-io.js` derives `fps` purely from
+ * `(frameCount - 1) / (lastPacketTimestamp - firstPacketTimestamp)`, and `showsWindow` (see
+ * lib/timeline.ts) compares `totalFrames` against `1800 * fps` — so the frame count cancels out of
+ * that comparison and only the timestamp span matters. A handful of frames spread across the target
+ * duration is enough to read as a long, low-fps recording; there is nothing to gain from encoding
+ * more. */
+const LONG_MOCK_FRAME_COUNT = 6;
+
+/**
+ * Synthesizes a sparse clip whose packets span `durationSeconds`, to preview the sliding-window
+ * timeline a genuinely long recording gets past the half-hour mark (`WINDOW_MIN_SECONDS` in
+ * lib/timeline.ts) without paying for it: `synthesizeVideoFile` above records in real time, one
+ * second of capture per second of clip, so a 40-minute version of it would take 40 real minutes.
+ * mediabunny's `Output`/`CanvasSource` write encoded samples at whatever explicit timestamp they are
+ * given, decoupled from wall-clock time entirely, so the same 40 minutes of container duration comes
+ * from a handful of frames encoded in well under a second.
+ */
+export async function synthesizeLongVideoFile(durationSeconds: number, filename = "test-injection-mock-long-video.webm"): Promise<File> {
+  const canvas = document.createElement("canvas");
+  canvas.width = MOCK_VIDEO_WIDTH;
+  canvas.height = MOCK_VIDEO_HEIGHT;
+  const ctx = canvas.getContext("2d")!;
+  const target = new BufferTarget();
+  const output = new Output({ format: new WebMOutputFormat(), target });
+  // No `frameRate` metadata: that would snap these deliberately far-apart timestamps back together.
+  const source = new CanvasSource(canvas, { codec: "vp8", quality: QUALITY_LOW });
+  output.addVideoTrack(source);
+  await output.start();
+  const step = durationSeconds / (LONG_MOCK_FRAME_COUNT - 1);
+  for (let i = 0; i < LONG_MOCK_FRAME_COUNT; i++) {
+    const timestamp = i * step;
+    ctx.fillStyle = `hsl(${i * 60} 80% 50%)`;
+    ctx.fillRect(0, 0, MOCK_VIDEO_WIDTH, MOCK_VIDEO_HEIGHT);
+    ctx.fillStyle = "#000";
+    ctx.font = "20px sans-serif";
+    ctx.fillText(`test frame ${i} @ ${Math.round(timestamp)}s`, 12, MOCK_VIDEO_HEIGHT - 16);
+    await source.add(timestamp, step);
+  }
+  await output.finalize();
+  return new File([target.buffer!], filename, { type: "video/webm" });
 }
