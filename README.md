@@ -12,7 +12,9 @@
   </p>
 </p>
 
-A **fully static, backend-free** web app for selecting a clip range or a single frame from a video and downloading it or uploading it to the EMBER Archive.
+A web app for selecting a clip (a snippet range or a single frame) from a video and saving it or uploading directly to the EMBER Archive^[1].
+
+[1]: Direct upload is for BBQS teams only.
 
 ---
 
