@@ -99,7 +99,8 @@ import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
 import { StageStatus } from "./ui/stageStatus";
 import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type UrlState } from "./lib/urlState";
-import type { ArchiveConfig, OAuthTokenSet, PoseModel, SelectorMode, SleapLabels, SleapVideoBackend } from "./lib/types";
+import { fakeArchiveBrowse, fakeIncomingDatasets, readTestInjection, synthesizeVideoFile } from "./lib/testInjection";
+import type { ArchiveConfig, OAuthTokenSet, PoseInstance, PoseModel, SelectorMode, SleapLabels, SleapVideoBackend } from "./lib/types";
 
 // Injected at build time from package.json's version (see configs/appVersion.ts).
 declare const __APP_VERSION__: string;
@@ -107,6 +108,14 @@ declare const __APP_VERSION__: string;
 const els = getElements();
 
 els.versionIndicator.textContent = `v${__APP_VERSION__}`;
+
+// ============================================================
+// Live smoketest URL params (see lib/testInjection.ts and docs/README.md's "Live Testing" section)
+// ============================================================
+// Parsed once, at the top of boot, so every render path below can branch on it before its first
+// paint rather than faking a state and then correcting it. Null on every ordinary load: `?test` is
+// never present outside of somebody deliberately pasting one of these URLs.
+const testInjection = readTestInjection(location.search);
 
 /** What the stage says with nothing loaded and nothing gone wrong, kept from the markup so a fresh
  * attempt can put it back over the last one's refusal. */
@@ -1845,7 +1854,7 @@ function browseName(current: BrowseState, dandiset: ArchiveDandiset): string {
 async function refreshBrowse(): Promise<void> {
   const reopen = browse?.selected ?? null;
   browse?.abort.abort();
-  browseSignedIn = oauthTokens !== null;
+  browseSignedIn = isSignedIn();
   const generation = ++browseGeneration;
   const current: BrowseState = {
     datasets: [],
@@ -1861,6 +1870,21 @@ async function refreshBrowse(): Promise<void> {
   els.browseVideoHeading.textContent = "Videos";
   browseEmpty(els.browseVideos, "Choose a dataset to see the videos in it.");
   els.browseDandisets.replaceChildren();
+
+  // `?test&remote_listing=N` fakes the whole pane — the bucket listing, the manifests, and the
+  // embargoed API listing all at once — so a live smoketest never reads the real archive. Marked
+  // swept immediately, since there is nothing left to sweep: every dataset's video list is already
+  // in hand.
+  if (testInjection?.remoteListing !== null && testInjection?.remoteListing !== undefined) {
+    const { datasets, videos } = fakeArchiveBrowse(testInjection.remoteListing);
+    current.datasets = datasets;
+    current.videos = videos;
+    current.swept = true;
+    renderDandisetList();
+    browseSay("");
+    return;
+  }
+
   browseSay("Reading the EMBER archive listing…");
 
   try {
@@ -2172,7 +2196,7 @@ async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
  * rebuilding the list underneath somebody who is reading it is not a free thing to do.
  */
 function syncBrowseToAuth(): void {
-  if (browse && browseSignedIn !== (oauthTokens !== null)) void refreshBrowse();
+  if (browse && browseSignedIn !== isSignedIn()) void refreshBrowse();
 }
 
 els.browseFilter.addEventListener("input", () => {
@@ -2376,8 +2400,22 @@ function currentConfig(): ArchiveConfig {
   });
 }
 
+/**
+ * Whether every auth-dependent render should read as signed in — real tokens, or a live-smoketest
+ * stand-in. `?test&signed_out` forces this false regardless of a real stored token, without touching
+ * that token: it is a render-time override, not a sign-out. `?test&num_datasets=` forces it true so
+ * the destination picker, the delivery toggle and the human-subjects gate can be previewed without a
+ * real sign-in; `signed_out` wins if both are somehow given, since a request to look signed out is
+ * the more conservative one to honor.
+ */
+function isSignedIn(): boolean {
+  if (testInjection?.signedOut) return false;
+  if (testInjection?.numDatasets !== null && testInjection?.numDatasets !== undefined) return true;
+  return oauthTokens !== null;
+}
+
 function renderAuthUI(): void {
-  const signedIn = oauthTokens !== null;
+  const signedIn = isSignedIn();
   els.oauthSigninBtn.hidden = signedIn;
   els.oauthSignedIn.hidden = !signedIn;
   // Upload is the only thing the delivery toggle leads to, and there is nowhere to upload to while
@@ -2462,11 +2500,25 @@ function updateViewDatasetLink(): void {
 }
 
 async function refreshDandisetOptions(): Promise<void> {
-  if (!oauthTokens) {
+  if (!isSignedIn()) {
     currentDatasets = [];
     setDandisetPlaceholder("Please sign in to see your incoming datasets.");
     updateViewDatasetLink();
     applyDeliveryMode();
+    syncBrowseToAuth();
+    return;
+  }
+  // `?test&num_datasets=` fakes the destination list in place of the real listIncomingDandisets
+  // call — the one EMBER API round trip a live smoketest must never make, since there is no real
+  // sign-in behind it. Everything downstream of applyDatasetList (the embargo warning, the
+  // human-subjects gate, the delivery toggle) is real code reading these fakes like any other list.
+  if (testInjection?.numDatasets !== null && testInjection?.numDatasets !== undefined) {
+    currentUser = { username: "test-user", name: "Live Smoketest" };
+    els.oauthUsername.textContent = currentUser.name;
+    applyDatasetList(fakeIncomingDatasets(testInjection.numDatasets, testInjection.embargoed, testInjection.humanSubjects));
+    updateViewDatasetLink();
+    applyDeliveryMode();
+    void refreshHumanSubjectsGate();
     syncBrowseToAuth();
     return;
   }
@@ -2581,7 +2633,7 @@ function setDeliveryMode(mode: DeliveryMode): void {
  * (see renderAuthUI), so Upload would otherwise be stuck on with no way back — and signing in again
  * still lands on the side that was picked. */
 function applyDeliveryMode(): void {
-  const mode = oauthTokens === null ? "download" : (storedDeliveryMode ?? defaultDeliveryMode(currentDatasets.length));
+  const mode = !isSignedIn() ? "download" : (storedDeliveryMode ?? defaultDeliveryMode(currentDatasets.length));
   selectSeg(els.deliverSeg, mode);
   setDeliveryMode(mode);
 }
@@ -2623,7 +2675,7 @@ let humanSubjectsRefreshSeq = 0;
  * picked. Saving a selection to a computer sends nothing anywhere, so the warning about what may be
  * uploaded to that dataset has nothing to say about it. */
 function humanSubjectsFlagged(): boolean {
-  return humanSubjectsRequired && oauthTokens !== null && deliveryMode === "upload" && els.dandisetId.value !== "";
+  return humanSubjectsRequired && isSignedIn() && deliveryMode === "upload" && els.dandisetId.value !== "";
 }
 
 /** True while that dataset's warning has not been confirmed for this session. */
@@ -2655,6 +2707,14 @@ async function refreshHumanSubjectsGate(): Promise<void> {
   const seq = ++humanSubjectsRefreshSeq;
   humanSubjectsRequired = false;
   renderHumanSubjectsBanner();
+  // The fake datasets from `?test&num_datasets=&human_subjects` have no real draft description to
+  // read the marker phrase out of, so the flag they were built with is applied directly instead of
+  // asking fetchDraftMetadata about an id that does not exist.
+  if (testInjection?.numDatasets !== null && testInjection?.numDatasets !== undefined) {
+    humanSubjectsRequired = testInjection.humanSubjects;
+    renderHumanSubjectsBanner();
+    return;
+  }
   const cfg = currentConfig();
   if (!cfg.dandisetId || !oauthTokens) return;
   try {
@@ -3198,6 +3258,15 @@ async function runUpload(): Promise<void> {
   uploadSubmitted = true;
   updateDeliveryGate();
   setUploadProgress(0);
+  // `?test&freeze_upload` stops here, deliberately: it exists to hold the in-flight upload state on
+  // screen for a screenshot, and the only way to do that without a race against a real upload
+  // finishing is to never start one. Nothing below this point runs — no archive request is made, and
+  // deliveryBusy stays true until the tab is reloaded.
+  if (testInjection?.freezeUpload) {
+    setStatus(els.uploadStatus, "Uploading the selection… 42%");
+    setUploadProgress(0.42);
+    return;
+  }
   try {
     const { directory } = await assembleSelection({
       backend,
@@ -3357,6 +3426,107 @@ async function initFromUrl(): Promise<void> {
   // there all the same: a reload is then another go at it rather than the end of it.
   writeUrl(state.sourceUrl ? urlState() : link);
 }
-void initFromUrl();
+
+// ============================================================
+// `?test&mock_video`/`&mock_slp` — see lib/testInjection.ts
+// ============================================================
+// The single highest-value injection: most of the others are only interesting once a video is on
+// screen, and this is the only one that puts one there without a local file or a real stream.
+
+/** Loads a synthesized clip exactly as if it had been dropped onto the picker, so every real load
+ * path (frame decode, timeline, delivery panes) runs against it unmodified. */
+async function applyMockVideo(): Promise<void> {
+  if (testInjection?.mockVideoFrames == null) return;
+  const file = await synthesizeVideoFile(testInjection.mockVideoFrames);
+  await loadVideo(file, file.name);
+  if (testInjection.mockSlp) applyMockSlp();
+}
+
+/**
+ * Synthesizes a pose model over the mock video and runs it through the real match-checking code
+ * (`slpVideoMismatches`/`slpVideoWarnings`) rather than a fake DOM overlay, so the SLEAP card, the
+ * pose overlay and — with `&mismatch` — the mismatch refusal all behave exactly as they would for a
+ * real `.slp`. Building the HDF5 bytes of an actual `.slp` in-page is not worth doing for a preview:
+ * this constructs the same in-memory `PoseModel`/`SlpSourceMeta` shapes `loadPoseFile` would have
+ * derived from one, and hands them to the same downstream code.
+ */
+function applyMockSlp(): void {
+  if (!state.backend) return;
+  enableSlpStep();
+  const nodes = ["nose", "left_ear", "right_ear", "tail_base"];
+  const edges: [number, number][] = [
+    [0, 1],
+    [0, 2],
+    [0, 3],
+  ];
+  const byFrame = new Map<number, PoseInstance[]>();
+  for (let f = 0; f < state.totalFrames; f++) {
+    // A pose that visibly walks across the frame, so a screenshot at any point in the clip shows
+    // something moving rather than four dots frozen in one spot.
+    const t = state.totalFrames > 1 ? f / (state.totalFrames - 1) : 0;
+    const cx = state.width * (0.15 + 0.7 * t);
+    const cy = state.height * 0.5;
+    byFrame.set(f, [
+      {
+        track: 0,
+        kind: "predicted",
+        score: 0.9,
+        points: [
+          { x: cx, y: cy - 10, score: 0.9 },
+          { x: cx - 8, y: cy - 4, score: 0.9 },
+          { x: cx + 8, y: cy - 4, score: 0.9 },
+          { x: cx, y: cy + 12, score: 0.9 },
+        ],
+      },
+    ]);
+  }
+  const pose: PoseModel = { skeleton: { name: "test-injection-skeleton", nodes, edges }, tracks: ["mock_animal"], byFrame };
+  const name = "test-injection-mock.slp";
+  const video = loadedVideoMeta();
+  if (!video) return;
+  const meta: SlpSourceMeta = testInjection?.mismatch
+    ? {
+        filename: "a-different-recording.mp4",
+        frames: state.totalFrames + 500,
+        width: state.width * 3,
+        height: state.height * 3,
+        fps: state.fps,
+        maxLabeledFrame: state.totalFrames - 1,
+        videoCount: 1,
+        seriesLength: null,
+      }
+    : {
+        filename: video.name,
+        frames: video.frames,
+        width: video.width,
+        height: video.height,
+        fps: video.fps,
+        maxLabeledFrame: state.totalFrames - 1,
+        videoCount: 1,
+        seriesLength: null,
+      };
+  const mismatches = slpVideoMismatches(meta, video);
+  if (mismatches.length) {
+    rejectSlp(name, ".slp", video, mismatches);
+    return;
+  }
+  state.pose = pose;
+  state.slpFile = null;
+  state.poseUrl = null;
+  state.slpMeta = meta;
+  state.slpName = name;
+  state.slpKind = ".slp";
+  poseGeneration++;
+  clearDeliveryOutcomes();
+  els.slpBadge.textContent = `${byFrame.size} frames`;
+  els.slpBadge.className = "badge ok";
+  els.slpError.hidden = true;
+  els.slpStatus.hidden = false;
+  showSlpWarnings(name, video, slpVideoWarnings(meta, video, ".slp"));
+  renderFrame();
+  syncUrl();
+}
+
+void initFromUrl().then(() => void applyMockVideo());
 
 log("Ready. Load a local video or stream one from EMBER to begin.");

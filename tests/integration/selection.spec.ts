@@ -1,9 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
-import { loadRecordedVideo } from "./helpers";
 
 // The snippet range is set by dragging two handles on a trim track, and read back (or typed) in the
 // In/Current/Out fields under it. These specs drive the real gestures against a real loaded video,
-// since the whole point of the handles is that they are pointer targets.
+// since the whole point of the handles is that they are pointer targets. `?test&mock_video` loads
+// it — a 30-frame synthesized clip, in place of the loadRecordedVideo() helper — since nothing here
+// depends on the loaded file's name or exact content, only on there being one to drag handles over.
 
 /** The last frame index of the loaded video, which the Current readout already carries as its max. */
 async function lastFrame(page: Page): Promise<number> {
@@ -36,8 +37,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("the trim handles bound the snippet, and the readouts follow them", async ({ page }) => {
-  await page.goto("/");
-  await loadRecordedVideo(page, "trim.webm");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
   const last = await lastFrame(page);
 
   // Nothing marked yet: both ends sit at the video's own bounds, shown as unset.
@@ -59,8 +60,8 @@ test("the trim handles bound the snippet, and the readouts follow them", async (
 });
 
 test("a handle dragged past its partner stops there instead of crossing it", async ({ page }) => {
-  await page.goto("/");
-  await loadRecordedVideo(page, "trim.webm");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
 
   await dragHandle(page, "#inHandle", 4);
   await dragHandle(page, "#outHandle", 10);
@@ -72,8 +73,8 @@ test("a handle dragged past its partner stops there instead of crossing it", asy
 });
 
 test("a trim marker stays grabbable with the playhead parked on it", async ({ page }) => {
-  await page.goto("/");
-  await loadRecordedVideo(page, "trim.webm");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
 
   // Everything starts at frame 0, so the playhead's line runs straight down through the In marker.
   // The line is a readout rather than a target, so the press has to reach the marker underneath it
@@ -86,8 +87,8 @@ test("a trim marker stays grabbable with the playhead parked on it", async ({ pa
 });
 
 test("dragging the band between the handles slides the range without resizing it", async ({ page }) => {
-  await page.goto("/");
-  await loadRecordedVideo(page, "trim.webm");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
 
   await dragHandle(page, "#inHandle", 4);
   await dragHandle(page, "#outHandle", 10);
@@ -104,8 +105,8 @@ test("dragging the band between the handles slides the range without resizing it
 });
 
 test("the playhead is a marker on the same track, dragged and pressed for", async ({ page }) => {
-  await page.goto("/");
-  await loadRecordedVideo(page, "trim.webm");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
   const last = await lastFrame(page);
 
   await dragHandle(page, "#playHandle", 12);
@@ -129,8 +130,8 @@ test("the playhead is a marker on the same track, dragged and pressed for", asyn
 });
 
 test("frame indices can be typed into the readouts", async ({ page }) => {
-  await page.goto("/");
-  await loadRecordedVideo(page, "trim.webm");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
   const last = await lastFrame(page);
 
   await page.locator('#modeSeg button[data-mode="frame"]').click();
@@ -158,8 +159,8 @@ test("frame indices can be typed into the readouts", async ({ page }) => {
 });
 
 test("the speed buttons pick a rate, and playback runs at it", async ({ page }) => {
-  await page.goto("/");
-  await loadRecordedVideo(page, "trim.webm");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
 
   const seg = page.locator("#speedSeg button");
   await expect(seg).toHaveText(["0.5×", "1×", "2×"]);
@@ -186,8 +187,8 @@ test("the speed buttons pick a rate, and playback runs at it", async ({ page }) 
 });
 
 test("playback stays inside the marked range, starting from In wherever the playhead was", async ({ page }) => {
-  await page.goto("/");
-  await loadRecordedVideo(page, "trim.webm");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
   const last = await lastFrame(page);
   // In sits well down the clip so a playhead left at 0 would take a visible run-up to reach it,
   // which is exactly the stretch playback must not show.
@@ -218,8 +219,8 @@ test("playback stays inside the marked range, starting from In wherever the play
 });
 
 test("the ruler lays out time gradations, and stays put in frame mode", async ({ page }) => {
-  await page.goto("/");
-  await loadRecordedVideo(page, "trim.webm");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
 
   // The recorded clip is about a second long, so this lands on the ruler's finest step: five
   // gradations, and one label at the start. The point of the assertion is that the ruler is built
@@ -238,8 +239,8 @@ test("the ruler lays out time gradations, and stays put in frame mode", async ({
 });
 
 test("a recording under half an hour carries no overview bar", async ({ page }) => {
-  await page.goto("/");
-  await loadRecordedVideo(page, "trim.webm");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
 
   // The overview only earns its row past half an hour of recording. A clip a second long is entirely
   // on the track already at a scale that can be aimed, so neither the bar nor the width control that
@@ -255,8 +256,8 @@ test("a recording under half an hour carries no overview bar", async ({ page }) 
 });
 
 test("a snippet selection survives a trip through frame mode", async ({ page }) => {
-  await page.goto("/");
-  await loadRecordedVideo(page, "trim.webm");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
 
   await page.locator("#inVal").fill("4");
   await page.locator("#inVal").press("Enter");
