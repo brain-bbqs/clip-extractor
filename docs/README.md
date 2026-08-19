@@ -2,22 +2,19 @@
 
 ## Live test injections
 
-| URL                                                                     | Expected Appearance                                                   | Link                                                                                        |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `?test&signed_out`                                                      | Page as seen by an unsigned-in visitor                                | [Open](https://clip-extractor.brain-bbqs.org/?test&signed_out)                              |
-| `?test&num_datasets=0`                                                  | Signed in, "you have not been added to any direct-upload datasets"    | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=0)                          |
-| `?test&num_datasets=1`                                                  | Single fake dataset, plain text destination, Upload enabled           | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1)                          |
-| `?test&num_datasets=2`                                                  | Dropdown of 2 fake datasets                                           | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=2)                          |
-| `?test&num_datasets=1&embargoed=false`                                  | Single non-embargoed fake dataset: error card, Upload disabled        | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1&embargoed=false)          |
-| `?test&num_datasets=1&human_subjects`                                   | Single flagged dataset: warning banner, blur tool, gated Upload       | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1&human_subjects)           |
-| `?test&mock_video`                                                      | A synthesized 30-frame clip loaded onto the player, as if dropped     | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video)                              |
-| `?test&mock_video=200`                                                  | Same, at 200 frames — long enough to see the trim track work          | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video=200)                          |
-| `?test&mock_video&mock_slp`                                             | A loaded clip with a synthesized pose overlaid and matching           | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp)                     |
-| `?test&mock_video&mock_slp&mismatch`                                    | Same, but the pose is refused: the SLEAP card's mismatch state        | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp&mismatch)            |
-| `?test&mock_video&num_datasets=1`                                       | A loaded clip plus a fake upload destination, ready to preview Upload | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&num_datasets=1)               |
-| `?test&mock_video&num_datasets=1&freeze_upload` (after pressing Upload) | Upload pane frozen mid-transfer, for a deterministic screenshot       | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&num_datasets=1&freeze_upload) |
-| `?test&remote_listing=4`                                                | Read-only browse of 4 fake video files in one fake dataset            | [Open](https://clip-extractor.brain-bbqs.org/?test&remote_listing=4)                        |
-| `?test&remote_listing=12`                                               | Same, 12 files spread across 3 fake datasets                          | [Open](https://clip-extractor.brain-bbqs.org/?test&remote_listing=12)                       |
+| URL                                    | Expected Appearance                                                | Link                                                                               |
+| -------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `?test&signed_out`                     | Page as seen by an unsigned-in visitor                             | [Open](https://clip-extractor.brain-bbqs.org/?test&signed_out)                     |
+| `?test&num_datasets=0`                 | Signed in, "you have not been added to any direct-upload datasets" | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=0)                 |
+| `?test&num_datasets=1`                 | Single fake dataset, plain text destination, Upload enabled        | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1)                 |
+| `?test&num_datasets=2`                 | Dropdown of 2 fake datasets                                        | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=2)                 |
+| `?test&num_datasets=1&embargoed=false` | Single non-embargoed fake dataset: error card, Upload disabled     | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1&embargoed=false) |
+| `?test&num_datasets=1&human_subjects`  | Single flagged dataset: warning banner, blur tool, gated Upload    | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1&human_subjects)  |
+| `?test&mock_video`                     | A synthesized 30-frame clip loaded onto the player, as if dropped  | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video)                     |
+| `?test&mock_video=200`                 | Same, at 200 frames — long enough to see the trim track work       | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video=200)                 |
+| `?test&mock_video&mock_slp`            | A loaded clip with a synthesized pose overlaid and matching        | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp)            |
+| `?test&mock_video&mock_slp&mismatch`   | Same, but the pose is refused: the SLEAP card's mismatch state     | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp&mismatch)   |
+| `?test&remote_listing=12`              | Browse pane, 12 fake video files spread across 3 fake datasets     | [Open](https://clip-extractor.brain-bbqs.org/?test&remote_listing=12)              |
 
 **Safety**: `?test` alone (without any of the params above) is a no-op. Nothing here writes to real
 `localStorage`, nothing touches the real sign-in tokens a genuine login holds, and every fake id these
@@ -47,14 +44,10 @@ overlay.
 
 **Remote listing**: `remote_listing=N` fabricates the EMBER browse pane's dataset/video listing with
 `N` fake video files spread across a handful of fake datasets, bypassing the real bucket listing and
-manifest reads entirely. It is read-only in spirit — the fake video URLs resolve nowhere real, so
-clicking a row shows the ordinary "cannot be opened" refusal, which is the truthful answer for a
-source this param invented rather than a dead button.
-
-**Upload freezing**: `freeze_upload`, combined with a loaded video and a fake destination (so the
-Upload button is reachable), holds the upload pane at a fixed mid-transfer progress the instant Upload
-is pressed and never resolves it — no archive request is made at all — for a deterministic screenshot
-of the in-flight state.
+manifest reads entirely, and switches straight to the Browse EMBER pane so the fake listing is what
+loads rather than sitting unseen behind the local-file dropzone. It is read-only in spirit — the fake
+video URLs resolve nowhere real, so clicking a row shows the ordinary "cannot be opened" refusal, which
+is the truthful answer for a source this param invented rather than a dead button.
 
 ## Expected console noise
 

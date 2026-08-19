@@ -46,9 +46,6 @@ export interface TestInjection {
    * handful of fake datasets, bypassing `listManifestObjects`/`listOwnedEmbargoedDandisets`. Null
    * when `remote_listing` was not given. */
   remoteListing: number | null;
-  /** Freezes an upload's progress right after it starts, indefinitely, for deterministic
-   * screenshotting of the in-flight state. Never actually contacts the archive. */
-  freezeUpload: boolean;
 }
 
 /** Nothing to fake: every field is the value that leaves every real code path untouched. */
@@ -61,7 +58,6 @@ const INERT: TestInjection = {
   mockSlp: false,
   mismatch: false,
   remoteListing: null,
-  freezeUpload: false,
 };
 
 /** A small, non-negative integer out of a query param, or `fallback` for anything else — including
@@ -91,7 +87,6 @@ export function readTestInjection(search: string): TestInjection | null {
     mockSlp: params.has("mock_slp"),
     mismatch: params.has("mismatch"),
     remoteListing: params.has("remote_listing") ? intParam(params, "remote_listing", 8) : null,
-    freezeUpload: params.has("freeze_upload"),
   };
 }
 

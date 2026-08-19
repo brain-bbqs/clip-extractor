@@ -3258,15 +3258,6 @@ async function runUpload(): Promise<void> {
   uploadSubmitted = true;
   updateDeliveryGate();
   setUploadProgress(0);
-  // `?test&freeze_upload` stops here, deliberately: it exists to hold the in-flight upload state on
-  // screen for a screenshot, and the only way to do that without a race against a real upload
-  // finishing is to never start one. Nothing below this point runs — no archive request is made, and
-  // deliveryBusy stays true until the tab is reloaded.
-  if (testInjection?.freezeUpload) {
-    setStatus(els.uploadStatus, "Uploading the selection… 42%");
-    setUploadProgress(0.42);
-    return;
-  }
   try {
     const { directory } = await assembleSelection({
       backend,
@@ -3525,6 +3516,14 @@ function applyMockSlp(): void {
   showSlpWarnings(name, video, slpVideoWarnings(meta, video, ".slp"));
   renderFrame();
   syncUrl();
+}
+
+// `?test&remote_listing=N` fakes what the browse pane would show, but the pane itself is only ever
+// opened by hand — so on its own the fake listing would sit unseen behind the local-file dropzone.
+// Switching to it here is what makes the URL alone the whole smoketest.
+if (testInjection?.remoteListing !== null && testInjection?.remoteListing !== undefined) {
+  selectSeg(els.srcSeg, "browse");
+  setSrcPane("browse");
 }
 
 void initFromUrl().then(() => void applyMockVideo());
