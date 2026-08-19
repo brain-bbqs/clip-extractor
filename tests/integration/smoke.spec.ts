@@ -126,8 +126,9 @@ test("delivery card offers only Save while signed out", async ({ page }) => {
 });
 
 test("delivery toggle appears once signed in and swaps between the save and upload panes", async ({ page }) => {
-  await stubArchive(page);
-  await page.goto("/");
+  // A fake, signed-in-looking destination — see lib/testInjection.ts — reaches the same UI as a real
+  // sign-in for this test's purposes (toggling panes, nothing verified about an actual request).
+  await page.goto("/?test&num_datasets=1");
   await expect(page.locator("#deliverToggleRow")).toBeVisible();
   // The stored setting is still "download"/"upload"; only one label reads "Save".
   await expect(page.locator('#deliverSeg button[data-deliver="download"]')).toHaveText("Save");
@@ -146,8 +147,7 @@ test("delivery toggle appears once signed in and swaps between the save and uplo
 });
 
 test("the chosen delivery side survives a refresh", async ({ page }) => {
-  await stubArchive(page);
-  await page.goto("/");
+  await page.goto("/?test&num_datasets=1");
   await page.locator('#deliverSeg button[data-deliver="upload"]').click();
   await expect(page.locator("#uploadPane")).toBeVisible();
 

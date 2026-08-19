@@ -1,11 +1,17 @@
 import { test, expect, type Page } from "@playwright/test";
-import { loadRecordedVideo, seekTo, stubArchive } from "./helpers";
+import { seekTo, stubArchive } from "./helpers";
 
 // The human-subjects gate and the blur tool it brings out: the warning bbqs-uploader raises for a
 // dataset flagged as holding recordings of people, the Upload button held until it is confirmed, and
 // the areas blurred out of everything the extraction writes. A single frame is used as the
 // selection throughout because that path needs no ffmpeg.wasm (and so no CDN) to produce a real
 // file, while going through the same canvas the blur is painted onto.
+//
+// The gate and the tool only care that the *selected dataset* is flagged, not that anything real is
+// behind it — so every test except the one that actually uploads (and so has to verify what really
+// landed on the stub archive) reaches its state through `?test&mock_video&num_datasets=1[&human_subjects]`
+// instead of a stubbed archive and a synthesized-in-Playwright video. The fake destination is
+// `FAKE_DANDISET_ID_BASE` from lib/testInjection.ts, "9900001".
 
 const banner = "#humanSubjectsBanner";
 const rings = "#blurLayer .blur-handle";
@@ -19,20 +25,18 @@ async function placeBlurArea(page: Page, fractionX: number, fractionY: number): 
 }
 
 test("an unflagged dataset raises no warning and offers no blur tool", async ({ page }) => {
-  await stubArchive(page);
-  await page.goto("/");
-  await expect(page.locator("#dandisetSingleText")).toContainText("000123");
-  await loadRecordedVideo(page, "mice.webm");
+  await page.goto("/?test&mock_video&num_datasets=1");
+  await expect(page.locator("#dandisetSingleText")).toContainText("9900001");
+  await expect(page.locator("#view")).toBeVisible();
 
   await expect(page.locator(banner)).toBeHidden();
   await expect(page.locator("#blurTools")).toBeHidden();
 });
 
 test("a flagged dataset warns, holds the upload until it is confirmed, and offers the blur tool", async ({ page }) => {
-  await stubArchive(page, { humanSubjects: true });
-  await page.goto("/");
-  await expect(page.locator("#dandisetSingleText")).toContainText("000123");
-  await loadRecordedVideo(page, "mice.webm");
+  await page.goto("/?test&mock_video&num_datasets=1&human_subjects");
+  await expect(page.locator("#dandisetSingleText")).toContainText("9900001");
+  await expect(page.locator("#view")).toBeVisible();
   await page.locator('#modeSeg button[data-mode="frame"]').click();
   await seekTo(page, 5);
   await page.locator("#selectionDescription").fill("Frame 5, with the participant's face covered.");
@@ -56,10 +60,9 @@ test("a flagged dataset warns, holds the upload until it is confirmed, and offer
 });
 
 test("blur areas are placed, resized and removed on the picture", async ({ page }) => {
-  await stubArchive(page, { humanSubjects: true });
-  await page.goto("/");
-  await expect(page.locator("#dandisetSingleText")).toContainText("000123");
-  await loadRecordedVideo(page, "mice.webm");
+  await page.goto("/?test&mock_video&num_datasets=1&human_subjects");
+  await expect(page.locator("#dandisetSingleText")).toContainText("9900001");
+  await expect(page.locator("#view")).toBeVisible();
 
   // A tenth of the 320x240 recording's shorter side.
   await expect(page.locator("#blurRadiusValue")).toHaveValue("24");
@@ -84,10 +87,11 @@ test("blur areas are placed, resized and removed on the picture", async ({ page 
 });
 
 test("a blurred selection is uploaded without the original, and says what it hid", async ({ page }) => {
+  // The one test in this file that actually uploads, so it needs the real stubbed archive to verify
+  // what landed on it — `?test&mock_video` only replaces the video-loading half of the setup.
   const { registered, uploaded } = await stubArchive(page, { humanSubjects: true });
-  await page.goto("/");
+  await page.goto("/?test&mock_video");
   await expect(page.locator("#dandisetSingleText")).toContainText("000123");
-  await loadRecordedVideo(page, "mice.webm");
   await page.locator('#modeSeg button[data-mode="frame"]').click();
   await seekTo(page, 5);
   await page.locator("#selectionDescription").fill("Frame 5, with the participant's face covered.");
