@@ -3167,7 +3167,7 @@ async function deliverOriginalVideo(
   // loaded (see loadVideo), not re-derived here — so the raw file sitting in `sourcedata` carries the
   // same kind of sidecar a BEP047 media file does, without needing a probing library of its own.
   await deliverSidecar(deliver, directory, original.name, onProgress, {
-    description: "The untouched source video this delivery's selection was cut from.",
+    description: "The source video this selection was clipped from.",
     technical: videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames),
     sources: [],
     generatedByTool: false,

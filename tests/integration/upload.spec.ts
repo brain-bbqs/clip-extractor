@@ -54,7 +54,7 @@ test("an upload registers the extract, the original and a matching sidecar", asy
   // blob sent up, not the first — the original's technical sidecar goes up ahead of it.
   const jsonBodies = uploaded.map((part) => part.toString()).filter((body) => body.startsWith("{"));
   const originalSidecar = JSON.parse(jsonBodies[0]) as Record<string, unknown>;
-  expect(originalSidecar.Description).toBe("The untouched source video this delivery's selection was cut from.");
+  expect(originalSidecar.Description).toBe("The source video this selection was clipped from.");
   expect(originalSidecar.GeneratedBy).toBeUndefined();
 
   // The sidecar that actually went up carries the description written for this selection, the

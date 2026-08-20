@@ -98,7 +98,7 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
 
   // The original's own sidecar carries its real technical properties, not a copy of the extract's.
   const originalSidecar = JSON.parse(entries[2].text) as Record<string, unknown>;
-  expect(originalSidecar.Description).toBe("The untouched source video this delivery's selection was cut from.");
+  expect(originalSidecar.Description).toBe("The source video this selection was clipped from.");
   expect(originalSidecar.ImageWidth).toBe(320);
   expect(originalSidecar.ImageHeight).toBe(240);
   expect(originalSidecar.GeneratedBy).toBeUndefined();

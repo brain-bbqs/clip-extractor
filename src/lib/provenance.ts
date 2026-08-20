@@ -357,11 +357,10 @@ export interface CompanionSidecarInput {
 }
 
 export function buildCompanionSidecar(input: CompanionSidecarInput): Record<string, unknown> {
-  const sidecar: Record<string, unknown> = {
-    Description: input.description,
-    ...input.technical,
-    Sources: input.sources,
-  };
+  const sidecar: Record<string, unknown> = { Description: input.description, ...input.technical };
+  // Omitted rather than written empty: an untouched source video has no upstream to name, and an
+  // absent `Sources` says that more plainly than one that names nothing.
+  if (input.sources.length) sidecar.Sources = input.sources;
   if (input.generatedByTool) sidecar.GeneratedBy = [buildGeneratedByEntry()] as GeneratedByEntry[];
   return sidecar;
 }

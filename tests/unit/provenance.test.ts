@@ -335,4 +335,14 @@ describe("buildCompanionSidecar", () => {
     });
     expect((sidecar.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
   });
+
+  it("omits Sources entirely for the untouched source video, which has no upstream to name", () => {
+    const sidecar = buildCompanionSidecar({
+      description: "The source video this selection was clipped from.",
+      technical: imageTechnicalFields(640, 480),
+      sources: [],
+      generatedByTool: false,
+    });
+    expect(sidecar).not.toHaveProperty("Sources");
+  });
 });
