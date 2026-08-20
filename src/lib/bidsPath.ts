@@ -6,10 +6,19 @@
 // `_audio`/`_video`/`_audiovideo`/`_image` suffixes) this module builds names out of.
 //
 // BEP047 has no entity for "which delivery is this" — the closest fits (`run`, `split`) mean
-// something else — so `recording-<label>` carries that job here: a compact, sortable stamp of the
-// moment this delivery was made, the same role `date-…_time-…` played in the pre-BIDS directory
-// layout, now inside the filename instead of a directory name so files for the same subject sit
-// flat in one `beh/` listing the way BIDS expects.
+// something else — so every derivatives filename this app writes carries a disambiguating entity of
+// its own, which of two forms it takes depending on whether the subject is a real one:
+//
+//   - A known subject (the source video's own path named one) means its `sourcedata` copy is the
+//     one true copy of that recording — re-delivering it is expected to overwrite, not duplicate, so
+//     `sourcedata` gets no disambiguator at all (see deliverOriginalVideo in main.ts, which always
+//     names it verbatim regardless). `derivatives`, though, still needs one: two runs of
+//     clip-extractor over the same subject/session produce two different clips, so those get
+//     `date-<label>_time-<label>` — separate entities, the same spelling the pre-BIDS directory
+//     layout used, now inside the filename instead of a directory name.
+//   - `sub-unknown` (the source names no subject at all — a video dropped straight from disk) means
+//     there is nothing else tying two such deliveries apart, in either tree, so both keep the
+//     compact `recording-<label>` stamp instead.
 //
 // `desc-<label>` — the entity BIDS derivatives already define for distinguishing outputs of the
 // same underlying recording — separates the plain extracted clip from its pose-overlay rendering,
@@ -34,8 +43,16 @@ export function bidsLabel(value: string, fallback: string): string {
 export interface BehEntities {
   sub: string;
   ses: string | null;
-  /** Disambiguates this delivery from any other of the same subject/session. */
+  /** Whether `sub` (and so `ses`) came from a real archive path, rather than the `sub-unknown`
+   * fallback. Decides which of `recording`/`date`+`time` `behFilename` uses to disambiguate this
+   * delivery from any other of the same subject/session — see the module comment above. */
+  known: boolean;
+  /** The compact digits-only instant stamp, used only when `!known`. */
   recording: string;
+  /** This delivery's date, used only when `known` (paired with `time` in place of `recording`). */
+  date: string;
+  /** This delivery's time, used only when `known`. */
+  time: string;
 }
 
 /** Parses `sub-<label>[/ses-<label>]` off the front of an archive-relative path, e.g. `sub-1/mice.mp4`
@@ -57,6 +74,16 @@ export function recordingLabel(now: Date): string {
   return now.toISOString().replace(/[^0-9]/g, "");
 }
 
+/** `YYYYMMDD`, UTC — `toISOString` is fixed-width, so this slice is stable. */
+export function dateLabel(now: Date): string {
+  return now.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+/** `HHMMSS`, UTC. */
+export function timeLabel(now: Date): string {
+  return now.toISOString().slice(11, 19).replace(/:/g, "");
+}
+
 /** The subject/session/delivery entities every file of one delivery shares, derived from wherever
  * the source video's own path names a subject — falling back to `sub-unknown` so the tree this app
  * writes is always well-formed even for a video dropped straight from disk. */
@@ -65,7 +92,10 @@ export function behEntities(now: Date, sourcePath: string | null): BehEntities {
   return {
     sub: parsed.sub ? bidsLabel(parsed.sub, "unknown") : "unknown",
     ses: parsed.ses ? bidsLabel(parsed.ses, "") || null : null,
+    known: parsed.sub !== null,
     recording: recordingLabel(now),
+    date: dateLabel(now),
+    time: timeLabel(now),
   };
 }
 
@@ -95,12 +125,17 @@ export interface BehFilenameParts {
   ext: string;
 }
 
-/** `sub-<label>[_ses-<label>]_recording-<label>[_desc-<label>]_<suffix>.<ext>` — every file one
- * delivery writes shares this prefix, so a listing of `beh/` reads as one group per delivery. */
+function disambiguatorEntities(e: BehEntities): string[] {
+  return e.known ? [`date-${e.date}`, `time-${e.time}`] : [`recording-${e.recording}`];
+}
+
+/** `sub-<label>[_ses-<label>]_<date-<label>_time-<label>|recording-<label>>[_desc-<label>]_<suffix>.<ext>`
+ * — every file one delivery writes shares this prefix, so a listing of `beh/` reads as one group per
+ * delivery. */
 export function behFilename(e: BehEntities, parts: BehFilenameParts): string {
   const bits = [`sub-${e.sub}`];
   if (e.ses) bits.push(`ses-${e.ses}`);
-  bits.push(`recording-${e.recording}`);
+  bits.push(...disambiguatorEntities(e));
   if (parts.desc) bits.push(`desc-${parts.desc}`);
   bits.push(parts.suffix);
   return `${bits.join("_")}.${parts.ext}`;

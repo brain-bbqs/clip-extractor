@@ -10,6 +10,7 @@
 - A loaded `.slp` now lands under `derivatives/clip-extractor/` alongside the extract rather than `sourcedata/`, since it is itself the output of a pose-estimation pipeline run over the source video, not the raw recording ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - The source video uploaded or saved alongside a selection now gets its own technical sidecar JSON in `sourcedata/`, carrying the real duration, frame rate and dimensions already read off it when it was loaded ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - Added `?test&mock_video&mock_sub=<label>[&mock_ses=<label>]` to preview the Save/Upload destination tree for a known archive subject and session, alongside the existing `sub-unknown` fallback ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- When the source video's own subject and session are known (opened out of the archive rather than dropped locally), `derivatives/` files are now disambiguated by `date-`/`time-` entities instead of the compact `recording-` stamp, and the `sourcedata/` original carries no disambiguator at all, since re-delivering the same known video is meant to overwrite its one copy there rather than duplicate it ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 
 ## 1.0.0
 

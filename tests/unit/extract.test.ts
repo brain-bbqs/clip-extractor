@@ -16,46 +16,46 @@ vi.mock("../../src/lib/ffmpeg", () => ({
   encodedFraction: () => null,
 }));
 
-const beh: BehEntities = { sub: "mice", ses: null, recording: "20260810T012356Z" };
-const behWithSession: BehEntities = { sub: "1", ses: "2", recording: "20260810T012356Z" };
+const beh: BehEntities = { sub: "mice", ses: null, known: false, recording: "20260810012356482", date: "20260810", time: "012356" };
+const behWithSession: BehEntities = { ...beh, sub: "1", ses: "2" };
 
 describe("clipFileName", () => {
   it("names a snippet in BEP047 entity style", () => {
-    expect(clipFileName(beh)).toBe("sub-mice_recording-20260810T012356Z_video.mp4");
+    expect(clipFileName(beh)).toBe("sub-mice_recording-20260810012356482_video.mp4");
   });
 
   it("includes the session entity when there is one", () => {
-    expect(clipFileName(behWithSession)).toBe("sub-1_ses-2_recording-20260810T012356Z_video.mp4");
+    expect(clipFileName(behWithSession)).toBe("sub-1_ses-2_recording-20260810012356482_video.mp4");
   });
 });
 
 describe("frameFileName", () => {
   it("names a single frame with BEP047's still-image suffix", () => {
-    expect(frameFileName(beh)).toBe("sub-mice_recording-20260810T012356Z_image.png");
+    expect(frameFileName(beh)).toBe("sub-mice_recording-20260810012356482_image.png");
   });
 });
 
 describe("sidecarFileName", () => {
   it("mirrors the video it describes, `.json` in place of the media extension", () => {
-    expect(sidecarFileName(beh, "snippet")).toBe("sub-mice_recording-20260810T012356Z_video.json");
+    expect(sidecarFileName(beh, "snippet")).toBe("sub-mice_recording-20260810012356482_video.json");
   });
 
   it("mirrors a single frame's image the same way", () => {
-    expect(sidecarFileName(beh, "frame")).toBe("sub-mice_recording-20260810T012356Z_image.json");
+    expect(sidecarFileName(beh, "frame")).toBe("sub-mice_recording-20260810012356482_image.json");
   });
 
   it("takes a desc entity when given one", () => {
-    expect(sidecarFileName(beh, "snippet", "overlay")).toBe("sub-mice_recording-20260810T012356Z_desc-overlay_video.json");
+    expect(sidecarFileName(beh, "snippet", "overlay")).toBe("sub-mice_recording-20260810012356482_desc-overlay_video.json");
   });
 });
 
 describe("overlayFileName", () => {
   it("takes desc-overlay in place of the plain snippet's bare entities", () => {
-    expect(overlayFileName(beh, "snippet")).toBe("sub-mice_recording-20260810T012356Z_desc-overlay_video.mp4");
+    expect(overlayFileName(beh, "snippet")).toBe("sub-mice_recording-20260810012356482_desc-overlay_video.mp4");
   });
 
   it("renders a single frame as a PNG of the same entities", () => {
-    expect(overlayFileName(beh, "frame")).toBe("sub-mice_recording-20260810T012356Z_desc-overlay_image.png");
+    expect(overlayFileName(beh, "frame")).toBe("sub-mice_recording-20260810012356482_desc-overlay_image.png");
   });
 
   it("shares every entity with the plain extract it renders, differing only in desc- and the suffix", () => {
@@ -66,11 +66,16 @@ describe("overlayFileName", () => {
 
 describe("bundleFileName", () => {
   it("names the saved bundle after the selection kind it holds", () => {
-    expect(bundleFileName(beh, "snippet")).toBe("sub-mice_recording-20260810T012356Z_desc-snippet_bundle.tar.gz");
+    expect(bundleFileName(beh, "snippet")).toBe("sub-mice_recording-20260810012356482_desc-snippet_bundle.tar.gz");
   });
 
   it("names a single frame's bundle the same way", () => {
-    expect(bundleFileName(beh, "frame")).toBe("sub-mice_recording-20260810T012356Z_desc-frame_bundle.tar.gz");
+    expect(bundleFileName(beh, "frame")).toBe("sub-mice_recording-20260810012356482_desc-frame_bundle.tar.gz");
+  });
+
+  it("uses date-/time- instead of recording- for a known subject", () => {
+    const known: BehEntities = { sub: "1", ses: null, known: true, recording: "unused", date: "20260810", time: "012356" };
+    expect(bundleFileName(known, "snippet")).toBe("sub-1_date-20260810_time-012356_desc-snippet_bundle.tar.gz");
   });
 });
 
@@ -91,7 +96,7 @@ describe("extractClip, on a streamed source", () => {
     const media = await extractClip({ ...selection, sourceFile: null, backend });
     expect(ffmpeg.loaded).toBe(0);
     expect(backend.extractRange).toHaveBeenCalledWith(600, 749, expect.objectContaining({ precise: true }));
-    expect(media.filename).toBe("sub-mice_recording-20260810T012356Z_video.mp4");
+    expect(media.filename).toBe("sub-mice_recording-20260810012356482_video.mp4");
     expect(media.mime).toBe("video/mp4");
   });
 

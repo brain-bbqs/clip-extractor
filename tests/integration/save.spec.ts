@@ -143,3 +143,23 @@ test("leaving the original out saves the extract and its sidecar alone, plus bot
   expect((source.checksum as { value: string }).value).toMatch(/^[0-9a-f]{32}-\d+$/);
   expect(sidecar.Description).toBe("A clean frame, kept as a reference.");
 });
+
+test("a known subject and session get date-/time- entities in derivatives, and no disambiguator at all in sourcedata", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
+  // `?test&mock_video&mock_sub=`/`&mock_ses=` (see lib/testInjection.ts) makes the mock video look,
+  // to lib/bidsPath.ts's behEntities, as if it were opened from the archive at sub-01/ses-02/…
+  await page.goto("/?test&mock_video&mock_sub=01&mock_ses=02");
+  await page.locator('#modeSeg button[data-mode="frame"]').click();
+  await page.locator("#selectionDescription").fill("A known subject, for once.");
+
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
+  const entries = listTar(readFileSync((await download.path())!));
+  expect(entries.map((e) => e.path)).toEqual([
+    expect.stringMatching(/^derivatives\/clip-extractor\/sub-01\/ses-02\/beh\/sub-01_ses-02_date-\d{8}_time-\d{6}_image\.png$/),
+    "sourcedata/sub-01/ses-02/beh/test-injection-mock-video.webm",
+    "sourcedata/sub-01/ses-02/beh/test-injection-mock-video.json",
+    expect.stringMatching(/^derivatives\/clip-extractor\/sub-01\/ses-02\/beh\/sub-01_ses-02_date-\d{8}_time-\d{6}_image\.json$/),
+    "dataset_description.json",
+    "derivatives/clip-extractor/dataset_description.json",
+  ]);
+});
