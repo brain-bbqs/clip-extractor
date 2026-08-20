@@ -265,15 +265,65 @@ describe("sweepArchiveVideos", () => {
   });
 
   it("reports every dataset, including the ones whose file list could not be read", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const seen = new Map<string, ArchiveVideo[]>();
-    await sweepArchiveVideos(
-      [publicDandiset("000265"), publicDandiset("000299")],
-      (dandiset) => (dandiset.id === "000265" ? Promise.resolve([video(dandiset.id)]) : Promise.reject(new Error("HTTP 403"))),
-      (dandiset, videos) => seen.set(dandiset.id, videos),
-    );
-    expect(seen.get("000265")?.length).toBe(1);
-    expect(seen.get("000299")).toEqual([]);
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const seen = new Map<string, ArchiveVideo[]>();
+      const done = sweepArchiveVideos(
+        [publicDandiset("000265"), publicDandiset("000299")],
+        (dandiset) => (dandiset.id === "000265" ? Promise.resolve([video(dandiset.id)]) : Promise.reject(new Error("HTTP 403"))),
+        (dandiset, videos) => seen.set(dandiset.id, videos),
+      );
+      await vi.runAllTimersAsync();
+      await done;
+      expect(seen.get("000265")?.length).toBe(1);
+      expect(seen.get("000299")).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a failed read before giving up, so a transient hiccup does not hide a public dataset", async () => {
+    vi.useFakeTimers();
+    try {
+      let attempts = 0;
+      const seen = new Map<string, ArchiveVideo[]>();
+      const done = sweepArchiveVideos(
+        [publicDandiset("000265")],
+        () => {
+          attempts++;
+          // Cold-cache conditions (incognito, a first visit) make the first attempt or two fail
+          // even though the dataset is genuinely public and readable.
+          if (attempts < 3) return Promise.reject(new Error("network error"));
+          return Promise.resolve([video("000265")]);
+        },
+        (dandiset, videos) => seen.set(dandiset.id, videos),
+      );
+      await vi.runAllTimersAsync();
+      await done;
+      expect(attempts).toBe(3);
+      expect(seen.get("000265")?.length).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up and reports no videos once retries are exhausted, e.g. for a dataset embargoed against the visitor", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const seen = new Map<string, ArchiveVideo[]>();
+      const done = sweepArchiveVideos(
+        [publicDandiset("000900")],
+        () => Promise.reject(new Error("HTTP 403")),
+        (dandiset, videos) => seen.set(dandiset.id, videos),
+      );
+      await vi.runAllTimersAsync();
+      await done;
+      expect(seen.get("000900")).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("asks the reader it is given, so an embargoed dataset can be read a different way", async () => {

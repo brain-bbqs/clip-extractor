@@ -1900,7 +1900,16 @@ async function refreshBrowse(): Promise<void> {
     const [pub, owned] = await Promise.all([listManifestObjects(signal).then(indexDandisets), listOwnedEmbargoed(signal)]);
     if (generation !== browseGeneration) return;
     current.datasets = mergeDandisets(pub, owned);
-    renderDandisetList();
+    // A dataset the visitor does not own but that is embargoed is indistinguishable, at this point,
+    // from an ordinary public one: the bucket lists its manifests too, just unreadable (see
+    // lib/archives.ts). Painting the list now would show it, name-less and badge-less, until the
+    // sweep below reads its file list and finds nothing. That window is normally too brief to
+    // notice, but a cold cache — incognito, a first visit, a cleared cache — stretches every read in
+    // the sweep from instant to a real network round trip, making the flash plainly visible. So the
+    // first paint is skipped whenever a sweep is about to run; sweepVideos paints once it knows which
+    // datasets actually hold video. The one exception is an archive too large to sweep at all, where
+    // there is nothing to wait for and a dataset answers for itself when it is opened.
+    if (!canSweep(current.datasets)) renderDandisetList();
     browseSay(browseCountLine(current));
     // A rebuild is a change of what can be seen, not a change of mind: whatever dataset was open
     // before is opened again, so signing in does not close it.
@@ -2006,8 +2015,9 @@ function videoCountLabel(count: number): string {
 /**
  * The datasets left visible. A dataset holding no video is never shown: this pane exists to pick a
  * video out of one, and a dataset that cannot offer one is a dead end. That is only knowable once
- * the sweep has read every file list, so before then — and on an archive too large to sweep at all
- * — every dataset is listed and a video-less one answers for itself when it is opened.
+ * the sweep has read every file list, so refreshBrowse holds the first paint back until the sweep
+ * finishes — on an archive too large to sweep at all, there is nothing to wait for, every dataset is
+ * listed up front, and a video-less one answers for itself when it is opened.
  */
 function visibleDandisets(current: BrowseState): ArchiveDandiset[] {
   const query = els.browseFilter.value.trim().toLowerCase();

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.20
+
+#### 🐛 Bug Fix
+
+- Fixed the browse pane briefly showing embargoed EMBER datasets nobody owns, and sometimes permanently hiding public ones, on a cold cache such as an incognito tab; the list now waits for the archive scan to confirm what is actually visible before it draws, and a dataset whose file list fails to load is retried before being treated as unreadable ([#40](https://github.com/brain-bbqs/clip-extractor/pull/40))
+
 ## 0.1.18
 
 #### 🐛 Bug Fix
