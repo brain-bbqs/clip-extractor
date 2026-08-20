@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0
+
+#### 🐛 Bug Fix
+
+- Fixed Browse EMBER showing embargoed datasets nobody owns while leaving out most of the actually-public ones; which datasets are public is now settled against the archive's own API instead of guessed from whether their file listing could be read off the public bucket, which turned out not to track embargo status at all ([#40](https://github.com/brain-bbqs/clip-extractor/pull/40))
+- A dataset's file list that fails to load during the archive scan is now retried a couple of times before being treated as unreadable, so a transient network hiccup does not permanently hide it ([#40](https://github.com/brain-bbqs/clip-extractor/pull/40))
+
 ## 0.1.18
 
 #### 🐛 Bug Fix

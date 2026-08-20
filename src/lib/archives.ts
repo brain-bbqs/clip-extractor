@@ -17,9 +17,13 @@ import { EMBER_INSTANCE } from "./instances";
 // datasets also reports each manifest's byte size, which is what lets the sweep below decide up
 // front whether scanning the whole archive is cheap or ruinous.
 //
-// An embargoed dataset is the one thing this file cannot see. Its manifests are listed in the
-// public bucket but refuse anonymous reads, which is the point of an embargo — so the datasets a
-// signed-in visitor owns are listed through the API instead, in lib/embargoed.ts.
+// An embargoed dataset is the one thing this file cannot see — or rather, cannot see correctly. Its
+// manifests are listed in the public bucket alongside everyone else's, and reading them does *not*
+// reliably fail the way an embargo is meant to enforce: the bucket's read permissions turned out not
+// to track the archive's own embargo state. So this file only discovers *candidate* datasets; which
+// of them are actually public is decided by lib/embargoed.ts's listPublicDandisetIds, against the
+// archive's own API, which is the one place that actually knows. The datasets a signed-in visitor
+// owns despite being embargoed are also listed through that same API.
 
 export interface PublicArchive {
   label: string;
@@ -151,10 +155,9 @@ export function indexDandisets(entries: readonly BucketEntry[]): ArchiveDandiset
 }
 
 /**
- * Merges the datasets a signed-in visitor owns into the public listing. An embargoed dataset is
- * listed in the public bucket too — only its manifests refuse to be read — so it would otherwise
- * appear twice, once as itself and once as a dataset that looks empty because nothing about it
- * could be read. The owned entry wins.
+ * Merges the datasets a signed-in visitor owns into the public listing. `pub` is expected to already
+ * be filtered down to what lib/embargoed.ts's listPublicDandisetIds confirmed is genuinely public, so
+ * a dataset embargoed against everyone but its owner only appears once it is merged in from `owned`.
  */
 export function mergeDandisets(pub: readonly ArchiveDandiset[], owned: readonly ArchiveDandiset[]): ArchiveDandiset[] {
   const byId = new Map(pub.map((d) => [d.id, d]));
@@ -275,6 +278,22 @@ export const SWEEP_BUDGET_BYTES = 32 * 1024 * 1024;
  * considerate client rather than about local work. */
 const SWEEP_CONCURRENCY = 8;
 
+/** Extra attempts at one dataset's read before its failure is trusted. A cold cache — incognito, a
+ * first visit, a cleared cache — turns every one of the SWEEP_CONCURRENCY-wide reads below into a
+ * fresh network round trip, which makes a transient timeout or hiccup far likelier than on a warm
+ * cache. Retrying a few times tells that apart from a read that keeps failing for a real reason (an
+ * embargoed dataset's manifest, which always refuses an anonymous read) without waiting so long that
+ * a genuinely broken dataset stalls the sweep. */
+const SWEEP_RETRIES = 2;
+
+function sweepRetryDelayMs(attempt: number): number {
+  return 300 * 2 ** attempt;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function sweepBytes(datasets: readonly ArchiveDandiset[]): number {
   return datasets.reduce((total, d) => total + d.manifestBytes, 0);
 }
@@ -285,8 +304,10 @@ export function canSweep(datasets: readonly ArchiveDandiset[]): boolean {
 
 /**
  * Reads every dataset's file list and reports the videos it holds, calling `onDataset` as each one
- * lands so a caller can fill a list in as it goes. A dataset whose list cannot be read reports no
- * videos rather than failing the sweep.
+ * lands so a caller can fill a list in as it goes. A dataset whose list still cannot be read after
+ * SWEEP_RETRIES retries reports no videos rather than failing the sweep — the caller (see
+ * visibleDandisets in main.ts) treats that identically to a dataset that genuinely holds none, which
+ * is also how an embargoed dataset nobody owns ends up hidden: its manifest read never succeeds.
  *
  * `read` is passed in rather than fixed, because a public dataset's file list comes from a manifest
  * on the bucket and an embargoed one's comes from the API — and the pane holds both in one list.
@@ -299,11 +320,18 @@ export async function sweepArchiveVideos(
 ): Promise<void> {
   await runQueue(datasets, SWEEP_CONCURRENCY, async (dandiset) => {
     let videos: ArchiveVideo[] = [];
-    try {
-      videos = await read(dandiset, signal);
-    } catch (e) {
-      if (signal?.aborted) throw e;
-      console.warn(`Could not read the file list of EMBER dandiset ${dandiset.id}:`, e);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        videos = await read(dandiset, signal);
+        break;
+      } catch (e) {
+        if (signal?.aborted) throw e;
+        if (attempt >= SWEEP_RETRIES) {
+          console.warn(`Could not read the file list of EMBER dandiset ${dandiset.id}:`, e);
+          break;
+        }
+        await sleep(sweepRetryDelayMs(attempt));
+      }
     }
     onDataset(dandiset, videos);
   });

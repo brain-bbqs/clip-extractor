@@ -69,6 +69,27 @@ async function stubBucket(page: Page): Promise<void> {
     if (url.pathname.endsWith("/assets.jsonld")) return json(assetsJson(dataset.paths));
     return route.continue();
   });
+  await stubPublicDandisetList(
+    page,
+    PUBLIC_DATASETS.map((d) => d.id),
+  );
+}
+
+/**
+ * Serves the archive's anonymous dandiset listing — the API call that actually decides which bucket
+ * candidates are public (see lib/embargoed.ts's listPublicDandisetIds). Every spec that reaches the
+ * real refreshBrowse path needs this stubbed, or the pane's request for it either falls through to
+ * stubSignedIn's catch-all (answering `{}`, and so seeing no public datasets at all) or, with no API
+ * route stubbed at all, escapes to the real network.
+ */
+async function stubPublicDandisetList(page: Page, ids: readonly string[]): Promise<void> {
+  await page.route(`${API}/dandisets/?page_size=1000`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: ids.map((identifier) => ({ identifier })), next: null }),
+    }),
+  );
 }
 
 /** Signs the page in and stubs the API calls the browse pane makes against that session. */
@@ -77,6 +98,12 @@ async function stubSignedIn(page: Page): Promise<void> {
     const url = route.request().url();
     const json = (body: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
     if (url.includes("/users/me/")) return json({ username: "ada-lovelace", name: "Ada Lovelace" });
+    // Registered after stubBucket's own route for the same URL, so this one wins — answer it the
+    // same way rather than falling through to the catch-all below, which would answer `{}` and wipe
+    // out every public dataset's visibility.
+    if (url.includes("/dandisets/?page_size=1000")) {
+      return json({ results: PUBLIC_DATASETS.map((d) => ({ identifier: d.id })), next: null });
+    }
     if (url.includes("/dandisets/?user=me")) {
       return json({
         results: [
@@ -190,6 +217,10 @@ test("an archive too large to scan wholesale lists everything and reads a file l
     if (url.pathname.endsWith("/assets.jsonld")) return json(assetsJson(dataset.paths));
     return route.continue();
   });
+  await stubPublicDandisetList(
+    page,
+    PUBLIC_DATASETS.map((d) => d.id),
+  );
   await page.goto("/");
   await page.locator('#srcSeg button[data-src="browse"]').click();
 
@@ -264,6 +295,7 @@ test("a video in a container that cannot stream is marked in the listing and ref
     }
     return route.continue();
   });
+  await stubPublicDandisetList(page, [dataset.id]);
   await page.goto("/");
 
   await page.locator('#srcSeg button[data-src="browse"]').click();
@@ -306,6 +338,7 @@ test("a second refusal replaces the first, rather than being read beside it", as
     if (url.pathname.startsWith("/blobs/")) return route.fulfill({ status: 404, contentType: "text/plain", body: "gone" });
     return route.continue();
   });
+  await stubPublicDandisetList(page, [dataset.id]);
   await page.goto("/");
 
   await page.locator('#srcSeg button[data-src="browse"]').click();
@@ -346,6 +379,9 @@ test("an embargoed video the archive will not hand out says so, and leaves the p
 
 test("an unreachable bucket is reported instead of an empty archive", async ({ page }) => {
   await page.route(`${BUCKET}/**`, (route) => route.fulfill({ status: 503, contentType: "text/plain", body: "" }));
+  // Never actually consulted — the bucket listing is what fails the pane — but stubbed anyway so
+  // this run's request for it does not escape to the real network.
+  await stubPublicDandisetList(page, []);
   await page.goto("/");
   await page.locator('#srcSeg button[data-src="browse"]').click();
   await expect(page.locator("#browseStatus")).toContainText("Could not read the EMBER archive");

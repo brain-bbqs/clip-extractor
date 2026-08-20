@@ -65,7 +65,13 @@ import {
   type ArchiveDandiset,
   type ArchiveVideo,
 } from "./lib/archives";
-import { isAssetDownloadUrl, listEmbargoedVideos, listOwnedEmbargoedDandisets, resolveEmbargoedStreamUrl } from "./lib/embargoed";
+import {
+  isAssetDownloadUrl,
+  listEmbargoedVideos,
+  listOwnedEmbargoedDandisets,
+  listPublicDandisetIds,
+  resolveEmbargoedStreamUrl,
+} from "./lib/embargoed";
 import { loadCachedNames, saveCachedNames } from "./lib/archiveNames";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
 import {
@@ -1895,10 +1901,17 @@ async function refreshBrowse(): Promise<void> {
 
   try {
     if (oauthTokens) await ensureFreshOAuth();
-    // The public listing and the signed-in visitor's own datasets are independent reads, so they
-    // run together; only the bucket listing is allowed to fail the whole pane.
-    const [pub, owned] = await Promise.all([listManifestObjects(signal).then(indexDandisets), listOwnedEmbargoed(signal)]);
+    // Three independent reads, run together; only the bucket listing is allowed to fail the whole
+    // pane. `publicIds` is what actually decides which bucket candidates are shown — see
+    // lib/embargoed.ts's listPublicDandisetIds for why the bucket listing alone cannot be trusted
+    // with that.
+    const [candidates, owned, publicIds] = await Promise.all([
+      listManifestObjects(signal).then(indexDandisets),
+      listOwnedEmbargoed(signal),
+      listPublicDandisetIds(browseConfig(), signal),
+    ]);
     if (generation !== browseGeneration) return;
+    const pub = candidates.filter((d) => publicIds.has(d.id));
     current.datasets = mergeDandisets(pub, owned);
     renderDandisetList();
     browseSay(browseCountLine(current));
@@ -2006,8 +2019,10 @@ function videoCountLabel(count: number): string {
 /**
  * The datasets left visible. A dataset holding no video is never shown: this pane exists to pick a
  * video out of one, and a dataset that cannot offer one is a dead end. That is only knowable once
- * the sweep has read every file list, so before then — and on an archive too large to sweep at all
- * — every dataset is listed and a video-less one answers for itself when it is opened.
+ * the sweep has read every file list, so before then — and on an archive too large to sweep at all —
+ * every dataset is listed and a video-less one answers for itself when it is opened. Which datasets
+ * are candidates at all (public vs. embargoed) is settled earlier, in refreshBrowse, before any of
+ * this ever runs.
  */
 function visibleDandisets(current: BrowseState): ArchiveDandiset[] {
   const query = els.browseFilter.value.trim().toLowerCase();

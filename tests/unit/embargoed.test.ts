@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isAssetDownloadUrl, listEmbargoedVideos, listOwnedEmbargoedDandisets, resolveEmbargoedStreamUrl } from "../../src/lib/embargoed";
+import {
+  isAssetDownloadUrl,
+  listEmbargoedVideos,
+  listOwnedEmbargoedDandisets,
+  listPublicDandisetIds,
+  resolveEmbargoedStreamUrl,
+} from "../../src/lib/embargoed";
 import type { ArchiveConfig } from "../../src/lib/types";
 
 const cfg: ArchiveConfig = {
@@ -83,6 +89,35 @@ describe("listOwnedEmbargoedDandisets", () => {
   it("has nothing to offer when the visitor owns nothing embargoed", async () => {
     stub([{ identifier: "000265", embargo_status: "OPEN", draft_version: { name: "Public" } }]);
     expect(await listOwnedEmbargoedDandisets(cfg, "ada")).toEqual([]);
+  });
+});
+
+describe("listPublicDandisetIds", () => {
+  it("collects every identifier across pages, calling anonymously even when the visitor is signed in", async () => {
+    const fetchMock = vi.fn((input: string) =>
+      Promise.resolve(
+        String(input).includes("page=2")
+          ? jsonResponse({ results: [{ identifier: "000003" }], next: null })
+          : jsonResponse({
+              results: [{ identifier: "000001" }, { identifier: "000002" }],
+              next: "https://api.example.org/api/dandisets/?page=2",
+            }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await listPublicDandisetIds(cfg)).toEqual(new Set(["000001", "000002", "000003"]));
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit | undefined)?.headers).not.toHaveProperty("Authorization");
+    }
+  });
+
+  it("stops rather than following a next page pointing at another host", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(jsonResponse({ results: [{ identifier: "000001" }], next: "https://elsewhere.example/api/dandisets/" })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await listPublicDandisetIds(cfg)).toEqual(new Set(["000001"]));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

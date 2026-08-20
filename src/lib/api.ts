@@ -12,7 +12,12 @@ export async function apiFetch<T = unknown>(
   path: string,
   { method = "GET", json }: ApiFetchOptions = {},
 ): Promise<T | null> {
-  const headers: Record<string, string> = { Authorization: `Bearer ${cfg.accessToken}` };
+  // Omitted rather than sent empty: an anonymous call (no `accessToken`) has to reach the archive's
+  // public endpoints as a real anonymous request. `Authorization: Bearer ` with nothing after it is
+  // still a credential as far as the archive's auth middleware is concerned — it rejects the empty
+  // token outright instead of falling back to anonymous access, which would 401 every signed-out
+  // caller of apiFetch, including the public dandiset listing in lib/archives.ts.
+  const headers: Record<string, string> = cfg.accessToken ? { Authorization: `Bearer ${cfg.accessToken}` } : {};
   let body: string | undefined;
   if (json !== undefined) {
     headers["Content-Type"] = "application/json";
