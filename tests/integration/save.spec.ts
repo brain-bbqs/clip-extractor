@@ -104,8 +104,12 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   expect(originalSidecar.GeneratedBy).toBeUndefined();
 
   const rootDescription = JSON.parse(entries[4].text) as Record<string, unknown>;
-  expect(rootDescription.DatasetType).toBe("raw");
-  expect((rootDescription.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
+  // "study": this root organizes sourcedata/rawbids/ (raw) and derivatives/ (derived) together.
+  expect(rootDescription.DatasetType).toBe("study");
+  expect(rootDescription.Name).toMatch(/^Frame extracted using the Clip Extractor on \d{4}-\d{2}-\d{2}T/);
+  const generatedBy = rootDescription.GeneratedBy as { Name: string; SourceVideo: { filename: string } }[];
+  expect(generatedBy[0].Name).toBe("clip-extractor");
+  expect(generatedBy[0].SourceVideo.filename).toBe("file_example_480 - Copy.webm");
   const derivativesDescription = JSON.parse(entries[5].text) as Record<string, unknown>;
   expect(derivativesDescription.DatasetType).toBe("derivative");
   // sourcedata/rawbids's own — DatasetType: "raw" too, so that subtree validates independently.

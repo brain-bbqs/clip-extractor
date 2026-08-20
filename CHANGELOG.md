@@ -4,7 +4,7 @@
 
 #### 🚀 Enhancement
 
-- Save and Upload now write a BIDS-Study-shaped tree instead of a single ad hoc folder: the source video mirrors the dandiset's own subject/session under `sourcedata/rawbids/` (its own valid raw BIDS dataset), and the extracted clip or frame, its pose overlay, and any `.slp` sit under `derivatives/clip-extractor/`, named per BEP047's entities with BEP028-style provenance in their sidecars and in `dataset_description.json` ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- Save and Upload now write a BIDS-Study-shaped tree instead of a single ad hoc folder: a root `dataset_description.json` (`DatasetType: "study"`) organizes the source video under `sourcedata/rawbids/` (its own valid raw BIDS dataset) and the extracted clip or frame, its pose overlay, and any `.slp` under `derivatives/clip-extractor/`, named per BEP047's entities with BEP028-style provenance — naming the source video too — in their sidecars and in every `dataset_description.json` ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 
 ## 1.0.0
 

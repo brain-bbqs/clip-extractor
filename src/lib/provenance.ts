@@ -2,7 +2,7 @@ import { version as TOOL_VERSION } from "../../package.json";
 import type { BlurRegion } from "./blur";
 import type { ArchiveUser } from "./users";
 import { DERIVATIVES_PIPELINE } from "./bidsPath";
-import { buildGeneratedByEntry, type GeneratedByEntry } from "./generatedBy";
+import { buildGeneratedByEntry, type GeneratedByEntry, type GeneratedBySourceVideo } from "./generatedBy";
 
 // A small sidecar written beside every upload, so a clip found later in the archive can be traced
 // back to who made it, which video it came from, and exactly which frames it covers — even when
@@ -205,6 +205,23 @@ export interface ProvenanceInput {
 
 function checksum(value: string | null): ProvenanceChecksum | null {
   return value ? { algorithm: "dandi:dandi-etag", value } : null;
+}
+
+/** As much as is known about the source video, in the shape `lib/generatedBy.ts`'s `GeneratedByEntry`
+ * carries — the same values `buildProvenance`'s own `source_video` block records, so the two never
+ * drift apart. */
+export function buildGeneratedBySourceVideo(input: ProvenanceInput): GeneratedBySourceVideo {
+  return {
+    filename: input.source.filename,
+    url: input.source.url,
+    size_bytes: input.source.sizeBytes,
+    checksum: checksum(input.source.checksum),
+    checksum_unavailable: input.source.checksum ? null : input.source.checksumUnavailable,
+    fps: input.fps,
+    width: input.width,
+    height: input.height,
+    num_frames: input.totalFrames,
+  };
 }
 
 export function buildProvenance(input: ProvenanceInput): ProvenanceDocument {

@@ -3,6 +3,7 @@ import {
   PROVENANCE_FORMAT,
   buildBehSidecar,
   buildCompanionSidecar,
+  buildGeneratedBySourceVideo,
   buildProvenance,
   imageTechnicalFields,
   videoTechnicalFields,
@@ -271,6 +272,24 @@ describe("videoTechnicalFields / imageTechnicalFields", () => {
 
   it("carries only width and height for a still image", () => {
     expect(imageTechnicalFields(640, 480)).toEqual({ ImageWidth: 640, ImageHeight: 480 });
+  });
+});
+
+describe("buildGeneratedBySourceVideo", () => {
+  it("matches buildProvenance's own source_video block, in GeneratedByEntry's shape", () => {
+    const sourceVideo = buildGeneratedBySourceVideo(base);
+    const provenance = buildProvenance(base);
+    expect(sourceVideo).toEqual({
+      filename: provenance.source_video.filename,
+      url: provenance.source_video.url,
+      size_bytes: provenance.source_video.size_bytes,
+      checksum: provenance.source_video.checksum,
+      checksum_unavailable: provenance.source_video.checksum_unavailable,
+      fps: provenance.source_video.fps,
+      width: provenance.source_video.width,
+      height: provenance.source_video.height,
+      num_frames: provenance.source_video.num_frames,
+    });
   });
 });
 

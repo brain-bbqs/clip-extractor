@@ -54,14 +54,18 @@ export async function readExistingDatasetDescriptions(cfg: ArchiveConfig): Promi
 }
 
 /** Folds this delivery's `GeneratedBy` entry into all three files, creating any one fresh only when
- * `existing` says nothing is registered there yet. */
+ * `existing` says nothing is registered there yet. `mode`/`createdAt` name a freshly created root
+ * after this delivery (see lib/generatedBy.ts's `freshRootDescription`); `dandisetId` names a freshly
+ * created derivatives or sourcedata description. */
 export function mergedDatasetDescriptions(
   existing: ExistingDatasetDescriptions,
   entry: import("./generatedBy").GeneratedByEntry,
   dandisetId: string,
+  mode: "snippet" | "frame",
+  createdAt: Date,
 ): { root: DatasetDescription; derivatives: DatasetDescription; sourcedata: DatasetDescription } {
   return {
-    root: mergeGeneratedBy(existing.root, entry, freshRootDescription(dandisetId)),
+    root: mergeGeneratedBy(existing.root, entry, freshRootDescription(mode, createdAt)),
     derivatives: mergeGeneratedBy(existing.derivatives, entry, freshDerivativesDescription(dandisetId)),
     sourcedata: mergeGeneratedBy(existing.sourcedata, entry, freshSourcedataDescription(dandisetId)),
   };

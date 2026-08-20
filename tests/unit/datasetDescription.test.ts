@@ -47,6 +47,8 @@ describe("readExistingDatasetDescriptions", () => {
   });
 });
 
+const createdAt = new Date("2026-08-10T01:23:56.482Z");
+
 describe("mergedDatasetDescriptions", () => {
   it("builds all three files fresh when none exists yet", () => {
     const entry = buildGeneratedByEntry();
@@ -54,8 +56,17 @@ describe("mergedDatasetDescriptions", () => {
       { root: null, derivatives: null, sourcedata: null },
       entry,
       "000123",
+      "snippet",
+      createdAt,
     );
-    expect(root).toEqual({ Name: "000123", BIDSVersion: expect.any(String), DatasetType: "raw", GeneratedBy: [entry] });
+    // Named after this delivery, and DatasetType: "study" — this root organizes sourcedata/rawbids/
+    // (raw) and derivatives/ (derived) together, per BIDS's own convention for that.
+    expect(root).toEqual({
+      Name: "Snippet extracted using the Clip Extractor on 2026-08-10T01:23:56.482Z",
+      BIDSVersion: expect.any(String),
+      DatasetType: "study",
+      GeneratedBy: [entry],
+    });
     expect(derivatives.DatasetType).toBe("derivative");
     expect(derivatives.GeneratedBy).toEqual([entry]);
     // Its own DatasetType: "raw" too — sourcedata/rawbids/ is meant to validate as a complete raw
@@ -68,12 +79,14 @@ describe("mergedDatasetDescriptions", () => {
     const other = { Name: "other-tool", Version: "2.0.0" };
     const entry = buildGeneratedByEntry();
     const existing = {
-      root: { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "raw" as const, GeneratedBy: [other] },
+      root: { Name: "My Study", BIDSVersion: "1.9.0", DatasetType: "study" as const, GeneratedBy: [other] },
       derivatives: null,
       sourcedata: null,
     };
-    const { root } = mergedDatasetDescriptions(existing, entry, "000123");
+    const { root } = mergedDatasetDescriptions(existing, entry, "000123", "snippet", createdAt);
     expect(root.GeneratedBy).toEqual([other, entry]);
+    // Left as it was found, not renamed after this delivery.
+    expect(root.Name).toBe("My Study");
   });
 });
 

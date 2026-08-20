@@ -101,6 +101,7 @@ import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./
 import {
   buildBehSidecar,
   buildCompanionSidecar,
+  buildGeneratedBySourceVideo,
   imageTechnicalFields,
   videoTechnicalFields,
   type ProvenanceAnnotationsInput,
@@ -3361,7 +3362,8 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // writes them fresh; unpacked into a dataset that already has its own, a person reconciles them by
   // hand, same as any other file a bundle might collide with.
   const existing = (await params.existingDescriptions?.()) ?? { root: null, derivatives: null, sourcedata: null };
-  const descriptions = mergedDatasetDescriptions(existing, buildGeneratedByEntry(), destination?.dandisetId ?? "unknown");
+  const generatedByEntry = buildGeneratedByEntry(buildGeneratedBySourceVideo(provenanceInput));
+  const descriptions = mergedDatasetDescriptions(existing, generatedByEntry, destination?.dandisetId ?? "unknown", kind, createdAt);
   for (const [path, doc] of [
     [DATASET_DESCRIPTION_PATH, descriptions.root],
     [DERIVATIVES_DESCRIPTION_PATH, descriptions.derivatives],
