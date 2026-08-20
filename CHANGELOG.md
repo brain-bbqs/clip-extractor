@@ -5,7 +5,6 @@
 #### 🚀 Enhancement
 
 - Save and Upload now write a BIDS-Study-shaped tree instead of a single ad hoc folder: the source video mirrors the dandiset's own subject/session under `sourcedata/rawbids/` (its own valid raw BIDS dataset), and the extracted clip or frame, its pose overlay, and any `.slp` sit under `derivatives/clip-extractor/`, named per BEP047's entities with BEP028-style provenance in their sidecars and in `dataset_description.json` ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
-- Added `?test&mock_video&mock_sub=<label>[&mock_ses=<label>]` to preview the Save/Upload destination tree for a known archive subject and session ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 
 ## 1.0.0
 
