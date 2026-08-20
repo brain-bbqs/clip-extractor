@@ -17,9 +17,13 @@ import { EMBER_INSTANCE } from "./instances";
 // datasets also reports each manifest's byte size, which is what lets the sweep below decide up
 // front whether scanning the whole archive is cheap or ruinous.
 //
-// An embargoed dataset is the one thing this file cannot see. Its manifests are listed in the
-// public bucket but refuse anonymous reads, which is the point of an embargo — so the datasets a
-// signed-in visitor owns are listed through the API instead, in lib/embargoed.ts.
+// An embargoed dataset is the one thing this file cannot see — or rather, cannot see correctly. Its
+// manifests are listed in the public bucket alongside everyone else's, and reading them does *not*
+// reliably fail the way an embargo is meant to enforce: the bucket's read permissions turned out not
+// to track the archive's own embargo state. So this file only discovers *candidate* datasets; which
+// of them are actually public is decided by lib/embargoed.ts's listPublicDandisetIds, against the
+// archive's own API, which is the one place that actually knows. The datasets a signed-in visitor
+// owns despite being embargoed are also listed through that same API.
 
 export interface PublicArchive {
   label: string;
@@ -151,10 +155,9 @@ export function indexDandisets(entries: readonly BucketEntry[]): ArchiveDandiset
 }
 
 /**
- * Merges the datasets a signed-in visitor owns into the public listing. An embargoed dataset is
- * listed in the public bucket too — only its manifests refuse to be read — so it would otherwise
- * appear twice, once as itself and once as a dataset that looks empty because nothing about it
- * could be read. The owned entry wins.
+ * Merges the datasets a signed-in visitor owns into the public listing. `pub` is expected to already
+ * be filtered down to what lib/embargoed.ts's listPublicDandisetIds confirmed is genuinely public, so
+ * a dataset embargoed against everyone but its owner only appears once it is merged in from `owned`.
  */
 export function mergeDandisets(pub: readonly ArchiveDandiset[], owned: readonly ArchiveDandiset[]): ArchiveDandiset[] {
   const byId = new Map(pub.map((d) => [d.id, d]));

@@ -20,10 +20,37 @@ interface DandisetListItem {
 
 interface DandisetListResponse {
   results?: DandisetListItem[];
+  next?: string | null;
 }
 
 interface DandisetOwner {
   username?: string;
+}
+
+/** Pages read while listing every public dandiset before the walk gives up, at the page size below. */
+const MAX_PUBLIC_LIST_PAGES = 50;
+const PUBLIC_LIST_PAGE_SIZE = 1000;
+
+/**
+ * Every dandiset identifier the archive will hand an anonymous caller — the authoritative set of
+ * what is actually public. lib/archives.ts finds *candidate* datasets by listing the public S3
+ * bucket, but a dataset embargoed against everyone but its owner is listed there too, indistinguishable
+ * from a public one, because reading its manifest does not reliably fail the way an embargo is meant
+ * to enforce. The archive's own API is the one place that actually enforces the embargo: called with
+ * no token, exactly as a signed-out visitor would be, it only ever returns what is genuinely public,
+ * so a bucket candidate is trusted only once its identifier turns up here too.
+ */
+export async function listPublicDandisetIds(cfg: ArchiveConfig, signal?: AbortSignal): Promise<Set<string>> {
+  const anonymous: ArchiveConfig = { ...cfg, accessToken: "" };
+  const ids = new Set<string>();
+  let path: string | null = `/dandisets/?page_size=${PUBLIC_LIST_PAGE_SIZE}`;
+  for (let page = 0; path && page < MAX_PUBLIC_LIST_PAGES; page++) {
+    if (signal?.aborted) throw new Error("Listing cancelled.");
+    const body: DandisetListResponse = (await apiFetch<DandisetListResponse>(anonymous, path)) ?? {};
+    for (const d of body.results ?? []) ids.add(d.identifier);
+    path = body.next && body.next.startsWith(cfg.api) ? body.next.slice(cfg.api.length) : null;
+  }
+  return ids;
 }
 
 /**
