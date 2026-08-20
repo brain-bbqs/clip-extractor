@@ -107,9 +107,11 @@ test("a blurred selection is uploaded without the original, and says what it hid
   await page.locator("#btnUpload").click();
   await expect(page.locator("#uploadStatus")).toContainText("Upload complete", { timeout: 60_000 });
 
-  // The frame, its sidecar, and both dataset_description.json files — no original beside them.
-  expect(registered).toHaveLength(4);
-  expect(registered.some((path) => path.startsWith("sourcedata/"))).toBe(false);
+  // The frame, its sidecar, and all three dataset_description.json files — no actual sourcedata
+  // content beside them (sourcedata/rawbids's own description is still written, same as the other
+  // two: all three are dataset-level, not tied to what any one delivery actually put underneath).
+  expect(registered).toHaveLength(5);
+  expect(registered.some((path) => path.startsWith("sourcedata/") && !path.endsWith("dataset_description.json"))).toBe(false);
 
   const sidecar = uploaded.map((part) => part.toString()).find((body) => body.startsWith("{"));
   const provenance = (JSON.parse(sidecar!) as { "clip-extractor": unknown })["clip-extractor"] as {

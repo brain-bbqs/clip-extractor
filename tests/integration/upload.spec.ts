@@ -28,18 +28,27 @@ test("an upload registers the extract, the original and a matching sidecar", asy
   const status = page.locator("#uploadStatus");
   await expect(status).toContainText("Upload complete", { timeout: 60_000 });
 
-  expect(registered).toHaveLength(6);
+  expect(registered).toHaveLength(7);
   // The extract goes up first, then the original — with its own technical sidecar, since it's a real
-  // source file and not one this app produced — mirroring the same subject in `sourcedata/`, then the
-  // extract's own sidecar, then both `dataset_description.json` files this delivery's tool identity
-  // belongs in.
-  const [imagePath, originalPath, originalSidecarPath, sidecarPath, rootDescriptionPath, derivativesDescriptionPath] = registered;
+  // source file and not one this app produced — mirroring the same subject under
+  // `sourcedata/rawbids/`, then the extract's own sidecar, then all three `dataset_description.json`
+  // files this delivery's tool identity belongs in.
+  const [
+    imagePath,
+    originalPath,
+    originalSidecarPath,
+    sidecarPath,
+    rootDescriptionPath,
+    derivativesDescriptionPath,
+    sourcedataDescriptionPath,
+  ] = registered;
   expect(imagePath).toMatch(new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_image\\.png$`));
-  expect(originalPath).toBe("sourcedata/sub-unknown/beh/file_example_480-Copy.webm");
-  expect(originalSidecarPath).toBe("sourcedata/sub-unknown/beh/file_example_480-Copy.json");
+  expect(originalPath).toBe("sourcedata/rawbids/sub-unknown/beh/file_example_480-Copy.webm");
+  expect(originalSidecarPath).toBe("sourcedata/rawbids/sub-unknown/beh/file_example_480-Copy.json");
   expect(sidecarPath).toBe(imagePath.replace(/\.png$/, ".json"));
   expect(rootDescriptionPath).toBe("dataset_description.json");
   expect(derivativesDescriptionPath).toBe("derivatives/clip-extractor/dataset_description.json");
+  expect(sourcedataDescriptionPath).toBe("sourcedata/rawbids/dataset_description.json");
 
   // The uploaded bytes line up 1:1 with `registered`, so the extract's own sidecar is the second JSON
   // blob sent up, not the first — the original's technical sidecar goes up ahead of it.

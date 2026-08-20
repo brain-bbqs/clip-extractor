@@ -112,6 +112,7 @@ import {
   readExistingDatasetDescriptions,
   DATASET_DESCRIPTION_PATH,
   DERIVATIVES_DESCRIPTION_PATH,
+  SOURCEDATA_DESCRIPTION_PATH,
   type ExistingDatasetDescriptions,
 } from "./lib/datasetDescription";
 import { countLabeledFramesInRange } from "./lib/annotations";
@@ -3353,16 +3354,18 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
     digest: await checksumFor(sidecarBlob, sidecarLabel, onProgress),
   });
 
-  // Both `dataset_description.json` files this delivery's tool identity belongs in — the dataset
-  // root's own and the derivatives pipeline's — folded in rather than overwritten (see
-  // lib/datasetDescription.ts). A bundle has no archive to read an existing pair from, so it always
-  // writes a fresh one; unpacked into a dataset that already has its own, a person reconciles the two
-  // by hand, same as any other file a bundle might collide with.
-  const existing = (await params.existingDescriptions?.()) ?? { root: null, derivatives: null };
+  // Every `dataset_description.json` this delivery's tool identity belongs in — the dataset root's
+  // own, the derivatives pipeline's, and sourcedata/rawbids's own (so that subtree validates as a
+  // complete raw BIDS dataset by itself) — folded in rather than overwritten (see
+  // lib/datasetDescription.ts). A bundle has no archive to read existing ones from, so it always
+  // writes them fresh; unpacked into a dataset that already has its own, a person reconciles them by
+  // hand, same as any other file a bundle might collide with.
+  const existing = (await params.existingDescriptions?.()) ?? { root: null, derivatives: null, sourcedata: null };
   const descriptions = mergedDatasetDescriptions(existing, buildGeneratedByEntry(), destination?.dandisetId ?? "unknown");
   for (const [path, doc] of [
     [DATASET_DESCRIPTION_PATH, descriptions.root],
     [DERIVATIVES_DESCRIPTION_PATH, descriptions.derivatives],
+    [SOURCEDATA_DESCRIPTION_PATH, descriptions.sourcedata],
   ] as const) {
     const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
     await deliver({ blob, path, contentType: "application/json", label: path, digest: await checksumFor(blob, path, onProgress) });

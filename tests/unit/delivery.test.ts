@@ -2,22 +2,22 @@ import { describe, expect, it } from "vitest";
 import { defaultDeliveryMode, deliveryDirectories, fileBrowserUrl, uploadAssetPath } from "../../src/lib/delivery";
 import type { BehEntities } from "../../src/lib/bidsPath";
 
-const beh: BehEntities = { sub: "1", ses: null, recording: "20260809T224913Z" };
-const behWithSession: BehEntities = { sub: "1", ses: "2", recording: "20260809T224913Z" };
+const beh: BehEntities = { sub: "1", ses: null, known: true, recording: "unused", date: "20260809", time: "224913" };
+const behWithSession: BehEntities = { ...beh, ses: "2" };
 
 describe("deliveryDirectories", () => {
   it("puts the app's own output under derivatives/clip-extractor, mirroring sub/ses", () => {
     expect(deliveryDirectories(beh).derivatives).toBe("derivatives/clip-extractor/sub-1/beh");
   });
 
-  it("puts the original content under sourcedata, mirroring the same sub/ses", () => {
-    expect(deliveryDirectories(beh).sourcedata).toBe("sourcedata/sub-1/beh");
+  it("puts the original content under sourcedata/rawbids, mirroring the same sub/ses — a complete, independently valid raw BIDS dataset of its own", () => {
+    expect(deliveryDirectories(beh).sourcedata).toBe("sourcedata/rawbids/sub-1/beh");
   });
 
   it("includes the session entity in both directories when there is one", () => {
     expect(deliveryDirectories(behWithSession)).toEqual({
       derivatives: "derivatives/clip-extractor/sub-1/ses-2/beh",
-      sourcedata: "sourcedata/sub-1/ses-2/beh",
+      sourcedata: "sourcedata/rawbids/sub-1/ses-2/beh",
     });
   });
 });

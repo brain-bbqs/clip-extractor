@@ -1,9 +1,16 @@
 // The BEP047 layout this app writes into: an extracted behavioral recording lands under
 // sub-<label>/[ses-<label>/]beh/, once as a derivative (derivatives/clip-extractor/) and, when the
-// source travels along too, once more as sourcedata (sourcedata/) — see
+// source travels along too, once more under sourcedata/rawbids/ — see
 // https://github.com/bids-standard/bids-specification/pull/2231 ("BEP047: Audio/video recordings
 // for behavioral experiments") for the entity vocabulary (`sub`, `ses`, `recording`, and the
 // `_audio`/`_video`/`_audiovideo`/`_image` suffixes) this module builds names out of.
+//
+// `sourcedata/` itself is not validated against BIDS naming at all — the spec explicitly leaves it
+// free-form — but `rawbids/` underneath it is deliberately built as a complete, independently valid
+// `DatasetType: "raw"` BIDS dataset of its own (its own `dataset_description.json`, entity-named
+// files throughout), so that running a validator directly on `sourcedata/rawbids/` — not just on the
+// dandiset as a whole — passes. That is the point of the name: the *raw*, *BIDS*-shaped copy of what
+// this app read the selection out of, sitting in the place `sourcedata/` is for.
 //
 // BEP047 has no entity for "which delivery is this" — the closest fits (`run`, `split`) mean
 // something else — so every derivatives filename this app writes carries a disambiguating entity of
@@ -103,10 +110,13 @@ function subjectSessionSegments(e: BehEntities): string[] {
   return e.ses ? [`sub-${e.sub}`, `ses-${e.ses}`] : [`sub-${e.sub}`];
 }
 
+/** Every asset this app writes into `sourcedata/` sits under this raw-BIDS-copy pipeline name. */
+export const SOURCEDATA_RAWBIDS = "rawbids";
+
 /** Where the original source content sits, mirroring the dataset's own subject/session layout —
- * `sourcedata/sub-<label>/[ses-<label>/]beh`. */
+ * `sourcedata/rawbids/sub-<label>/[ses-<label>/]beh`. */
 export function sourcedataDirectory(e: BehEntities): string {
-  return ["sourcedata", ...subjectSessionSegments(e), "beh"].join("/");
+  return ["sourcedata", SOURCEDATA_RAWBIDS, ...subjectSessionSegments(e), "beh"].join("/");
 }
 
 /** Where this app's own output sits — `derivatives/clip-extractor/sub-<label>/[ses-<label>/]beh`. */

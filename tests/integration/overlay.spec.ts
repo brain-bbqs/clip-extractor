@@ -39,13 +39,14 @@ test("a loaded .slp adds the annotations file and a rendered overlay (with its o
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_image.png`,
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-overlay_image.png`,
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-overlay_image.json`,
-    "sourcedata/sub-unknown/beh/mice_new.webm",
-    "sourcedata/sub-unknown/beh/mice_new.json",
+    "sourcedata/rawbids/sub-unknown/beh/mice_new.webm",
+    "sourcedata/rawbids/sub-unknown/beh/mice_new.json",
     `${DERIVATIVES_DIR}/mice_new.tracked.slp`,
     `${DERIVATIVES_DIR}/mice_new.tracked.json`,
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
+    "sourcedata/rawbids/dataset_description.json",
   ]);
 });
 
@@ -75,5 +76,6 @@ test("the overlay is uploaded even when the original content is excluded", async
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
+    "sourcedata/rawbids/dataset_description.json",
   ]);
 });

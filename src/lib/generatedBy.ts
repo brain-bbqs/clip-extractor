@@ -88,3 +88,10 @@ export function freshDerivativesDescription(dandisetId: string): Omit<DatasetDes
     SourceDatasets: [{ URL: `.` }],
   };
 }
+
+/** `sourcedata/rawbids/dataset_description.json` — its own `DatasetType: "raw"`, so
+ * `sourcedata/rawbids/` validates on its own as a complete BIDS dataset, independent of the dandiset
+ * it sits inside (see lib/bidsPath.ts's module comment). */
+export function freshSourcedataDescription(dandisetId: string): Omit<DatasetDescription, "GeneratedBy"> {
+  return { Name: `${dandisetId} sourcedata (raw BIDS)`, BIDSVersion: BIDS_VERSION, DatasetType: "raw" };
+}

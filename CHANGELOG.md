@@ -11,6 +11,7 @@
 - The source video uploaded or saved alongside a selection now gets its own technical sidecar JSON in `sourcedata/`, carrying the real duration, frame rate and dimensions already read off it when it was loaded ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - Added `?test&mock_video&mock_sub=<label>[&mock_ses=<label>]` to preview the Save/Upload destination tree for a known archive subject and session, alongside the existing `sub-unknown` fallback ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - When the source video's own subject and session are known (opened out of the archive rather than dropped locally), `derivatives/` files are now disambiguated by `date-`/`time-` entities instead of the compact `recording-` stamp, and the `sourcedata/` original carries no disambiguator at all, since re-delivering the same known video is meant to overwrite its one copy there rather than duplicate it ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- The original source video now lands under `sourcedata/rawbids/` rather than directly under `sourcedata/`, with its own `dataset_description.json` (`DatasetType: "raw"`), so that subtree validates as a complete, independent BIDS dataset by itself ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 
 ## 1.0.0
 

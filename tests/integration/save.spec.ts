@@ -38,7 +38,7 @@ function listTar(gzipped: Buffer): { path: string; size: number; text: string }[
   return entries;
 }
 
-test("a save writes a bundle holding the extract, the original, their sidecar and both dataset_description.json files", async ({
+test("a save writes a bundle holding the extract, the original, their sidecar and all three dataset_description.json files", async ({
   page,
 }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
@@ -74,11 +74,12 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   const recording = entries[0].path.match(/recording-(\d+)/)![1];
   expect(entries.map((e) => e.path)).toEqual([
     `${derivativesDir}/sub-unknown_recording-${recording}_image.png`,
-    "sourcedata/sub-unknown/beh/file_example_480-Copy.webm",
-    "sourcedata/sub-unknown/beh/file_example_480-Copy.json",
+    "sourcedata/rawbids/sub-unknown/beh/file_example_480-Copy.webm",
+    "sourcedata/rawbids/sub-unknown/beh/file_example_480-Copy.json",
     `${derivativesDir}/sub-unknown_recording-${recording}_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
+    "sourcedata/rawbids/dataset_description.json",
   ]);
   expect(entries[0].size).toBeGreaterThan(0);
 
@@ -92,7 +93,7 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   // The original rode along, checksummed exactly as an upload would have registered it.
   const source = provenance.source_video as Record<string, unknown>;
   expect(source.uploaded).toBe(true);
-  expect(source.asset_path).toBe("sourcedata/sub-unknown/beh/file_example_480-Copy.webm");
+  expect(source.asset_path).toBe("sourcedata/rawbids/sub-unknown/beh/file_example_480-Copy.webm");
   expect((source.checksum as { value: string }).value).toMatch(/^[0-9a-f]{32}-\d+$/);
 
   // The original's own sidecar carries its real technical properties, not a copy of the extract's.
@@ -107,9 +108,14 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   expect((rootDescription.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
   const derivativesDescription = JSON.parse(entries[5].text) as Record<string, unknown>;
   expect(derivativesDescription.DatasetType).toBe("derivative");
+  // sourcedata/rawbids's own — DatasetType: "raw" too, so that subtree validates independently.
+  const sourcedataDescription = JSON.parse(entries[6].text) as Record<string, unknown>;
+  expect(sourcedataDescription.DatasetType).toBe("raw");
 });
 
-test("leaving the original out saves the extract and its sidecar alone, plus both dataset_description.json files", async ({ page }) => {
+test("leaving the original out saves the extract and its sidecar alone, plus all three dataset_description.json files", async ({
+  page,
+}) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await page.goto("/");
 
@@ -125,6 +131,7 @@ test("leaving the original out saves the extract and its sidecar alone, plus bot
     entries[1].path,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
+    "sourcedata/rawbids/dataset_description.json",
   ]);
   expect(entries[0].path).toMatch(
     new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_image\\.png$`),
@@ -156,10 +163,11 @@ test("a known subject and session get date-/time- entities in derivatives, and n
   const entries = listTar(readFileSync((await download.path())!));
   expect(entries.map((e) => e.path)).toEqual([
     expect.stringMatching(/^derivatives\/clip-extractor\/sub-01\/ses-02\/beh\/sub-01_ses-02_date-\d{8}_time-\d{6}_image\.png$/),
-    "sourcedata/sub-01/ses-02/beh/test-injection-mock-video.webm",
-    "sourcedata/sub-01/ses-02/beh/test-injection-mock-video.json",
+    "sourcedata/rawbids/sub-01/ses-02/beh/test-injection-mock-video.webm",
+    "sourcedata/rawbids/sub-01/ses-02/beh/test-injection-mock-video.json",
     expect.stringMatching(/^derivatives\/clip-extractor\/sub-01\/ses-02\/beh\/sub-01_ses-02_date-\d{8}_time-\d{6}_image\.json$/),
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
+    "sourcedata/rawbids/dataset_description.json",
   ]);
 });

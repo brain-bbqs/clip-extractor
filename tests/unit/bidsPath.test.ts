@@ -106,13 +106,13 @@ const knownBeh: BehEntities = { sub: "1", ses: null, known: true, recording: "20
 const knownBehWithSession: BehEntities = { ...knownBeh, ses: "2" };
 
 describe("sourcedataDirectory / derivativesDirectory", () => {
-  it("mirror sub/ses under their own root", () => {
-    expect(sourcedataDirectory(knownBeh)).toBe("sourcedata/sub-1/beh");
+  it("mirror sub/ses under their own root — sourcedata under its rawbids subtree", () => {
+    expect(sourcedataDirectory(knownBeh)).toBe("sourcedata/rawbids/sub-1/beh");
     expect(derivativesDirectory(knownBeh)).toBe("derivatives/clip-extractor/sub-1/beh");
   });
 
   it("include the session entity when there is one", () => {
-    expect(sourcedataDirectory(knownBehWithSession)).toBe("sourcedata/sub-1/ses-2/beh");
+    expect(sourcedataDirectory(knownBehWithSession)).toBe("sourcedata/rawbids/sub-1/ses-2/beh");
     expect(derivativesDirectory(knownBehWithSession)).toBe("derivatives/clip-extractor/sub-1/ses-2/beh");
   });
 });
