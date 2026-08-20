@@ -51,6 +51,15 @@ export interface TestInjection {
   /** Makes the synthesized pose deliberately describe a different recording than the mock video, so
    * the SLEAP card's mismatch refusal can be previewed instead of a clean overlay. */
   mismatch: boolean;
+  /** Makes the mock video look, to `lib/bidsPath.ts`'s `behEntities`, as if it were opened out of the
+   * archive at `sub-<mockSub>/[ses-<mockSes>/]...` — so the Save/Upload preview name and the tree a
+   * real Save actually writes can be eyeballed for a known subject (and session) rather than only the
+   * `sub-unknown` fallback a locally dropped file gets. Null (the fallback) is itself a real,
+   * worthwhile case: it is what every video dropped from disk, rather than opened from Browse EMBER,
+   * produces. Only meaningful with `mockVideoFrames`/`mockVideoLongSeconds` set. */
+  mockSub: string | null;
+  /** The session half of the same fake path; only meaningful alongside `mockSub`. */
+  mockSes: string | null;
   /** Fakes the EMBER browse pane's dataset/video listing with this many video files spread across a
    * handful of fake datasets, bypassing `listManifestObjects`/`listOwnedEmbargoedDandisets`. Null
    * when `remote_listing` was not given. */
@@ -67,6 +76,8 @@ const INERT: TestInjection = {
   mockVideoLongSeconds: null,
   mockSlp: false,
   mismatch: false,
+  mockSub: null,
+  mockSes: null,
   remoteListing: null,
 };
 
@@ -98,8 +109,24 @@ export function readTestInjection(search: string): TestInjection | null {
     mockVideoLongSeconds: mockVideoLongRaw !== null && mockVideoLongRaw > 0 ? mockVideoLongRaw : mockVideoLongRaw !== null ? 14400 : null,
     mockSlp: params.has("mock_slp"),
     mismatch: params.has("mismatch"),
+    mockSub: params.get("mock_sub"),
+    mockSes: params.get("mock_ses"),
     remoteListing: params.has("remote_listing") ? intParam(params, "remote_listing", 8) : null,
   };
+}
+
+/**
+ * The fake archive-relative path {@link applyMockVideo} hands to `loadVideo` so the mock video reads,
+ * to `behEntities`, exactly as a real archive video at `sub-<mockSub>/[ses-<mockSes>/]...` would. Null
+ * when `mock_sub` was not given, which leaves the mock video as it always was — sourced from nowhere
+ * the archive names, falling back to `sub-unknown`.
+ */
+export function mockSourcePath(injection: TestInjection, filename: string): string | null {
+  if (!injection.mockSub) return null;
+  const segments = [`sub-${injection.mockSub}`];
+  if (injection.mockSes) segments.push(`ses-${injection.mockSes}`);
+  segments.push(filename);
+  return segments.join("/");
 }
 
 /** Same as {@link readTestInjection}, for a caller that always wants a value rather than null —

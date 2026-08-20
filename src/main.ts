@@ -124,6 +124,7 @@ import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type U
 import {
   fakeArchiveBrowse,
   fakeIncomingDatasets,
+  mockSourcePath,
   readTestInjection,
   synthesizeLongVideoFile,
   synthesizeVideoFile,
@@ -3159,12 +3160,28 @@ async function deliverOriginalVideo(
     label,
     digest: originalDigest,
   });
+
+  // The technical properties of the source itself — already read off its own container when it was
+  // loaded (see loadVideo), not re-derived here — so the raw file sitting in `sourcedata` carries the
+  // same kind of sidecar a BEP047 media file does, without needing a probing library of its own.
+  await deliverSidecar(deliver, directory, original.name, onProgress, {
+    description: "The untouched source video this delivery's selection was cut from.",
+    technical: videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames),
+    sources: [],
+    generatedByTool: false,
+  });
   return { original, originalDigest, originalPath };
 }
 
-/** Same for a loaded `.slp`: it is original content too, so it rides along on the same toggle, and is
- * checksummed either way. */
-async function deliverAnnotationFile(deliver: DeliverFile, directory: string, onProgress: ExtractProgress): Promise<DeliveredSlp | null> {
+/** Same for a loaded `.slp`: it rides along on the same toggle and is checksummed either way. Placed
+ * in `derivatives/` alongside the extract, not `sourcedata/`: it is itself the output of a pose
+ * estimation pipeline run over the source video, not the raw recording. */
+async function deliverAnnotationFile(
+  deliver: DeliverFile,
+  directory: string,
+  sourcePath: string | null,
+  onProgress: ExtractProgress,
+): Promise<DeliveredSlp | null> {
   const slpFile = state.slpFile;
   if (!slpFile) return null;
   const label = "the annotations";
@@ -3172,7 +3189,36 @@ async function deliverAnnotationFile(deliver: DeliverFile, directory: string, on
   if (!els.uploadOriginal.checked) return { digest, path: null };
   const path = uploadAssetPath(directory, verbatimFilename(slpFile.name));
   await deliver({ blob: slpFile, path, contentType: slpFile.type || "application/octet-stream", label, digest });
+  await deliverSidecar(deliver, directory, slpFile.name, onProgress, {
+    description: "SLEAP pose annotations loaded alongside the source video, covering (at least) this delivery's selection.",
+    sources: sourcePath ? [sourcePath] : [],
+    generatedByTool: false,
+  });
   return { digest, path };
+}
+
+/** Writes a companion sidecar beside an already-delivered file: same base name, `.json` in place of
+ * its extension. Shared by the source video and the `.slp`, neither of which is itself a BEP047
+ * media file this app produced — see lib/provenance.ts's buildCompanionSidecar. */
+async function deliverSidecar(
+  deliver: DeliverFile,
+  directory: string,
+  filename: string,
+  onProgress: ExtractProgress,
+  input: Parameters<typeof buildCompanionSidecar>[0],
+): Promise<void> {
+  const sidecar = buildCompanionSidecar(input);
+  const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
+  const sidecarName = `${verbatimFilename(filename).replace(/\.[^./]+$/, "")}.json`;
+  const sidecarPath = uploadAssetPath(directory, sidecarName);
+  const label = `${filename}'s sidecar`;
+  await deliver({
+    blob: sidecarBlob,
+    path: sidecarPath,
+    contentType: "application/json",
+    label,
+    digest: await checksumFor(sidecarBlob, label, onProgress),
+  });
 }
 
 /** Hashes one file for delivery, reporting progress on whichever route's status line is listening. */
@@ -3239,7 +3285,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
 
   const overlay = await deliverOverlay(deliver, directories.derivatives, mediaPath, entities, backend, blur, onProgress);
   const { original, originalDigest, originalPath } = await deliverOriginalVideo(deliver, directories.sourcedata, onProgress);
-  const slp = await deliverAnnotationFile(deliver, directories.sourcedata, onProgress);
+  const slp = await deliverAnnotationFile(deliver, directories.derivatives, originalPath, onProgress);
 
   const provenanceInput: ProvenanceInput = {
     createdAt,
@@ -3544,13 +3590,13 @@ async function initFromUrl(): Promise<void> {
 async function applyMockVideo(): Promise<void> {
   if (testInjection?.mockVideoFrames != null) {
     const file = await synthesizeVideoFile(testInjection.mockVideoFrames);
-    await loadVideo(file, file.name);
+    await loadVideo(file, file.name, null, undefined, mockSourcePath(testInjection, file.name));
     if (testInjection.mockSlp) applyMockSlp();
     return;
   }
   if (testInjection?.mockVideoLongSeconds != null) {
     const file = await synthesizeLongVideoFile(testInjection.mockVideoLongSeconds);
-    await loadVideo(file, file.name);
+    await loadVideo(file, file.name, null, undefined, mockSourcePath(testInjection, file.name));
   }
 }
 

@@ -28,21 +28,30 @@ test("an upload registers the extract, the original and a matching sidecar", asy
   const status = page.locator("#uploadStatus");
   await expect(status).toContainText("Upload complete", { timeout: 60_000 });
 
-  expect(registered).toHaveLength(5);
-  // The extract goes up first, then the original (mirroring the same subject in `sourcedata/`), then
-  // the sidecar naming both, then both `dataset_description.json` files this delivery's tool
-  // identity belongs in.
-  const [imagePath, originalPath, sidecarPath, rootDescriptionPath, derivativesDescriptionPath] = registered;
+  expect(registered).toHaveLength(6);
+  // The extract goes up first, then the original — with its own technical sidecar, since it's a real
+  // source file and not one this app produced — mirroring the same subject in `sourcedata/`, then the
+  // extract's own sidecar, then both `dataset_description.json` files this delivery's tool identity
+  // belongs in.
+  const [imagePath, originalPath, originalSidecarPath, sidecarPath, rootDescriptionPath, derivativesDescriptionPath] = registered;
   expect(imagePath).toMatch(new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_image\\.png$`));
   expect(originalPath).toBe("sourcedata/sub-unknown/beh/file_example_480-Copy.webm");
+  expect(originalSidecarPath).toBe("sourcedata/sub-unknown/beh/file_example_480-Copy.json");
   expect(sidecarPath).toBe(imagePath.replace(/\.png$/, ".json"));
   expect(rootDescriptionPath).toBe("dataset_description.json");
   expect(derivativesDescriptionPath).toBe("derivatives/clip-extractor/dataset_description.json");
 
+  // The uploaded bytes line up 1:1 with `registered`, so the extract's own sidecar is the second JSON
+  // blob sent up, not the first — the original's technical sidecar goes up ahead of it.
+  const jsonBodies = uploaded.map((part) => part.toString()).filter((body) => body.startsWith("{"));
+  const originalSidecar = JSON.parse(jsonBodies[0]) as Record<string, unknown>;
+  expect(originalSidecar.Description).toBe("The untouched source video this delivery's selection was cut from.");
+  expect(originalSidecar.GeneratedBy).toBeUndefined();
+
   // The sidecar that actually went up carries the description written for this selection, the
   // standard BEP047 technical keys, a BEP028 GeneratedBy entry, and this app's own full record
   // nested under its own key.
-  const sidecar = JSON.parse(uploaded.map((part) => part.toString()).find((body) => body.startsWith("{"))!) as Record<string, unknown>;
+  const sidecar = JSON.parse(jsonBodies[1]) as Record<string, unknown>;
   expect(sidecar.Description).toBe("Frame 5 is where the two tracks swap identities.");
   expect((sidecar.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
   const provenance = sidecar["clip-extractor"] as Record<string, unknown>;

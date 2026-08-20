@@ -2,20 +2,22 @@
 
 ## Live test injections
 
-| URL                                    | Expected Appearance                                      | Link                                                                               |
-| -------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `?test&signed_out`                     | Page as seen by a signed-out visitor                     | [Open](https://clip-extractor.brain-bbqs.org/?test&signed_out)                     |
-| `?test&num_datasets=0`                 | "Not added to any direct-upload datasets"                | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=0)                 |
-| `?test&num_datasets=1`                 | Single fake dataset, Upload enabled                      | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1)                 |
-| `?test&num_datasets=2`                 | Dropdown of 2 fake datasets                              | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=2)                 |
-| `?test&num_datasets=1&embargoed=false` | Non-embargoed fake dataset: error card, Upload disabled  | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1&embargoed=false) |
-| `?test&num_datasets=1&human_subjects`  | Flagged dataset: warning banner, blur tool, gated Upload | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1&human_subjects)  |
-| `?test&mock_video`                     | A synthesized 30-frame clip loaded, as if dropped        | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video)                     |
-| `?test&mock_video=200`                 | Same, 200 frames, enough to see the trim track           | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video=200)                 |
-| `?test&mock_video_long`                | A 4-hour clip: the sliding-window timeline and width     | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video_long)                |
-| `?test&mock_video&mock_slp`            | Loaded clip with a synthesized, matching pose overlay    | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp)            |
-| `?test&mock_video&mock_slp&mismatch`   | Same, but refused: the SLEAP card's mismatch state       | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp&mismatch)   |
-| `?test&remote_listing=12`              | Browse pane, 12 fake videos across 3 fake datasets       | [Open](https://clip-extractor.brain-bbqs.org/?test&remote_listing=12)              |
+| URL                                        | Expected Appearance                                        | Link                                                                                   |
+| ------------------------------------------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `?test&signed_out`                         | Page as seen by a signed-out visitor                       | [Open](https://clip-extractor.brain-bbqs.org/?test&signed_out)                         |
+| `?test&num_datasets=0`                     | "Not added to any direct-upload datasets"                  | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=0)                     |
+| `?test&num_datasets=1`                     | Single fake dataset, Upload enabled                        | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1)                     |
+| `?test&num_datasets=2`                     | Dropdown of 2 fake datasets                                | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=2)                     |
+| `?test&num_datasets=1&embargoed=false`     | Non-embargoed fake dataset: error card, Upload disabled    | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1&embargoed=false)     |
+| `?test&num_datasets=1&human_subjects`      | Flagged dataset: warning banner, blur tool, gated Upload   | [Open](https://clip-extractor.brain-bbqs.org/?test&num_datasets=1&human_subjects)      |
+| `?test&mock_video`                         | A synthesized 30-frame clip loaded, as if dropped          | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video)                         |
+| `?test&mock_video=200`                     | Same, 200 frames, enough to see the trim track             | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video=200)                     |
+| `?test&mock_video_long`                    | A 4-hour clip: the sliding-window timeline and width       | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video_long)                    |
+| `?test&mock_video&mock_slp`                | Loaded clip with a synthesized, matching pose overlay      | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp)                |
+| `?test&mock_video&mock_slp&mismatch`       | Same, but refused: the SLEAP card's mismatch state         | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp&mismatch)       |
+| `?test&remote_listing=12`                  | Browse pane, 12 fake videos across 3 fake datasets         | [Open](https://clip-extractor.brain-bbqs.org/?test&remote_listing=12)                  |
+| `?test&mock_video&mock_sub=01`             | Save preview named `sub-01_recording-…`, not `sub-unknown` | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_sub=01)             |
+| `?test&mock_video&mock_sub=01&mock_ses=02` | Same, with a `ses-02` entity too                           | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_sub=01&mock_ses=02) |
 
 **Safety**: `?test` alone, with none of the params below, is a no-op. Nothing here writes to real
 `localStorage`, nothing touches real sign-in tokens, and every fake id is chosen from a range no real
@@ -39,7 +41,13 @@ fixture, and loads it exactly as if it had been dropped onto the picker. It is t
 injection: the player, the timeline, the delivery panes and the SLEAP card are all only interesting
 once a video is on screen. Add `mock_slp` to also synthesize a matching pose model over it, drawn
 through the same overlay code a real `.slp` would be, or `mock_slp&mismatch` to make that pose
-describe a different recording, previewing the SLEAP card's mismatch refusal.
+describe a different recording, previewing the SLEAP card's mismatch refusal. Add `mock_sub` (and
+optionally `mock_ses`) to make the mock video look, to the BEP047 path/filename builders (see
+lib/bidsPath.ts), as if it were opened out of the archive at `sub-<mock_sub>/[ses-<mock_ses>/]…` —
+previewing the Save/Upload destination tree for a known subject (and session) rather than only the
+`sub-unknown` fallback a locally dropped file gets, which is itself worth trying plain: `mock_video`
+alone is that fallback case. Save works fully offline, so the resulting `.tar.gz` can be downloaded
+and unpacked to see the whole tree either way, without needing a real EMBER sign-in.
 
 **A long recording**: `mock_video_long` (optionally `=N` for the duration in seconds, default 14400,
 4 hours) previews the sliding-window timeline a recording past half an hour gets (see

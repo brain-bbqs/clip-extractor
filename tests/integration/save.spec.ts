@@ -66,21 +66,23 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
 
   const entries = listTar(readFileSync((await download.path())!));
   // The same files, in the same order, an upload would have written: the extract under
-  // `derivatives/clip-extractor/`, the original under `sourcedata/` (both mirroring the same
-  // fallback subject), the sidecar naming both, then both `dataset_description.json` files.
+  // `derivatives/clip-extractor/`, the original (and its own technical sidecar) under `sourcedata/`
+  // (both mirroring the same fallback subject), the extract's own sidecar, then both
+  // `dataset_description.json` files.
   const derivativesDir = entries[0].path.slice(0, entries[0].path.lastIndexOf("/"));
   expect(derivativesDir).toBe("derivatives/clip-extractor/sub-unknown/beh");
   const recording = entries[0].path.match(/recording-(\d+)/)![1];
   expect(entries.map((e) => e.path)).toEqual([
     `${derivativesDir}/sub-unknown_recording-${recording}_image.png`,
     "sourcedata/sub-unknown/beh/file_example_480-Copy.webm",
+    "sourcedata/sub-unknown/beh/file_example_480-Copy.json",
     `${derivativesDir}/sub-unknown_recording-${recording}_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
   ]);
   expect(entries[0].size).toBeGreaterThan(0);
 
-  const sidecar = JSON.parse(entries[2].text) as Record<string, unknown>;
+  const sidecar = JSON.parse(entries[3].text) as Record<string, unknown>;
   expect(sidecar.Description).toBe("The mouse leaves frame here — the tracker keeps a stale track.");
   const provenance = sidecar["clip-extractor"] as Record<string, unknown>;
   expect(provenance.format).toBe("clip-extractor-provenance/v1");
@@ -93,10 +95,17 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   expect(source.asset_path).toBe("sourcedata/sub-unknown/beh/file_example_480-Copy.webm");
   expect((source.checksum as { value: string }).value).toMatch(/^[0-9a-f]{32}-\d+$/);
 
-  const rootDescription = JSON.parse(entries[3].text) as Record<string, unknown>;
+  // The original's own sidecar carries its real technical properties, not a copy of the extract's.
+  const originalSidecar = JSON.parse(entries[2].text) as Record<string, unknown>;
+  expect(originalSidecar.Description).toBe("The untouched source video this delivery's selection was cut from.");
+  expect(originalSidecar.ImageWidth).toBe(320);
+  expect(originalSidecar.ImageHeight).toBe(240);
+  expect(originalSidecar.GeneratedBy).toBeUndefined();
+
+  const rootDescription = JSON.parse(entries[4].text) as Record<string, unknown>;
   expect(rootDescription.DatasetType).toBe("raw");
   expect((rootDescription.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
-  const derivativesDescription = JSON.parse(entries[4].text) as Record<string, unknown>;
+  const derivativesDescription = JSON.parse(entries[5].text) as Record<string, unknown>;
   expect(derivativesDescription.DatasetType).toBe("derivative");
 });
 

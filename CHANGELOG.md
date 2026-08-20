@@ -7,6 +7,9 @@
 - Save and Upload now write a BIDS-Study-shaped tree instead of a single ad hoc folder: the source video and any `.slp` mirror the dandiset's own subject/session under `sourcedata/`, and the extracted clip or frame, its pose overlay, and their sidecars sit under `derivatives/clip-extractor/`, named per BEP047's `sub-`/`ses-`/`recording-`/`desc-` entities ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - The description typed for a selection, and the rest of what this app has always recorded, now travels inside the extracted file's own BEP047 sidecar JSON rather than a separate provenance file, alongside a BEP028-style `GeneratedBy` entry ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - An upload now also folds this delivery's tool identity into the dandiset's own `dataset_description.json` and into `derivatives/clip-extractor/dataset_description.json`, creating either fresh only when nothing is registered there yet and leaving everything else in them untouched ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- A loaded `.slp` now lands under `derivatives/clip-extractor/` alongside the extract rather than `sourcedata/`, since it is itself the output of a pose-estimation pipeline run over the source video, not the raw recording ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- The source video uploaded or saved alongside a selection now gets its own technical sidecar JSON in `sourcedata/`, carrying the real duration, frame rate and dimensions already read off it when it was loaded ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- Added `?test&mock_video&mock_sub=<label>[&mock_ses=<label>]` to preview the Save/Upload destination tree for a known archive subject and session, alongside the existing `sub-unknown` fallback ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 
 ## 1.0.0
 

@@ -31,15 +31,18 @@ test("a loaded .slp adds the annotations file and a rendered overlay (with its o
   await page.locator("#btnUpload").click();
   await expect(page.locator("#uploadStatus")).toContainText("Upload complete", { timeout: 120_000 });
 
-  // The video and the .slp are the content this app was handed, so they sit under `sourcedata/`; the
-  // extract, its overlay and both their sidecars are what it produced, under `derivatives/`.
+  // The video is the only thing this app was handed untouched, so it alone sits under `sourcedata/`,
+  // with its own technical sidecar; the .slp is itself a pose-estimation pipeline's output, so it
+  // sits under `derivatives/` alongside the extract, its overlay, and all of their sidecars.
   const recording = registered[0].match(/recording-(\d+)/)![1];
   expect(registered).toEqual([
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_image.png`,
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-overlay_image.png`,
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-overlay_image.json`,
     "sourcedata/sub-unknown/beh/mice_new.webm",
-    "sourcedata/sub-unknown/beh/mice_new.tracked.slp",
+    "sourcedata/sub-unknown/beh/mice_new.json",
+    `${DERIVATIVES_DIR}/mice_new.tracked.slp`,
+    `${DERIVATIVES_DIR}/mice_new.tracked.json`,
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",

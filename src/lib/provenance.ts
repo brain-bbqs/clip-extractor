@@ -322,16 +322,20 @@ export function buildBehSidecar(input: ProvenanceInput, technical: VideoTechnica
   };
 }
 
-/** A lighter sidecar for a companion file — the pose overlay, or the original source copied
- * alongside its derivative — that only needs to name what it is and point back at the delivery's
- * primary sidecar rather than repeat that whole record a second time. */
+/** A lighter sidecar for a companion file — the pose overlay, the original source copied alongside
+ * its derivative, or a loaded `.slp` — that only needs to name what it is and point back at whatever
+ * it came from, rather than repeat the primary sidecar's whole record a second time. */
 export interface CompanionSidecarInput {
   description: string;
-  technical: VideoTechnicalFields | ImageTechnicalFields;
-  /** The asset path(s) this file was derived or copied from, relative to the dataset root. */
+  /** Omitted for a file BEP047 has no technical vocabulary for at all — a `.slp`, say — rather than
+   * for anything with real dimensions or a frame rate to report. */
+  technical?: VideoTechnicalFields | ImageTechnicalFields;
+  /** The asset path(s) this file was derived or copied from, relative to the dataset root; empty for
+   * the untouched source video itself, which has no upstream to name. */
   sources: string[];
   /** Whether this file was produced by this tool (the overlay) or merely copied by it (the original
-   * source) — a copy carries no `GeneratedBy`, since the tool did not generate its content. */
+   * source, or a `.slp` this app did not generate) — a copy carries no `GeneratedBy`, since the tool
+   * did not generate its content. */
   generatedByTool: boolean;
 }
 
