@@ -1,6 +1,6 @@
 {
   "name": "clip-extractor",
-  "version": "0.1.20",
+  "version": "1.0.0",
   "description": "A single-page video player for selecting a frame range and extracting it as an upload-ready payload, built on sleap-io.js and ffmpeg.wasm.",
   "type": "module",
   "license": "MIT",
