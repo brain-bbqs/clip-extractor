@@ -1,6 +1,8 @@
 import { version as TOOL_VERSION } from "../../package.json";
 import type { BlurRegion } from "./blur";
 import type { ArchiveUser } from "./users";
+import { DERIVATIVES_PIPELINE } from "./bidsPath";
+import { buildGeneratedByEntry, type GeneratedByEntry } from "./generatedBy";
 
 // A small sidecar written beside every upload, so a clip found later in the archive can be traced
 // back to who made it, which video it came from, and exactly which frames it covers — even when
@@ -263,4 +265,82 @@ export function buildProvenance(input: ProvenanceInput): ProvenanceDocument {
       labeled_frames_in_selection: input.annotations.labeledFramesInSelection,
     },
   };
+}
+
+// ------------------------------------------------------------------
+// BEP047 sidecar JSON — the file a `_video`/`_image` asset actually carries next to it.
+// ------------------------------------------------------------------
+//
+// BEP047 (https://github.com/bids-standard/bids-specification/pull/2231) defines a handful of
+// standard technical keys for a behavioral recording's sidecar (`RecordingDuration`,
+// `VideoFrameRate`, `ImageWidth`, …) but says nothing about the rich, tool-specific detail this app
+// has always recorded — what was blurred, who uploaded it, which archive asset the source checksums
+// against. Rather than inventing a second file for that (the very thing this shape is meant to
+// avoid — see CLAUDE.md's brief for this change), it travels in the same sidecar, namespaced under
+// this app's own key so nothing here is mistaken for part of the BEP047 vocabulary itself.
+
+/** The subset of BEP047's technical keys that make sense for a video (or the derivatives entity
+ * that produced one) — omitted entirely for a still frame, whose sidecar uses
+ * {@link imageTechnicalFields} instead. */
+export interface VideoTechnicalFields {
+  RecordingDuration: number;
+  VideoFrameRate: number;
+  VideoFrameCount: number;
+  ImageWidth: number;
+  ImageHeight: number;
+}
+
+export function videoTechnicalFields(fps: number, width: number, height: number, numFrames: number): VideoTechnicalFields {
+  return {
+    RecordingDuration: fps > 0 ? numFrames / fps : 0,
+    VideoFrameRate: fps,
+    VideoFrameCount: numFrames,
+    ImageWidth: width,
+    ImageHeight: height,
+  };
+}
+
+export interface ImageTechnicalFields {
+  ImageWidth: number;
+  ImageHeight: number;
+}
+
+export function imageTechnicalFields(width: number, height: number): ImageTechnicalFields {
+  return { ImageWidth: width, ImageHeight: height };
+}
+
+/** The full sidecar for the delivery's primary output — the extracted clip or frame itself. Standard
+ * BEP047 keys and `GeneratedBy` (BEP028) at the top level, for anything reading only the vocabulary
+ * both proposals define; the complete record this app has always kept nested under
+ * `clip-extractor`, so nothing from the previous, free-standing provenance file is lost. */
+export function buildBehSidecar(input: ProvenanceInput, technical: VideoTechnicalFields | ImageTechnicalFields): Record<string, unknown> {
+  return {
+    Description: input.description?.trim() || null,
+    ...technical,
+    GeneratedBy: [buildGeneratedByEntry()],
+    [DERIVATIVES_PIPELINE]: buildProvenance(input),
+  };
+}
+
+/** A lighter sidecar for a companion file — the pose overlay, or the original source copied
+ * alongside its derivative — that only needs to name what it is and point back at the delivery's
+ * primary sidecar rather than repeat that whole record a second time. */
+export interface CompanionSidecarInput {
+  description: string;
+  technical: VideoTechnicalFields | ImageTechnicalFields;
+  /** The asset path(s) this file was derived or copied from, relative to the dataset root. */
+  sources: string[];
+  /** Whether this file was produced by this tool (the overlay) or merely copied by it (the original
+   * source) — a copy carries no `GeneratedBy`, since the tool did not generate its content. */
+  generatedByTool: boolean;
+}
+
+export function buildCompanionSidecar(input: CompanionSidecarInput): Record<string, unknown> {
+  const sidecar: Record<string, unknown> = {
+    Description: input.description,
+    ...input.technical,
+    Sources: input.sources,
+  };
+  if (input.generatedByTool) sidecar.GeneratedBy = [buildGeneratedByEntry()] as GeneratedByEntry[];
+  return sidecar;
 }

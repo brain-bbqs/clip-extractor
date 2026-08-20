@@ -107,12 +107,12 @@ test("a blurred selection is uploaded without the original, and says what it hid
   await page.locator("#btnUpload").click();
   await expect(page.locator("#uploadStatus")).toContainText("Upload complete", { timeout: 60_000 });
 
-  // The frame and its sidecar, and no original beside them.
-  expect(registered).toHaveLength(2);
-  expect(registered.some((path) => path.includes("/original/"))).toBe(false);
+  // The frame, its sidecar, and both dataset_description.json files — no original beside them.
+  expect(registered).toHaveLength(4);
+  expect(registered.some((path) => path.startsWith("sourcedata/"))).toBe(false);
 
   const sidecar = uploaded.map((part) => part.toString()).find((body) => body.startsWith("{"));
-  const provenance = JSON.parse(sidecar!) as {
+  const provenance = (JSON.parse(sidecar!) as { "clip-extractor": unknown })["clip-extractor"] as {
     blur: { method: string; sigma: number; regions: { x: number; y: number; radius: number }[] };
     source_video: { uploaded: boolean };
     extracted: { encoding: string };

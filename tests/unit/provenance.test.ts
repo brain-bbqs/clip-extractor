@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { PROVENANCE_FORMAT, buildProvenance, type ProvenanceInput } from "../../src/lib/provenance";
+import {
+  PROVENANCE_FORMAT,
+  buildBehSidecar,
+  buildCompanionSidecar,
+  buildProvenance,
+  imageTechnicalFields,
+  videoTechnicalFields,
+  type ProvenanceInput,
+} from "../../src/lib/provenance";
 
 const base: ProvenanceInput = {
   createdAt: new Date("2026-08-10T01:23:56.000Z"),
@@ -243,5 +251,69 @@ describe("buildProvenance", () => {
   it("serializes to JSON without losing an unknown uploader", () => {
     const doc = buildProvenance({ ...base, user: null });
     expect(JSON.parse(JSON.stringify(doc)).uploaded_by).toBeNull();
+  });
+});
+
+describe("videoTechnicalFields / imageTechnicalFields", () => {
+  it("derives the recording's duration from fps and frame count", () => {
+    expect(videoTechnicalFields(30, 640, 480, 90)).toEqual({
+      RecordingDuration: 3,
+      VideoFrameRate: 30,
+      VideoFrameCount: 90,
+      ImageWidth: 640,
+      ImageHeight: 480,
+    });
+  });
+
+  it("never divides by zero for an fps-less source", () => {
+    expect(videoTechnicalFields(0, 640, 480, 90).RecordingDuration).toBe(0);
+  });
+
+  it("carries only width and height for a still image", () => {
+    expect(imageTechnicalFields(640, 480)).toEqual({ ImageWidth: 640, ImageHeight: 480 });
+  });
+});
+
+describe("buildBehSidecar", () => {
+  const technical = videoTechnicalFields(30, 640, 480, 30);
+
+  it("puts the description and the technical fields at the top level, alongside GeneratedBy", () => {
+    const sidecar = buildBehSidecar({ ...base, description: "Two mice groom each other here." }, technical);
+    expect(sidecar.Description).toBe("Two mice groom each other here.");
+    expect(sidecar.RecordingDuration).toBe(1);
+    expect((sidecar.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
+  });
+
+  it("nests this app's full record under its own key, so nothing the old provenance file held is lost", () => {
+    const sidecar = buildBehSidecar(base, technical);
+    const nested = sidecar["clip-extractor"] as { format: string };
+    expect(nested.format).toBe(PROVENANCE_FORMAT);
+  });
+});
+
+describe("buildCompanionSidecar", () => {
+  it("names what it is, points back at its source, and skips GeneratedBy for a plain copy", () => {
+    const sidecar = buildCompanionSidecar({
+      description: "The untouched original.",
+      technical: imageTechnicalFields(640, 480),
+      sources: ["sourcedata/sub-1/beh/mice.mp4"],
+      generatedByTool: false,
+    });
+    expect(sidecar).toEqual({
+      Description: "The untouched original.",
+      ImageWidth: 640,
+      ImageHeight: 480,
+      Sources: ["sourcedata/sub-1/beh/mice.mp4"],
+    });
+  });
+
+  it("carries GeneratedBy for something this tool actually rendered", () => {
+    const sidecar = buildCompanionSidecar({
+      description: "The pose overlay.",
+      technical: imageTechnicalFields(640, 480),
+      sources: ["derivatives/clip-extractor/sub-1/beh/sub-1_recording-1_video.mp4"],
+      generatedByTool: true,
+    });
+    expect((sidecar.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
   });
 });

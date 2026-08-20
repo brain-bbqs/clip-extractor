@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+#### 🚀 Enhancement
+
+- Save and Upload now write a BIDS-Study-shaped tree instead of a single ad hoc folder: the source video and any `.slp` mirror the dandiset's own subject/session under `sourcedata/`, and the extracted clip or frame, its pose overlay, and their sidecars sit under `derivatives/clip-extractor/`, named per BEP047's `sub-`/`ses-`/`recording-`/`desc-` entities ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- The description typed for a selection, and the rest of what this app has always recorded, now travels inside the extracted file's own BEP047 sidecar JSON rather than a separate provenance file, alongside a BEP028-style `GeneratedBy` entry ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- An upload now also folds this delivery's tool identity into the dandiset's own `dataset_description.json` and into `derivatives/clip-extractor/dataset_description.json`, creating either fresh only when nothing is registered there yet and leaving everything else in them untouched ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+
 ## 1.0.0
 
 #### 🐛 Bug Fix

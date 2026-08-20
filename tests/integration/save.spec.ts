@@ -9,6 +9,11 @@ import { loadRecordedVideo, seekTo } from "./helpers";
 
 const BLOCK = 512;
 
+// No archive path names a locally dropped video, so its subject entity falls back to `sub-unknown`
+// (see lib/bidsPath.ts's behEntities), and the recording entity is stamped from Save's own instant —
+// only its shape (17 digits) is pinned down here.
+const RECORDING = "\\d{17}";
+
 /** Walks the 512-byte headers of a tar, the way `tar tf` lists it. */
 function listTar(gzipped: Buffer): { path: string; size: number; text: string }[] {
   const tar = gunzipSync(gzipped);
@@ -33,7 +38,9 @@ function listTar(gzipped: Buffer): { path: string; size: number; text: string }[
   return entries;
 }
 
-test("a save writes a bundle holding the extract, the original and their provenance record", async ({ page }) => {
+test("a save writes a bundle holding the extract, the original, their sidecar and both dataset_description.json files", async ({
+  page,
+}) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await page.goto("/");
   // Signed out, Save is the side that leads.
@@ -49,41 +56,51 @@ test("a save writes a bundle holding the extract, the original and their provena
   await expect(page.locator("#btnDownload")).toBeEnabled();
 
   // The button names the bundle before it is written.
-  await expect(page.locator("#downloadPreviewName")).toHaveText("name-file+example+480+Copy_index-5_type-frame_bundle.tar.gz");
-  await expect(page.locator("#uploadOriginal")).toBeChecked();
+  await expect(page.locator("#downloadPreviewName")).toHaveText(
+    new RegExp(`^sub-unknown_recording-${RECORDING}_desc-frame_bundle\\.tar\\.gz$`),
+  );
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toBe("name-file+example+480+Copy_index-5_type-frame_bundle.tar.gz");
+  expect(download.suggestedFilename()).toMatch(new RegExp(`^sub-unknown_recording-${RECORDING}_desc-frame_bundle\\.tar\\.gz$`));
   await expect(page.locator("#downloadStatus")).toContainText("Saved");
 
   const entries = listTar(readFileSync((await download.path())!));
-  // The same files, in the same order, an upload would have written — extract first, then the
-  // original, then the sidecar naming both. They unpack into one dated folder: the archive's
-  // `sourcedata/raw/` prefix means nothing outside a dandiset, so a bundle does not carry it.
-  const directory = entries[0].path.slice(0, entries[0].path.lastIndexOf("/"));
-  expect(directory).toMatch(/^date-\d{8}_time-\d{6}_type-frame$/);
-  expect(entries.map((e) => e.path.slice(directory.length + 1))).toEqual([
-    "name-file+example+480+Copy_index-5_type-frame_image.png",
-    "original/file_example_480-Copy.webm",
-    "name-file+example+480+Copy_index-5_type-frame_provenance.json",
+  // The same files, in the same order, an upload would have written: the extract under
+  // `derivatives/clip-extractor/`, the original under `sourcedata/` (both mirroring the same
+  // fallback subject), the sidecar naming both, then both `dataset_description.json` files.
+  const derivativesDir = entries[0].path.slice(0, entries[0].path.lastIndexOf("/"));
+  expect(derivativesDir).toBe("derivatives/clip-extractor/sub-unknown/beh");
+  const recording = entries[0].path.match(/recording-(\d+)/)![1];
+  expect(entries.map((e) => e.path)).toEqual([
+    `${derivativesDir}/sub-unknown_recording-${recording}_image.png`,
+    "sourcedata/sub-unknown/beh/file_example_480-Copy.webm",
+    `${derivativesDir}/sub-unknown_recording-${recording}_image.json`,
+    "dataset_description.json",
+    "derivatives/clip-extractor/dataset_description.json",
   ]);
-  expect(entries.every((e) => e.path.startsWith(`${directory}/`))).toBe(true);
   expect(entries[0].size).toBeGreaterThan(0);
 
-  const provenance = JSON.parse(entries[2].text) as Record<string, unknown>;
+  const sidecar = JSON.parse(entries[2].text) as Record<string, unknown>;
+  expect(sidecar.Description).toBe("The mouse leaves frame here — the tracker keeps a stale track.");
+  const provenance = sidecar["clip-extractor"] as Record<string, unknown>;
   expect(provenance.format).toBe("clip-extractor-provenance/v1");
-  expect(provenance.description).toBe("The mouse leaves frame here — the tracker keeps a stale track.");
   // Nothing was uploaded, so there is no archive to name — only the directory inside the bundle.
-  expect(provenance.destination).toEqual({ api: null, dandiset_id: null, directory });
+  expect(provenance.destination).toEqual({ api: null, dandiset_id: null, directory: derivativesDir });
   expect(provenance.uploaded_by).toBeNull();
   // The original rode along, checksummed exactly as an upload would have registered it.
   const source = provenance.source_video as Record<string, unknown>;
   expect(source.uploaded).toBe(true);
-  expect(source.asset_path).toBe(`${directory}/original/file_example_480-Copy.webm`);
+  expect(source.asset_path).toBe("sourcedata/sub-unknown/beh/file_example_480-Copy.webm");
   expect((source.checksum as { value: string }).value).toMatch(/^[0-9a-f]{32}-\d+$/);
+
+  const rootDescription = JSON.parse(entries[3].text) as Record<string, unknown>;
+  expect(rootDescription.DatasetType).toBe("raw");
+  expect((rootDescription.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
+  const derivativesDescription = JSON.parse(entries[4].text) as Record<string, unknown>;
+  expect(derivativesDescription.DatasetType).toBe("derivative");
 });
 
-test("leaving the original out saves the extract and its provenance alone", async ({ page }) => {
+test("leaving the original out saves the extract and its sidecar alone, plus both dataset_description.json files", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await page.goto("/");
 
@@ -94,17 +111,26 @@ test("leaving the original out saves the extract and its provenance alone", asyn
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
   const entries = listTar(readFileSync((await download.path())!));
-  expect(entries.map((e) => e.path.split("/").pop())).toEqual([
-    "name-mice_index-0_type-frame_image.png",
-    "name-mice_index-0_type-frame_provenance.json",
+  expect(entries.map((e) => e.path)).toEqual([
+    entries[0].path,
+    entries[1].path,
+    "dataset_description.json",
+    "derivatives/clip-extractor/dataset_description.json",
   ]);
+  expect(entries[0].path).toMatch(
+    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_image\\.png$`),
+  );
+  expect(entries[1].path).toMatch(
+    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_image\\.json$`),
+  );
 
-  const provenance = JSON.parse(entries[1].text) as Record<string, unknown>;
+  const sidecar = JSON.parse(entries[1].text) as Record<string, unknown>;
   // Left out of the bundle, but still named and checksummed: that is what ties the frame to it.
+  const provenance = sidecar["clip-extractor"] as Record<string, unknown>;
   const source = provenance.source_video as Record<string, unknown>;
   expect(source.uploaded).toBe(false);
   expect(source.asset_path).toBeNull();
   expect(source.filename).toBe("mice.webm");
   expect((source.checksum as { value: string }).value).toMatch(/^[0-9a-f]{32}-\d+$/);
-  expect(provenance.description).toBe("A clean frame, kept as a reference.");
+  expect(sidecar.Description).toBe("A clean frame, kept as a reference.");
 });
