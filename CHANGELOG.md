@@ -15,6 +15,7 @@
 - The plain extracted clip/frame is now named `desc-extracted+clip`, alongside its pose-overlay sibling's existing `desc-overlay`, instead of carrying no `desc` at all ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - Every sidecar's `GeneratedBy` entry is gone; that's already recorded once in each `dataset_description.json`, so repeating it per-file was redundant ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - `SourceDatasets` no longer names a locally dropped video by filename and checksum alone; without a real URL that pair would only repeat what the file's own sidecar already says, so a local delivery now leaves `SourceDatasets` out entirely ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- The per-delivery `date-`/`time-`/`recording-` disambiguator moved off every derivatives filename and onto its own directory (`derivatives/clip-extractor/sub-.../beh/<date-..._time-...|recording-...>/`), so a delivery's files no longer repeat it in their own names; the Save bundle's own filename carries neither, so the same source saved again names the same bundle ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 
 ## 1.0.0
 

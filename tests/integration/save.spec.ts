@@ -11,7 +11,9 @@ const BLOCK = 512;
 
 // No archive path names a locally dropped video, so its subject entity falls back to `sub-unknown`
 // (see lib/bidsPath.ts's behEntities), and the recording entity is stamped from Save's own instant —
-// only its shape (17 digits) is pinned down here.
+// only its shape (17 digits) is pinned down here. It names this delivery's own directory under
+// derivatives/ (see lib/bidsPath.ts's derivativesDirectory), not the files inside it or the bundle's
+// own name — both of those stay disambiguator-free so the same source names the same bundle again.
 const RECORDING = "\\d{17}";
 
 /** Walks the 512-byte headers of a tar, the way `tar tf` lists it. */
@@ -55,28 +57,27 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   await page.locator("#selectionDescription").fill("The mouse leaves frame here — the tracker keeps a stale track.");
   await expect(page.locator("#btnDownload")).toBeEnabled();
 
-  // The button names the bundle before it is written.
-  await expect(page.locator("#downloadPreviewName")).toHaveText(
-    new RegExp(`^sub-unknown_recording-${RECORDING}_desc-frame_bundle\\.tar\\.gz$`),
-  );
+  // The button names the bundle before it is written — no recording- here, since the bundle is the
+  // outer container, not a file inside the delivery's own directory.
+  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-unknown_desc-frame_bundle\.tar\.gz$/);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toMatch(new RegExp(`^sub-unknown_recording-${RECORDING}_desc-frame_bundle\\.tar\\.gz$`));
+  expect(download.suggestedFilename()).toMatch(/^sub-unknown_desc-frame_bundle\.tar\.gz$/);
   await expect(page.locator("#downloadStatus")).toContainText("Saved");
 
   const entries = listTar(readFileSync((await download.path())!));
   // The same files, in the same order, an upload would have written: the extract under
-  // `derivatives/clip-extractor/`, the original (and its own technical sidecar) under `sourcedata/`
-  // (both mirroring the same fallback subject), the extract's own sidecar, then both
-  // `dataset_description.json` files.
+  // `derivatives/clip-extractor/`'s own per-delivery `recording-<label>/` directory, the original
+  // (and its own technical sidecar) under `sourcedata/` (mirroring the same fallback subject, with no
+  // such directory of its own), the extract's own sidecar, then both `dataset_description.json`
+  // files.
   const derivativesDir = entries[0].path.slice(0, entries[0].path.lastIndexOf("/"));
-  expect(derivativesDir).toBe("derivatives/clip-extractor/sub-unknown/beh");
-  const recording = entries[0].path.match(/recording-(\d+)/)![1];
+  expect(derivativesDir).toMatch(new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/recording-${RECORDING}$`));
   expect(entries.map((e) => e.path)).toEqual([
-    `${derivativesDir}/sub-unknown_recording-${recording}_desc-extracted+clip_image.png`,
+    `${derivativesDir}/sub-unknown_desc-extracted+clip_image.png`,
     "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.webm",
     "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.json",
-    `${derivativesDir}/sub-unknown_recording-${recording}_desc-extracted+clip_image.json`,
+    `${derivativesDir}/sub-unknown_desc-extracted+clip_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
     "sourcedata/rawbids/dataset_description.json",
@@ -142,10 +143,10 @@ test("leaving the original out saves the extract and its sidecar alone, plus all
     "sourcedata/rawbids/dataset_description.json",
   ]);
   expect(entries[0].path).toMatch(
-    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_desc-extracted\\+clip_image\\.png$`),
+    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/recording-${RECORDING}/sub-unknown_desc-extracted\\+clip_image\\.png$`),
   );
   expect(entries[1].path).toMatch(
-    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_desc-extracted\\+clip_image\\.json$`),
+    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/recording-${RECORDING}/sub-unknown_desc-extracted\\+clip_image\\.json$`),
   );
 
   const sidecar = JSON.parse(entries[1].text) as Record<string, unknown>;
@@ -171,7 +172,7 @@ test("mock_ready lands on a saveable state with no manual selection or descripti
   await expect(page.locator("#btnDownload")).toBeEnabled();
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toMatch(/^sub-unknown_recording-\d{17}_desc-frame_bundle\.tar\.gz$/);
+  expect(download.suggestedFilename()).toMatch(/^sub-unknown_desc-frame_bundle\.tar\.gz$/);
 
   // Dropped locally, no URL to name — unlike the from_archive case below, nothing here goes into
   // SourceDatasets at all.
@@ -190,18 +191,19 @@ test("mock_ready=snippet lands on a saveable state, extracting a real clip", asy
   // CDN, which this sandboxed environment cannot reach reliably (see the other specs' own frame-only
   // choice, e.g. blur.spec.ts's header comment) — the button's own preview text is populated from the
   // same filename-building code path a real Save would use, without paying for the extraction itself.
-  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-unknown_recording-\d{17}_desc-snippet_bundle\.tar\.gz$/);
+  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-unknown_desc-snippet_bundle\.tar\.gz$/);
 });
 
 test("mock_ready&from_archive previews the archive-sourced case, still a frame", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   // `from_archive` (see lib/testInjection.ts) makes the mock video look, to behEntities, as if it were
-  // opened from sub-01/ses-02/… — a known subject and session get date-/time- entities, not recording-.
+  // opened from sub-01/ses-02/… — a known subject and session, so its derivatives directory gets a
+  // date-/time- disambiguator (not recording-), and its bundle name still carries neither.
   await page.goto("/?test&mock_video&mock_ready&from_archive");
   await expect(page.locator("#btnDownload")).toBeEnabled();
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toMatch(/^sub-01_ses-02_date-\d{8}_time-\d{6}_desc-frame_bundle\.tar\.gz$/);
+  expect(download.suggestedFilename()).toMatch(/^sub-01_ses-02_desc-frame_bundle\.tar\.gz$/);
 
   const entries = listTar(readFileSync((await download.path())!));
   const derivativesDescription = JSON.parse(
@@ -223,5 +225,5 @@ test("mock_ready=snippet&from_archive previews both at once", async ({ page }) =
   await page.goto("/?test&mock_video&mock_ready=snippet&from_archive");
   await expect(page.locator("#btnDownload")).toBeEnabled();
   // Same reasoning as the snippet-only case above: the preview name, not a real extraction.
-  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-01_ses-02_date-\d{8}_time-\d{6}_desc-snippet_bundle\.tar\.gz$/);
+  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-01_ses-02_desc-snippet_bundle\.tar\.gz$/);
 });

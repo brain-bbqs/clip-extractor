@@ -28,12 +28,14 @@ export interface ExtractedMedia {
 /** Reports what extraction is doing, plus 0..1 progress when the step can measure it. */
 export type ExtractProgress = (message: string, fraction?: number) => void;
 
-// Every file this app produces is named per BEP047 (see lib/bidsPath.ts):
-//   sub-<label>_recording-<label>_desc-extracted+clip_image.png
-//   sub-<label>_recording-<label>_desc-extracted+clip_image.json
-//   sub-<label>_recording-<label>_desc-extracted+clip_video.mp4
-//   sub-<label>_recording-<label>_desc-extracted+clip_video.json
-//   sub-<label>_recording-<label>_desc-overlay_video.mp4
+// Every file this app produces is named per BEP047 (see lib/bidsPath.ts), and every delivery's own
+// files land together in one directory of their own — `.../beh/<recording-<label>|date-..._time-...>/`
+// (see `derivativesDirectory`) — rather than repeating that disambiguator in each filename:
+//   sub-<label>_desc-extracted+clip_image.png
+//   sub-<label>_desc-extracted+clip_image.json
+//   sub-<label>_desc-extracted+clip_video.mp4
+//   sub-<label>_desc-extracted+clip_video.json
+//   sub-<label>_desc-overlay_video.mp4
 // Files describing or rendering the same selection share every entity with it and differ only in
 // `desc-`, so they sit side by side in a listing. The original video is not renamed beyond that same
 // scheme — see deliverOriginalVideo in main.ts.
@@ -72,8 +74,11 @@ export function sidecarFileName(beh: BehEntities, mode: SelectionKind, desc: str
 }
 
 /** The saved bundle: every file an upload would have written, tarred and gzipped into one download.
- * It shares its selection's entities like the rest, `desc-<mode>` says which kind of selection it
- * holds, and `bundle` names what it is. */
+ * `desc-<mode>` says which kind of selection it holds, and `bundle` names what it is — but unlike the
+ * files inside it, its own name carries no per-delivery disambiguator (see lib/bidsPath.ts's own
+ * header comment): it is the outer container, not a file in the tree it holds, so the same source
+ * saved again should name the same bundle rather than mint an ever-changing one around this
+ * delivery's own instant. */
 export function bundleFileName(beh: BehEntities, mode: SelectionKind): string {
   return behFilename(beh, { desc: mode, suffix: "bundle", ext: "tar.gz" });
 }

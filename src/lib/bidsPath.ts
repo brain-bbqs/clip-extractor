@@ -13,26 +13,33 @@
 // this app read the selection out of, sitting in the place `sourcedata/` is for.
 //
 // BEP047 has no entity for "which delivery is this" — the closest fits (`run`, `split`) mean
-// something else — so every derivatives filename this app writes carries a disambiguating entity of
-// its own, which of two forms it takes depending on whether the subject is a real one:
+// something else — so every delivery's derivatives land in a directory of their own, one level below
+// `beh/`, named for a disambiguating entity of one of two forms depending on whether the subject is a
+// real one. That entity marks the *directory*, not the filenames inside it: a listing of `beh/` reads
+// as one subdirectory per delivery, and every file inside shares the same sub-/ses-/desc- prefix
+// without repeating the disambiguator that already sits in its own directory name.
 //
 //   - A known subject (the source video's own path named one) means its `sourcedata` copy is the
 //     one true copy of that recording — re-delivering it is expected to overwrite, not duplicate, so
 //     `sourcedata` gets no disambiguator at all (see `sourcedataOriginalFilename`, entity-shaped like
 //     everything else but with nothing appended to distinguish one delivery's copy from another's).
 //     `derivatives`, though, still needs one: two runs of clip-extractor over the same subject/session
-//     produce two different clips, so those get `date-<label>_time-<label>` — separate entities, the
-//     same spelling the pre-BIDS directory layout used, now inside the filename instead of a
-//     directory name.
+//     produce two different clips, so those get their own `date-<label>_time-<label>/` directory —
+//     separate entities, the same spelling the pre-BIDS directory layout used.
 //   - `sub-unknown` (the source names no subject at all — a video dropped straight from disk) means
 //     there is nothing else tying two such deliveries apart in `derivatives`, so that tree keeps the
-//     compact `recording-<label>` stamp there instead. `sourcedata` stays undisambiguated even here:
+//     compact `recording-<label>/` directory instead. `sourcedata` stays undisambiguated even here:
 //     nothing identifies one locally dropped file from another either, so it is not a case this app
 //     tries to tell apart at all — same overwrite-not-duplicate treatment as the known-subject case.
 //
+// A saved bundle's own filename (see lib/extract.ts's `bundleFileName`) carries neither: it is the
+// outer container, not a file inside the tree it holds, and the same source saved again should name
+// the same bundle rather than mint a new, ever-changing name around a delivery's own instant.
+//
 // `desc-<label>` — the entity BIDS derivatives already define for distinguishing outputs of the
 // same underlying recording — separates the plain extracted clip from its pose-overlay rendering,
-// the one thing BEP047's own vocabulary has no entity for.
+// the one thing BEP047's own vocabulary has no entity for. It stays on the filename (not the
+// directory) since both outputs of the same delivery share one directory.
 
 import { sanitizeSegment } from "./sanitize";
 
@@ -135,9 +142,13 @@ export function sourcedataOriginalFilename(e: BehEntities, originalName: string)
   return `${subjectSessionSegments(e).join("_")}_video.${ext}`;
 }
 
-/** Where this app's own output sits — `derivatives/clip-extractor/sub-<label>/[ses-<label>/]beh`. */
+/** Where this app's own output sits —
+ * `derivatives/clip-extractor/sub-<label>/[ses-<label>/]beh/<date-<label>_time-<label>|recording-<label>>`
+ * — every file one delivery writes lands in this one directory, named for the disambiguating entity
+ * that tells one delivery's files apart from another's own (see this module's header comment and
+ * `disambiguatorEntities`), so a listing of `beh/` reads as one subdirectory per delivery. */
 export function derivativesDirectory(e: BehEntities): string {
-  return ["derivatives", DERIVATIVES_PIPELINE, ...subjectSessionSegments(e), "beh"].join("/");
+  return ["derivatives", DERIVATIVES_PIPELINE, ...subjectSessionSegments(e), "beh", disambiguatorEntities(e).join("_")].join("/");
 }
 
 export interface BehFilenameParts {
@@ -151,17 +162,20 @@ export interface BehFilenameParts {
   ext: string;
 }
 
+/** The entity that tells one delivery's files apart from another's — see this module's own header
+ * comment on why it names a *directory* (`derivativesDirectory`) rather than sitting in every
+ * filename underneath it. */
 function disambiguatorEntities(e: BehEntities): string[] {
   return e.known ? [`date-${e.date}`, `time-${e.time}`] : [`recording-${e.recording}`];
 }
 
-/** `sub-<label>[_ses-<label>]_<date-<label>_time-<label>|recording-<label>>[_desc-<label>]_<suffix>.<ext>`
- * — every file one delivery writes shares this prefix, so a listing of `beh/` reads as one group per
- * delivery. */
+/** `sub-<label>[_ses-<label>][_desc-<label>]_<suffix>.<ext>` — every file one delivery writes shares
+ * this prefix and sits in that delivery's own directory (see `derivativesDirectory`), which is where
+ * the disambiguating entity that tells deliveries apart actually lives; this filename itself repeats
+ * only `sub-`/`ses-`, since it is the same subject/session throughout `beh/`, not just this delivery. */
 export function behFilename(e: BehEntities, parts: BehFilenameParts): string {
   const bits = [`sub-${e.sub}`];
   if (e.ses) bits.push(`ses-${e.ses}`);
-  bits.push(...disambiguatorEntities(e));
   if (parts.desc) bits.push(`desc-${parts.desc}`);
   bits.push(parts.suffix);
   return `${bits.join("_")}.${parts.ext}`;

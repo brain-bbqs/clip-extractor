@@ -107,14 +107,18 @@ const knownBeh: BehEntities = { sub: "1", ses: null, known: true, recording: "20
 const knownBehWithSession: BehEntities = { ...knownBeh, ses: "2" };
 
 describe("sourcedataDirectory / derivativesDirectory", () => {
-  it("mirror sub/ses under their own root — sourcedata under its rawbids subtree", () => {
+  it("mirror sub/ses under their own root — sourcedata under its rawbids subtree, derivatives with its own per-delivery subdirectory", () => {
     expect(sourcedataDirectory(knownBeh)).toBe("sourcedata/rawbids/sub-1/beh");
-    expect(derivativesDirectory(knownBeh)).toBe("derivatives/clip-extractor/sub-1/beh");
+    expect(derivativesDirectory(knownBeh)).toBe("derivatives/clip-extractor/sub-1/beh/date-20260810_time-012356");
   });
 
   it("include the session entity when there is one", () => {
     expect(sourcedataDirectory(knownBehWithSession)).toBe("sourcedata/rawbids/sub-1/ses-2/beh");
-    expect(derivativesDirectory(knownBehWithSession)).toBe("derivatives/clip-extractor/sub-1/ses-2/beh");
+    expect(derivativesDirectory(knownBehWithSession)).toBe("derivatives/clip-extractor/sub-1/ses-2/beh/date-20260810_time-012356");
+  });
+
+  it("uses recording- instead, for an unknown (sub-unknown) subject", () => {
+    expect(derivativesDirectory(unknownBeh)).toBe("derivatives/clip-extractor/sub-unknown/beh/recording-20260810012356482");
   });
 });
 
@@ -138,28 +142,28 @@ describe("sourcedataOriginalFilename", () => {
 });
 
 describe("behFilename", () => {
-  it("uses recording- to disambiguate an unknown (sub-unknown) subject", () => {
-    expect(behFilename(unknownBeh, { suffix: "video", ext: "mp4" })).toBe("sub-unknown_recording-20260810012356482_video.mp4");
+  // No recording-/date-/time- in the filename itself for any subject shape — that disambiguator
+  // lives in the enclosing directory instead (see derivativesDirectory above).
+  it("names an unknown (sub-unknown) subject plainly", () => {
+    expect(behFilename(unknownBeh, { suffix: "video", ext: "mp4" })).toBe("sub-unknown_video.mp4");
   });
 
-  it("uses date-/time- instead, for a known subject", () => {
-    expect(behFilename(knownBeh, { suffix: "video", ext: "mp4" })).toBe("sub-1_date-20260810_time-012356_video.mp4");
+  it("names a known subject the same way", () => {
+    expect(behFilename(knownBeh, { suffix: "video", ext: "mp4" })).toBe("sub-1_video.mp4");
   });
 
   it("includes ses- when there is a session", () => {
-    expect(behFilename(knownBehWithSession, { suffix: "video", ext: "mp4" })).toBe("sub-1_ses-2_date-20260810_time-012356_video.mp4");
+    expect(behFilename(knownBehWithSession, { suffix: "video", ext: "mp4" })).toBe("sub-1_ses-2_video.mp4");
   });
 
-  it("includes desc- between the disambiguator and the suffix, when given one", () => {
-    expect(behFilename(knownBeh, { desc: "overlay", suffix: "video", ext: "mp4" })).toBe(
-      "sub-1_date-20260810_time-012356_desc-overlay_video.mp4",
-    );
+  it("includes desc- before the suffix, when given one", () => {
+    expect(behFilename(knownBeh, { desc: "overlay", suffix: "video", ext: "mp4" })).toBe("sub-1_desc-overlay_video.mp4");
   });
 });
 
 describe("behSidecarName", () => {
   it("mirrors behFilename with .json in place of the media extension", () => {
-    expect(behSidecarName(knownBeh, { suffix: "video" })).toBe("sub-1_date-20260810_time-012356_video.json");
+    expect(behSidecarName(knownBeh, { suffix: "video" })).toBe("sub-1_video.json");
   });
 });
 

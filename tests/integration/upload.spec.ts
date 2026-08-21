@@ -8,7 +8,9 @@ import { loadRecordedVideo, seekTo, stubArchive } from "./helpers";
 
 // No archive path names this video (it was dropped locally), so its subject entity falls back to
 // `sub-unknown` — see lib/bidsPath.ts's behEntities. The recording entity is stamped from the
-// upload's own instant, so only its shape (17 digits) is pinned down here.
+// upload's own instant, so only its shape (17 digits) is pinned down here; it names this delivery's
+// own directory under derivatives/, not the files inside it (see lib/bidsPath.ts's
+// derivativesDirectory).
 const RECORDING = "\\d{17}";
 
 test("an upload registers the extract, the original and a matching sidecar", async ({ page }) => {
@@ -43,7 +45,7 @@ test("an upload registers the extract, the original and a matching sidecar", asy
     sourcedataDescriptionPath,
   ] = registered;
   expect(imagePath).toMatch(
-    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_desc-extracted\\+clip_image\\.png$`),
+    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/recording-${RECORDING}/sub-unknown_desc-extracted\\+clip_image\\.png$`),
   );
   expect(originalPath).toBe("sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.webm");
   expect(originalSidecarPath).toBe("sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.json");

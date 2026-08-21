@@ -6,8 +6,8 @@ const beh: BehEntities = { sub: "1", ses: null, known: true, recording: "unused"
 const behWithSession: BehEntities = { ...beh, ses: "2" };
 
 describe("deliveryDirectories", () => {
-  it("puts the app's own output under derivatives/clip-extractor, mirroring sub/ses", () => {
-    expect(deliveryDirectories(beh).derivatives).toBe("derivatives/clip-extractor/sub-1/beh");
+  it("puts the app's own output under derivatives/clip-extractor, mirroring sub/ses, in this delivery's own subdirectory", () => {
+    expect(deliveryDirectories(beh).derivatives).toBe("derivatives/clip-extractor/sub-1/beh/date-20260809_time-224913");
   });
 
   it("puts the original content under sourcedata/rawbids, mirroring the same sub/ses — a complete, independently valid raw BIDS dataset of its own", () => {
@@ -16,7 +16,7 @@ describe("deliveryDirectories", () => {
 
   it("includes the session entity in both directories when there is one", () => {
     expect(deliveryDirectories(behWithSession)).toEqual({
-      derivatives: "derivatives/clip-extractor/sub-1/ses-2/beh",
+      derivatives: "derivatives/clip-extractor/sub-1/ses-2/beh/date-20260809_time-224913",
       sourcedata: "sourcedata/rawbids/sub-1/ses-2/beh",
     });
   });
