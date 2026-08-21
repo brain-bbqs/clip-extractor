@@ -80,11 +80,12 @@ describe("bundleFileName", () => {
 });
 
 describe("extractClip, on a streamed source", () => {
-  function streamingBackend() {
+  function streamingBackend(transcoded = true) {
     return {
       width: 320,
       height: 240,
-      extractRange: vi.fn(() => Promise.resolve({ blob: new Blob(["clip"], { type: "video/mp4" }), transcoded: true, start: 20, end: 25 })),
+      codec: "vp9",
+      extractRange: vi.fn(() => Promise.resolve({ blob: new Blob(["clip"], { type: "video/mp4" }), transcoded, start: 20, end: 25 })),
     } as unknown as StreamingVideoBackend;
   }
 
@@ -105,6 +106,16 @@ describe("extractClip, on a streamed source", () => {
     expect(media.encoding).toContain("20.000s–25.000s");
     expect(media.encoding).toContain("re-encoded");
     expect(media.encoding).toContain("audio dropped");
+  });
+
+  it("does not claim a codec for a re-encode, since mediabunny's own choice is never pinned down", async () => {
+    const media = await extractClip({ ...selection, sourceFile: null, backend: streamingBackend(true) });
+    expect(media.codec).toBeUndefined();
+  });
+
+  it("carries the source's own codec forward for a straight copy", async () => {
+    const media = await extractClip({ ...selection, sourceFile: null, backend: streamingBackend(false) });
+    expect(media.codec).toBe("vp9");
   });
 
   it("asks for a copy rather than a frame-exact cut in fast trim mode", async () => {

@@ -305,15 +305,19 @@ export interface VideoTechnicalFields {
   VideoFrameCount: number;
   ImageWidth: number;
   ImageHeight: number;
+  /** Omitted rather than guessed when this app never pinned it down — a stream copy of a source
+   * whose own codec was never probed, say. */
+  VideoCodec?: string;
 }
 
-export function videoTechnicalFields(fps: number, width: number, height: number, numFrames: number): VideoTechnicalFields {
+export function videoTechnicalFields(fps: number, width: number, height: number, numFrames: number, codec?: string): VideoTechnicalFields {
   return {
     RecordingDuration: fps > 0 ? numFrames / fps : 0,
     VideoFrameRate: fps,
     VideoFrameCount: numFrames,
     ImageWidth: width,
     ImageHeight: height,
+    ...(codec ? { VideoCodec: codec } : {}),
   };
 }
 

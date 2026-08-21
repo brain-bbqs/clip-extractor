@@ -3115,7 +3115,7 @@ async function deliverOverlay(
   const technical =
     entities.mode === "frame"
       ? imageTechnicalFields(state.width, state.height)
-      : videoTechnicalFields(state.fps, state.width, state.height, entities.outFrame - entities.inFrame + 1);
+      : videoTechnicalFields(state.fps, state.width, state.height, entities.outFrame - entities.inFrame + 1, media.codec);
   const sidecar = buildCompanionSidecar({
     description: "The selection with the pose overlay drawn into the pixels.",
     technical,
@@ -3166,9 +3166,12 @@ async function deliverOriginalVideo(
   // The technical properties of the source itself — already read off its own container when it was
   // loaded (see loadVideo), not re-derived here — so the raw file sitting in `sourcedata` carries the
   // same kind of sidecar a BEP047 media file does, without needing a probing library of its own.
+  // The codec is only known when the streaming backend named it; the sleap-io.js fallback backends
+  // never expose one to this app, so nothing is claimed rather than guessed.
+  const sourceCodec = state.backend instanceof StreamingVideoBackend ? (state.backend.codec ?? undefined) : undefined;
   await deliverSidecar(deliver, directory, original.name, onProgress, {
     description: "The source video this selection was clipped from.",
-    technical: videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames),
+    technical: videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames, sourceCodec),
     sources: [],
     generatedByTool: false,
   });
@@ -3340,7 +3343,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   const technical =
     kind === "frame"
       ? imageTechnicalFields(state.width, state.height)
-      : videoTechnicalFields(state.fps, state.width, state.height, hi - lo + 1);
+      : videoTechnicalFields(state.fps, state.width, state.height, hi - lo + 1, media.codec);
   const sidecar = buildBehSidecar(provenanceInput, technical);
   const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
   const sidecarPath = uploadAssetPath(directories.derivatives, sidecarFileName(beh, kind));
@@ -3363,7 +3366,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // hand, same as any other file a bundle might collide with.
   const existing = (await params.existingDescriptions?.()) ?? { root: null, derivatives: null, sourcedata: null };
   const generatedByEntry = buildGeneratedByEntry(buildGeneratedBySourceVideo(provenanceInput));
-  const descriptions = mergedDatasetDescriptions(existing, generatedByEntry, destination?.dandisetId ?? "unknown", kind, createdAt);
+  const descriptions = mergedDatasetDescriptions(existing, generatedByEntry, kind, createdAt);
   for (const [path, doc] of [
     [DATASET_DESCRIPTION_PATH, descriptions.root],
     [DERIVATIVES_DESCRIPTION_PATH, descriptions.derivatives],

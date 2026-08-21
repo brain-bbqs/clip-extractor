@@ -331,6 +331,9 @@ export class StreamingVideoBackend implements SleapVideoBackend {
   readonly fps: number;
   readonly width: number;
   readonly height: number;
+  /** The source container's own video codec (mediabunny's own naming, e.g. `"avc"`, `"vp9"`), for
+   * provenance sidecars — null on the rare track mediabunny itself cannot name. */
+  readonly codec: string | null;
 
   private readonly cache: FrameCache<ImageBitmap>;
   private readonly sink: VideoSampleSink;
@@ -350,6 +353,7 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     this.width = track.displayWidth;
     this.height = track.displayHeight;
     this.fps = index.fps;
+    this.codec = track.codec ?? null;
     this.shape = [index.count, this.height, this.width, 3];
   }
 

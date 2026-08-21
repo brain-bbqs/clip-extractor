@@ -19,6 +19,10 @@ export interface ExtractedMedia {
   /** How this file was produced, recorded in the upload's provenance sidecar: the literal ffmpeg
    * command for a snippet, or the encoder used for a frame. */
   encoding: string;
+  /** The video stream's own codec (mediabunny's naming, e.g. `"h264"`, `"avc"`), for BEP047's
+   * `VideoCodec` sidecar field — undefined for a still image, and for a streamed cut this app
+   * re-encoded without pinning down what mediabunny chose to encode it as. */
+  codec?: string;
 }
 
 /** Reports what extraction is doing, plus 0..1 progress when the step can measure it. */
@@ -132,6 +136,9 @@ async function extractStreamedClip(params: ExtractClipParams & { backend: Stream
     encoding: `mediabunny trim ${start.toFixed(3)}s–${end.toFixed(3)}s out of the streamed source, ${how}, audio dropped${
       blurred ? `, ${blurred}` : ""
     }`,
+    // A straight copy keeps the source's own codec; a re-encode leaves it to mediabunny, which this
+    // app does not pin down, so nothing is claimed either way.
+    codec: transcoded ? undefined : (backend.codec ?? undefined),
   };
 }
 
@@ -191,7 +198,10 @@ export async function extractClip(params: ExtractClipParams): Promise<ExtractedM
     const data = await ff.readFile(outName);
     const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
     if (!blob.size) throw new Error("ffmpeg produced an empty clip — try a different selection");
-    return { blob, filename: clipFileName(beh), mime: "video/mp4", encoding: command };
+    // A stream copy (`-c copy`) keeps the source's own codec, which this local-file path never
+    // probed to begin with; an actual encode always names it, since the command itself picks it.
+    const codec = streamCopies(trim, blur) ? undefined : "h264";
+    return { blob, filename: clipFileName(beh), mime: "video/mp4", encoding: command, codec };
   } finally {
     try {
       await ff.deleteFile(inName);
@@ -350,6 +360,7 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
       filename: overlayFileName(beh, mode),
       mime: "video/mp4",
       encoding: blurred ? `${command} (frames drawn with ${blurred})` : command,
+      codec: "h264",
     };
   } finally {
     for (const name of [...written, outName]) {

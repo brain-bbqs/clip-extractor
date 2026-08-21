@@ -3,6 +3,7 @@ import {
   buildGeneratedByEntry,
   freshDerivativesDescription,
   freshRootDescription,
+  freshSourcedataDescription,
   mergeGeneratedBy,
   type GeneratedBySourceVideo,
 } from "../../src/lib/generatedBy";
@@ -48,11 +49,32 @@ describe("freshRootDescription / freshDerivativesDescription", () => {
     expect(freshRootDescription("frame", createdAt).Name).toBe("Frame extracted using the Clip Extractor on 2026-08-10T01:23:56.482Z");
   });
 
-  it("names the pipeline's own derivative dataset, pointing back at the dandiset", () => {
-    const doc = freshDerivativesDescription("000123");
+  it("names the pipeline's own derivative dataset, matching the study's own name with a suffix", () => {
+    const doc = freshDerivativesDescription("snippet", createdAt);
     expect(doc.DatasetType).toBe("derivative");
-    expect(doc.Name).toContain("000123");
-    expect(doc.SourceDatasets).toEqual([{ URL: "." }]);
+    expect(doc.Name).toBe(`${freshRootDescription("snippet", createdAt).Name} (Extracted)`);
+  });
+
+  it("names sourcedata/rawbids's own the same way, with its own suffix", () => {
+    const doc = freshSourcedataDescription("snippet", createdAt);
+    expect(doc.DatasetType).toBe("raw");
+    expect(doc.Name).toBe(`${freshRootDescription("snippet", createdAt).Name} (Original)`);
+  });
+
+  it("omits SourceDatasets when nothing is known about the source video", () => {
+    expect(freshDerivativesDescription("snippet", createdAt).SourceDatasets).toBeUndefined();
+  });
+
+  it("names the source by URL when it was streamed from one", () => {
+    const doc = freshDerivativesDescription("snippet", createdAt, { ...video, url: "https://api.test/assets/1/download/" });
+    expect(doc.SourceDatasets).toEqual([
+      { URL: "https://api.test/assets/1/download/", Filename: video.filename, Checksum: video.checksum },
+    ]);
+  });
+
+  it("omits URL but still names the file and its checksum for a local file", () => {
+    const doc = freshDerivativesDescription("snippet", createdAt, video);
+    expect(doc.SourceDatasets).toEqual([{ Filename: video.filename, Checksum: video.checksum }]);
   });
 });
 

@@ -55,7 +55,6 @@ describe("mergedDatasetDescriptions", () => {
     const { root, derivatives, sourcedata } = mergedDatasetDescriptions(
       { root: null, derivatives: null, sourcedata: null },
       entry,
-      "000123",
       "snippet",
       createdAt,
     );
@@ -83,7 +82,7 @@ describe("mergedDatasetDescriptions", () => {
       derivatives: null,
       sourcedata: null,
     };
-    const { root } = mergedDatasetDescriptions(existing, entry, "000123", "snippet", createdAt);
+    const { root } = mergedDatasetDescriptions(existing, entry, "snippet", createdAt);
     expect(root.GeneratedBy).toEqual([other, entry]);
     // Left as it was found, not renamed after this delivery.
     expect(root.Name).toBe("My Study");

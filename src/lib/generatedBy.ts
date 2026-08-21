@@ -58,6 +58,18 @@ export function buildGeneratedByEntry(sourceVideo?: GeneratedBySourceVideo): Gen
  * derived data together under one dataset, which is exactly this app's own tree. */
 export type DatasetType = "raw" | "derivative" | "study";
 
+/** One entry of `SourceDatasets` — BIDS's own `URL`/`DOI`/`Version`, all themselves optional, plus
+ * `Filename`/`Checksum` (not part of the vocabulary BIDS defines for this object, but nothing there
+ * forbids naming a source some other way when it has no dereferencable URL at all — a locally
+ * dropped file, which is the ordinary case for this app). */
+export interface SourceDatasetEntry {
+  URL?: string;
+  DOI?: string;
+  Version?: string;
+  Filename?: string;
+  Checksum?: { algorithm: "dandi:dandi-etag"; value: string };
+}
+
 // No index signature here deliberately: combined with `Omit`, one turns every field's type into the
 // index signature's own (a known TypeScript quirk), which is exactly what `mergeGeneratedBy` below
 // needs to avoid. A `dataset_description.json` this app did not write may still carry other keys —
@@ -70,7 +82,7 @@ export interface DatasetDescription {
   GeneratedBy?: GeneratedByEntry[];
   /** BIDS derivatives' own field naming where a derivative pipeline's content came from — set only
    * on `derivatives/clip-extractor/dataset_description.json`, not the dataset root's. */
-  SourceDatasets?: { URL: string }[];
+  SourceDatasets?: SourceDatasetEntry[];
 }
 
 /** The BIDS version these sidecars and `dataset_description.json` files are written against. */
@@ -110,6 +122,13 @@ function selectionLabel(mode: "snippet" | "frame"): string {
   return mode === "frame" ? "Frame" : "Snippet";
 }
 
+/** The study's own name — shared, verbatim or with a parenthetical suffix, by all three
+ * `dataset_description.json` files a delivery may create fresh, so the three read as one related
+ * set rather than three independently named datasets. */
+function studyName(mode: "snippet" | "frame", createdAt: Date): string {
+  return `${selectionLabel(mode)} extracted using the Clip Extractor on ${createdAt.toISOString()}`;
+}
+
 /** The dataset root's own `dataset_description.json`, created fresh only when none exists yet — an
  * upload never invents a dataset name or overwrites one already chosen for it. Named after the
  * delivery that created it, since nothing else (a dandiset has no name of its own worth quoting
@@ -117,28 +136,35 @@ function selectionLabel(mode: "snippet" | "frame"): string {
  * (`sourcedata/rawbids/`), raw derivatives inputs, and derived output (`derivatives/`) together, per
  * BIDS's own convention for that. */
 export function freshRootDescription(mode: "snippet" | "frame", createdAt: Date): Omit<DatasetDescription, "GeneratedBy"> {
-  return {
-    Name: `${selectionLabel(mode)} extracted using the Clip Extractor on ${createdAt.toISOString()}`,
-    BIDSVersion: BIDS_VERSION,
-    DatasetType: "study",
-  };
+  return { Name: studyName(mode, createdAt), BIDSVersion: BIDS_VERSION, DatasetType: "study" };
 }
 
 /** `derivatives/clip-extractor/dataset_description.json` — the pipeline's own, required by BIDS
  * derivatives regardless of what (if anything) the raw dataset's own file says. `SourceDatasets`
- * names where the derivative content came from. */
-export function freshDerivativesDescription(dandisetId: string): Omit<DatasetDescription, "GeneratedBy"> {
+ * names where the derivative content came from — `URL` when the source was streamed from a real
+ * address, `Filename`/`Checksum` when it is only known as a locally dropped file, whichever of those
+ * this delivery actually has. The `Name` matches the study's own, so the two read as the same
+ * delivery's two halves rather than unrelated datasets. */
+export function freshDerivativesDescription(
+  mode: "snippet" | "frame",
+  createdAt: Date,
+  sourceVideo?: GeneratedBySourceVideo,
+): Omit<DatasetDescription, "GeneratedBy"> {
+  const source: SourceDatasetEntry = {};
+  if (sourceVideo?.url) source.URL = sourceVideo.url;
+  if (sourceVideo?.filename) source.Filename = sourceVideo.filename;
+  if (sourceVideo?.checksum) source.Checksum = sourceVideo.checksum;
   return {
-    Name: `${TOOL_NAME} derivatives of ${dandisetId}`,
+    Name: `${studyName(mode, createdAt)} (Extracted)`,
     BIDSVersion: BIDS_VERSION,
     DatasetType: "derivative",
-    SourceDatasets: [{ URL: `.` }],
+    ...(Object.keys(source).length ? { SourceDatasets: [source] } : {}),
   };
 }
 
 /** `sourcedata/rawbids/dataset_description.json` — its own `DatasetType: "raw"`, so
  * `sourcedata/rawbids/` validates on its own as a complete BIDS dataset, independent of the dandiset
  * it sits inside (see lib/bidsPath.ts's module comment). */
-export function freshSourcedataDescription(dandisetId: string): Omit<DatasetDescription, "GeneratedBy"> {
-  return { Name: `${dandisetId} sourcedata (raw BIDS)`, BIDSVersion: BIDS_VERSION, DatasetType: "raw" };
+export function freshSourcedataDescription(mode: "snippet" | "frame", createdAt: Date): Omit<DatasetDescription, "GeneratedBy"> {
+  return { Name: `${studyName(mode, createdAt)} (Original)`, BIDSVersion: BIDS_VERSION, DatasetType: "raw" };
 }

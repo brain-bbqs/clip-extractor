@@ -270,6 +270,14 @@ describe("videoTechnicalFields / imageTechnicalFields", () => {
     expect(videoTechnicalFields(0, 640, 480, 90).RecordingDuration).toBe(0);
   });
 
+  it("omits VideoCodec when it was never given one", () => {
+    expect(videoTechnicalFields(30, 640, 480, 90)).not.toHaveProperty("VideoCodec");
+  });
+
+  it("carries VideoCodec when given one", () => {
+    expect(videoTechnicalFields(30, 640, 480, 90, "h264").VideoCodec).toBe("h264");
+  });
+
   it("carries only width and height for a still image", () => {
     expect(imageTechnicalFields(640, 480)).toEqual({ ImageWidth: 640, ImageHeight: 480 });
   });

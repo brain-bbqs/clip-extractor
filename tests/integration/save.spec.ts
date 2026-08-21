@@ -112,9 +112,16 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   expect(generatedBy[0].SourceVideo.filename).toBe("file_example_480 - Copy.webm");
   const derivativesDescription = JSON.parse(entries[5].text) as Record<string, unknown>;
   expect(derivativesDescription.DatasetType).toBe("derivative");
+  // The same study name, with a suffix, so the three read as one related set.
+  expect(derivativesDescription.Name).toBe(`${rootDescription.Name} (Extracted)`);
+  // No real URL for a locally dropped file, but its name and checksum still are.
+  expect(derivativesDescription.SourceDatasets).toEqual([
+    { Filename: "file_example_480 - Copy.webm", Checksum: { algorithm: "dandi:dandi-etag", value: expect.any(String) } },
+  ]);
   // sourcedata/rawbids's own — DatasetType: "raw" too, so that subtree validates independently.
   const sourcedataDescription = JSON.parse(entries[6].text) as Record<string, unknown>;
   expect(sourcedataDescription.DatasetType).toBe("raw");
+  expect(sourcedataDescription.Name).toBe(`${rootDescription.Name} (Original)`);
 });
 
 test("leaving the original out saves the extract and its sidecar alone, plus all three dataset_description.json files", async ({
