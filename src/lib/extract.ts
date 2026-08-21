@@ -74,13 +74,13 @@ export function sidecarFileName(beh: BehEntities, mode: SelectionKind, desc: str
 }
 
 /** The saved bundle: every file an upload would have written, tarred and gzipped into one download.
- * `desc-<mode>` says which kind of selection it holds, and `bundle` names what it is — but unlike the
- * files inside it, its own name carries no per-delivery disambiguator (see lib/bidsPath.ts's own
- * header comment): it is the outer container, not a file in the tree it holds, so the same source
- * saved again should name the same bundle rather than mint an ever-changing one around this
- * delivery's own instant. */
-export function bundleFileName(beh: BehEntities, mode: SelectionKind): string {
-  return behFilename(beh, { desc: mode, suffix: "bundle", ext: "tar.gz" });
+ * Carries the same `desc-extracted+clip` as the extract inside it, and `bundle` names what it is —
+ * but no per-delivery disambiguator, and nothing naming which kind of selection it holds either (see
+ * lib/bidsPath.ts's own header comment): it is the outer container, not a file in the tree it holds,
+ * so the same source saved again should name the same bundle rather than mint a new one around this
+ * delivery's own instant or whether a frame or a range happened to be marked at the time. */
+export function bundleFileName(beh: BehEntities): string {
+  return behFilename(beh, { desc: EXTRACTED_CLIP_DESC, suffix: "bundle", ext: "tar.gz" });
 }
 
 /** The same selection with the pose drawn into the pixels — `desc-overlay` in place of the plain

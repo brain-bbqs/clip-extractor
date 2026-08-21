@@ -59,10 +59,10 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
 
   // The button names the bundle before it is written — no recording- here, since the bundle is the
   // outer container, not a file inside the delivery's own directory.
-  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-unknown_desc-frame_bundle\.tar\.gz$/);
+  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-unknown_desc-extracted\+clip_bundle\.tar\.gz$/);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toMatch(/^sub-unknown_desc-frame_bundle\.tar\.gz$/);
+  expect(download.suggestedFilename()).toMatch(/^sub-unknown_desc-extracted\+clip_bundle\.tar\.gz$/);
   await expect(page.locator("#downloadStatus")).toContainText("Saved");
 
   const entries = listTar(readFileSync((await download.path())!));
@@ -99,7 +99,8 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   const rootDescription = JSON.parse(entries[4].text) as Record<string, unknown>;
   // "study": this root organizes sourcedata/rawbids/ (raw) and derivatives/ (derived) together.
   expect(rootDescription.DatasetType).toBe("study");
-  expect(rootDescription.Name).toMatch(/^Frame extracted using the Clip Extractor on \d{4}-\d{2}-\d{2}T/);
+  // No timestamp: this file is dataset-level, so its name has to still fit whatever is added later.
+  expect(rootDescription.Name).toBe("Frame extracted using the Clip Extractor");
   const generatedBy = rootDescription.GeneratedBy as { Name: string }[];
   expect(generatedBy[0].Name).toBe("clip-extractor");
   // Nobody signed in for a local Save, so nobody is credited — not even the field added.
@@ -167,14 +168,17 @@ test("leaving the original out saves the extract and its sidecar alone, plus all
 // mid-clip selection rather than the whole recording or the frame it opened on — frame 12 and
 // frames 6–21 of `mock_video`'s own 30 (see lib/testInjection.ts's MOCK_READY_FRAME/_RANGE).
 //
-// The two `&snippet` cases stop at the state and the name Save would write rather than pressing it:
-// a real snippet extraction needs ffmpeg.wasm off a CDN, which no spec in this suite depends on (see
-// blur.spec.ts's own header comment). The preview name comes off the same filename-building path a
-// real Save uses, and the readouts below are the selection itself, so what is skipped is the encode,
-// not the thing under test.
+// The two `&snippet` cases stop at the state Save would write from rather than pressing it: a real
+// snippet extraction needs ffmpeg.wasm off a CDN, which no spec in this suite depends on (see
+// blur.spec.ts's own header comment). What is skipped is the encode, not the thing under test — the
+// marked range and the selector mode below are the selection itself. The bundle name is checked too,
+// but proves less than it looks: it carries `desc-extracted+clip` either way, since the outer
+// container deliberately says nothing about which kind of selection it holds.
 
 const MOCK_FRAME = "12";
 const MOCK_RANGE = { in: "6", out: "21" };
+/** The selector's snippet side — `video` is what lib/types.ts's SelectorMode calls it. */
+const SNIPPET_MODE_BUTTON = '#modeSeg button[data-mode="video"]';
 
 test("?test&mock_video&mock_ready&from_local&frame saves a still frame of a locally dropped video", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
@@ -184,7 +188,7 @@ test("?test&mock_video&mock_ready&from_local&frame saves a still frame of a loca
   await expect(page.locator("#curVal")).toHaveValue(MOCK_FRAME);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toBe("sub-unknown_desc-frame_bundle.tar.gz");
+  expect(download.suggestedFilename()).toBe("sub-unknown_desc-extracted+clip_bundle.tar.gz");
 
   const entries = listTar(readFileSync((await download.path())!));
   // Dropped locally: the sub-unknown fallback, a recording- directory, and no URL for SourceDatasets
@@ -203,12 +207,14 @@ test("?test&mock_video&mock_ready&from_local&snippet marks a real range of a loc
   await page.goto("/?test&mock_video&mock_ready&from_local&snippet");
   await expect(page.locator("#btnDownload")).toBeEnabled();
 
+  // Snippet mode, not frame mode with stray marks left on it.
+  await expect(page.locator(SNIPPET_MODE_BUTTON)).toHaveAttribute("aria-pressed", "true");
   // A sub-range with recording on either side of it, and the playhead parked inside what would be
   // extracted rather than back at the start of the video.
   await expect(page.locator("#inVal")).toHaveValue(MOCK_RANGE.in);
   await expect(page.locator("#outVal")).toHaveValue(MOCK_RANGE.out);
   await expect(page.locator("#curVal")).toHaveValue(MOCK_RANGE.in);
-  await expect(page.locator("#downloadPreviewName")).toHaveText("sub-unknown_desc-snippet_bundle.tar.gz");
+  await expect(page.locator("#downloadPreviewName")).toHaveText("sub-unknown_desc-extracted+clip_bundle.tar.gz");
 });
 
 test("?test&mock_video&mock_ready&from_ember&frame saves a still frame of an archive-sourced video", async ({ page }) => {
@@ -221,7 +227,7 @@ test("?test&mock_video&mock_ready&from_ember&frame saves a still frame of an arc
   await expect(page.locator("#curVal")).toHaveValue(MOCK_FRAME);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toBe("sub-01_ses-02_desc-frame_bundle.tar.gz");
+  expect(download.suggestedFilename()).toBe("sub-01_ses-02_desc-extracted+clip_bundle.tar.gz");
 
   const entries = listTar(readFileSync((await download.path())!));
   expect(entries[0].path).toMatch(
@@ -246,10 +252,11 @@ test("?test&mock_video&mock_ready&from_ember&snippet marks a real range of an ar
   await page.goto("/?test&mock_video&mock_ready&from_ember&snippet");
   await expect(page.locator("#btnDownload")).toBeEnabled();
 
+  await expect(page.locator(SNIPPET_MODE_BUTTON)).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#inVal")).toHaveValue(MOCK_RANGE.in);
   await expect(page.locator("#outVal")).toHaveValue(MOCK_RANGE.out);
   await expect(page.locator("#curVal")).toHaveValue(MOCK_RANGE.in);
-  await expect(page.locator("#downloadPreviewName")).toHaveText("sub-01_ses-02_desc-snippet_bundle.tar.gz");
+  await expect(page.locator("#downloadPreviewName")).toHaveText("sub-01_ses-02_desc-extracted+clip_bundle.tar.gz");
 });
 
 test("&frame=<n> and &snippet=<lo>-<hi> pick their own indices, held to the video's own bounds", async ({ page }) => {

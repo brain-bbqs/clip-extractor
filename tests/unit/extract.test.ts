@@ -65,20 +65,20 @@ describe("overlayFileName", () => {
 });
 
 describe("bundleFileName", () => {
-  // No recording-/date-/time- here either — the bundle is the outer container, not a file inside the
-  // tree it holds, so the same source saved again should name the same bundle (see this module's own
-  // header comment).
-  it("names the saved bundle after the selection kind it holds", () => {
-    expect(bundleFileName(beh, "snippet")).toBe("sub-mice_desc-snippet_bundle.tar.gz");
+  // Neither a recording-/date-/time- stamp nor the selection kind: the bundle is the outer container,
+  // not a file inside the tree it holds, so the same source saved again names the same bundle (see
+  // this module's own header comment).
+  it("carries the same desc-extracted+clip as the extract inside it", () => {
+    expect(bundleFileName(beh)).toBe("sub-mice_desc-extracted+clip_bundle.tar.gz");
   });
 
-  it("names a single frame's bundle the same way", () => {
-    expect(bundleFileName(beh, "frame")).toBe("sub-mice_desc-frame_bundle.tar.gz");
-  });
-
-  it("names a known subject's bundle the same way too, with no date-/time- either", () => {
+  it("names a known subject's bundle the same way, with no date-/time- either", () => {
     const known: BehEntities = { sub: "1", ses: null, known: true, recording: "unused", date: "20260810", time: "012356" };
-    expect(bundleFileName(known, "snippet")).toBe("sub-1_desc-snippet_bundle.tar.gz");
+    expect(bundleFileName(known)).toBe("sub-1_desc-extracted+clip_bundle.tar.gz");
+  });
+
+  it("includes the session entity when there is one", () => {
+    expect(bundleFileName(behWithSession)).toBe("sub-1_ses-2_desc-extracted+clip_bundle.tar.gz");
   });
 });
 

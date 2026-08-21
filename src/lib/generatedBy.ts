@@ -3,9 +3,11 @@ import { version as TOOL_VERSION } from "../../package.json";
 // BEP028-shaped provenance ("BIDS-Prov"), the convention `dataset_description.json`'s `GeneratedBy`
 // key uses to record which tool produced (part of) a dataset — see
 // https://github.com/bids-standard/bids-specification/blob/master/src/modality-agnostic-files/dataset_description.md
-// and https://github.com/bids-standard/bids-specification/pull/487 (BEP028). The same entry shape is
-// also written into every BEP047 sidecar this app produces (see lib/provenance.ts), so a single file
-// carries its own provenance even apart from the dataset it sits in.
+// and https://github.com/bids-standard/bids-specification/pull/487 (BEP028). It is recorded once per
+// dataset, in the three `dataset_description.json` files a delivery touches, and nowhere else: the
+// BEP047 sidecars this app writes beside each file (see lib/provenance.ts) deliberately carry no
+// `GeneratedBy` of their own, since repeating the same entry on every file would only restate what
+// the dataset already says about which tool produced it.
 
 export const TOOL_NAME = "clip-extractor";
 export const TOOL_CODE_URL = "https://github.com/brain-bbqs/clip-extractor";
@@ -158,9 +160,16 @@ function selectionLabel(mode: "snippet" | "frame"): string {
 
 /** The study's own name — shared, verbatim or with a parenthetical suffix, by all three
  * `dataset_description.json` files a delivery may create fresh, so the three read as one related
- * set rather than three independently named datasets. */
-function studyName(mode: "snippet" | "frame", createdAt: Date): string {
-  return `${selectionLabel(mode)} extracted using the Clip Extractor on ${createdAt.toISOString()}`;
+ * set rather than three independently named datasets.
+ *
+ * Deliberately carries no timestamp. These three files are dataset-level, not per-delivery: the
+ * first delivery to find one missing creates it and every later one folds into what is already
+ * there (see `mergeGeneratedBy`), so a name stamped with whichever moment happened to be first
+ * would sit there permanently describing an instant that means nothing to everything added after
+ * it. The delivery-level record of *when* lives where it belongs — the `date-`/`time-` directory
+ * each delivery's own derivatives sit in (see lib/bidsPath.ts). */
+function studyName(mode: "snippet" | "frame"): string {
+  return `${selectionLabel(mode)} extracted using the Clip Extractor`;
 }
 
 /** The dataset root's own `dataset_description.json`, created fresh only when none exists yet — an
@@ -169,8 +178,8 @@ function studyName(mode: "snippet" | "frame", createdAt: Date): string {
  * here) says more about what this app put there. `DatasetType: "study"`: this root organizes source
  * (`sourcedata/rawbids/`), raw derivatives inputs, and derived output (`derivatives/`) together, per
  * BIDS's own convention for that. */
-export function freshRootDescription(mode: "snippet" | "frame", createdAt: Date): Omit<DatasetDescription, "GeneratedBy"> {
-  return { Name: studyName(mode, createdAt), BIDSVersion: BIDS_VERSION, DatasetType: "study" };
+export function freshRootDescription(mode: "snippet" | "frame"): Omit<DatasetDescription, "GeneratedBy"> {
+  return { Name: studyName(mode), BIDSVersion: BIDS_VERSION, DatasetType: "study" };
 }
 
 /** `derivatives/clip-extractor/dataset_description.json` — the pipeline's own, required by BIDS
@@ -179,13 +188,13 @@ export function freshRootDescription(mode: "snippet" | "frame", createdAt: Date)
  * way `GeneratedBy` and `Authors` are folded in rather than written once at creation. The `Name`
  * matches the study's own, so the two read as the same delivery's two halves rather than unrelated
  * datasets. */
-export function freshDerivativesDescription(mode: "snippet" | "frame", createdAt: Date): Omit<DatasetDescription, "GeneratedBy"> {
-  return { Name: `${studyName(mode, createdAt)} (Extracted)`, BIDSVersion: BIDS_VERSION, DatasetType: "derivative" };
+export function freshDerivativesDescription(mode: "snippet" | "frame"): Omit<DatasetDescription, "GeneratedBy"> {
+  return { Name: `${studyName(mode)} (Extracted)`, BIDSVersion: BIDS_VERSION, DatasetType: "derivative" };
 }
 
 /** `sourcedata/rawbids/dataset_description.json` — its own `DatasetType: "raw"`, so
  * `sourcedata/rawbids/` validates on its own as a complete BIDS dataset, independent of the dandiset
  * it sits inside (see lib/bidsPath.ts's module comment). */
-export function freshSourcedataDescription(mode: "snippet" | "frame", createdAt: Date): Omit<DatasetDescription, "GeneratedBy"> {
-  return { Name: `${studyName(mode, createdAt)} (Original)`, BIDSVersion: BIDS_VERSION, DatasetType: "raw" };
+export function freshSourcedataDescription(mode: "snippet" | "frame"): Omit<DatasetDescription, "GeneratedBy"> {
+  return { Name: `${studyName(mode)} (Original)`, BIDSVersion: BIDS_VERSION, DatasetType: "raw" };
 }

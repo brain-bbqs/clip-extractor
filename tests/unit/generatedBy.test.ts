@@ -11,8 +11,6 @@ import {
   type SourceDatasetEntry,
 } from "../../src/lib/generatedBy";
 
-const createdAt = new Date("2026-08-10T01:23:56.482Z");
-
 const video: SourceDatasetEntry = {
   Filename: "mice.mp4",
   Checksum: { algorithm: "dandi:dandi-etag", value: `${"a".repeat(32)}-1` },
@@ -33,31 +31,31 @@ describe("buildGeneratedByEntry", () => {
 
 describe("freshRootDescription / freshDerivativesDescription", () => {
   it("names the root after the delivery that created it, as a study", () => {
-    expect(freshRootDescription("snippet", createdAt)).toEqual({
-      Name: "Snippet extracted using the Clip Extractor on 2026-08-10T01:23:56.482Z",
+    expect(freshRootDescription("snippet")).toEqual({
+      Name: "Snippet extracted using the Clip Extractor",
       BIDSVersion: expect.any(String),
       DatasetType: "study",
     });
   });
 
   it("names a frame delivery the same way", () => {
-    expect(freshRootDescription("frame", createdAt).Name).toBe("Frame extracted using the Clip Extractor on 2026-08-10T01:23:56.482Z");
+    expect(freshRootDescription("frame").Name).toBe("Frame extracted using the Clip Extractor");
   });
 
   it("names the pipeline's own derivative dataset, matching the study's own name with a suffix", () => {
-    const doc = freshDerivativesDescription("snippet", createdAt);
+    const doc = freshDerivativesDescription("snippet");
     expect(doc.DatasetType).toBe("derivative");
-    expect(doc.Name).toBe(`${freshRootDescription("snippet", createdAt).Name} (Extracted)`);
+    expect(doc.Name).toBe(`${freshRootDescription("snippet").Name} (Extracted)`);
   });
 
   it("names sourcedata/rawbids's own the same way, with its own suffix", () => {
-    const doc = freshSourcedataDescription("snippet", createdAt);
+    const doc = freshSourcedataDescription("snippet");
     expect(doc.DatasetType).toBe("raw");
-    expect(doc.Name).toBe(`${freshRootDescription("snippet", createdAt).Name} (Original)`);
+    expect(doc.Name).toBe(`${freshRootDescription("snippet").Name} (Original)`);
   });
 
   it("has no SourceDatasets of its own — a delivery folds its own entry in afterwards", () => {
-    expect(freshDerivativesDescription("snippet", createdAt).SourceDatasets).toBeUndefined();
+    expect(freshDerivativesDescription("snippet").SourceDatasets).toBeUndefined();
   });
 });
 
@@ -65,20 +63,20 @@ describe("mergeGeneratedBy", () => {
   const entry = buildGeneratedByEntry();
 
   it("creates the fallback fresh, with just this entry, when nothing exists yet", () => {
-    const doc = mergeGeneratedBy(null, entry, freshRootDescription("snippet", createdAt));
-    expect(doc).toEqual({ ...freshRootDescription("snippet", createdAt), GeneratedBy: [entry] });
+    const doc = mergeGeneratedBy(null, entry, freshRootDescription("snippet"));
+    expect(doc).toEqual({ ...freshRootDescription("snippet"), GeneratedBy: [entry] });
   });
 
   it("appends to an existing file's GeneratedBy, leaving everything else in it untouched", () => {
     const other = { Name: "clip-extractor", Version: "0.0.1" };
     const existing = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const, GeneratedBy: [other], License: "CC0-1.0" };
-    const doc = mergeGeneratedBy(existing, entry, freshRootDescription("snippet", createdAt));
+    const doc = mergeGeneratedBy(existing, entry, freshRootDescription("snippet"));
     expect(doc).toEqual({ ...existing, GeneratedBy: [other, entry] });
   });
 
   it("does not duplicate an entry for the same tool at the same version", () => {
     const existing = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const, GeneratedBy: [entry] };
-    const doc = mergeGeneratedBy(existing, entry, freshRootDescription("snippet", createdAt));
+    const doc = mergeGeneratedBy(existing, entry, freshRootDescription("snippet"));
     expect(doc.GeneratedBy).toEqual([entry]);
   });
 
@@ -87,14 +85,14 @@ describe("mergeGeneratedBy", () => {
     // SourceDatasets' own job (see the mergeSourceDataset suite below), so a second video does not
     // get a second GeneratedBy entry the way it gets a second SourceDatasets one.
     const existing = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const, GeneratedBy: [entry] };
-    const doc = mergeGeneratedBy(existing, buildGeneratedByEntry(), freshRootDescription("snippet", createdAt));
+    const doc = mergeGeneratedBy(existing, buildGeneratedByEntry(), freshRootDescription("snippet"));
     expect(doc.GeneratedBy).toEqual([entry]);
   });
 
   it("adds a second entry for a different version of the same tool", () => {
     const older = { ...entry, Version: "0.0.1" };
     const existing = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const, GeneratedBy: [older] };
-    const doc = mergeGeneratedBy(existing, entry, freshRootDescription("snippet", createdAt));
+    const doc = mergeGeneratedBy(existing, entry, freshRootDescription("snippet"));
     expect(doc.GeneratedBy).toEqual([older, entry]);
   });
 });

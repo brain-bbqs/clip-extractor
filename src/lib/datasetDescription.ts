@@ -69,16 +69,16 @@ export async function readExistingDatasetDescriptions(cfg: ArchiveConfig): Promi
 }
 
 /** Folds this delivery's `GeneratedBy` entry into all three files, creating any one fresh only when
- * `existing` says nothing is registered there yet — all three named after this delivery, `mode` and
- * `createdAt` (see lib/generatedBy.ts's `freshRootDescription`/`freshDerivativesDescription`/
- * `freshSourcedataDescription`). `sourceDataset` folds into the derivatives file's own
- * `SourceDatasets` (see `mergeSourceDataset`) when this delivery's video has a real `URL` to name —
- * one entry per distinct such video this tool version has ever run against, accumulated across
- * deliveries rather than fixed at whichever delivery created the file; null (a locally dropped file)
- * leaves `SourceDatasets` untouched. `username` credits the signed-in archive account on all three
- * too (see `mergeAuthor`) — null
- * for a local Save or an anonymous upload, which leaves `Authors` as it was found rather than
- * inventing an entry. All three also get their own `DatasetLinks` aliases (see `mergeDatasetLinks`) —
+ * `existing` says nothing is registered there yet — named after `mode` alone, and carrying no
+ * timestamp, so the name the first delivery leaves behind still fits everything added to the same
+ * dataset afterwards (see lib/generatedBy.ts's `studyName`). `sourceDataset` folds into the
+ * derivatives file's own `SourceDatasets` (see `mergeSourceDataset`) when this delivery's video has a
+ * real `URL` to name — one entry per distinct such video this tool version has ever run against,
+ * accumulated across deliveries rather than fixed at whichever delivery created the file; null (a
+ * locally dropped file) leaves `SourceDatasets` untouched. `username` credits the signed-in archive
+ * account on all three too (see `mergeAuthor`) — null for a local Save or an anonymous upload, which
+ * leaves `Authors` as it was found rather than inventing an entry. All three also get their own
+ * `DatasetLinks` aliases (see `mergeDatasetLinks`) —
  * `clip` and `source` on the root, naming the derivatives directory and sourcedata/rawbids/ directly,
  * and `raw` on the derivatives file, naming its way back to sourcedata/rawbids/ — so any of the three
  * can be followed from either of the others without spelling its path out. */
@@ -87,13 +87,12 @@ export function mergedDatasetDescriptions(
   entry: import("./generatedBy").GeneratedByEntry,
   sourceDataset: SourceDatasetEntry | null,
   mode: "snippet" | "frame",
-  createdAt: Date,
   username: string | null,
 ): { root: DatasetDescription; derivatives: DatasetDescription; sourcedata: DatasetDescription } {
   return {
     root: mergeDatasetLinks(
       mergeDatasetLinks(
-        mergeAuthor(mergeGeneratedBy(existing.root, entry, freshRootDescription(mode, createdAt)), username),
+        mergeAuthor(mergeGeneratedBy(existing.root, entry, freshRootDescription(mode)), username),
         "clip",
         DERIVATIVES_DIRECTORY,
       ),
@@ -102,12 +101,12 @@ export function mergedDatasetDescriptions(
     ),
     derivatives: mergeSourceDataset(
       mergeDatasetLinks(
-        mergeAuthor(mergeGeneratedBy(existing.derivatives, entry, freshDerivativesDescription(mode, createdAt)), username),
+        mergeAuthor(mergeGeneratedBy(existing.derivatives, entry, freshDerivativesDescription(mode)), username),
         "raw",
         SOURCEDATA_DIRECTORY_FROM_DERIVATIVES,
       ),
       sourceDataset,
     ),
-    sourcedata: mergeAuthor(mergeGeneratedBy(existing.sourcedata, entry, freshSourcedataDescription(mode, createdAt)), username),
+    sourcedata: mergeAuthor(mergeGeneratedBy(existing.sourcedata, entry, freshSourcedataDescription(mode)), username),
   };
 }

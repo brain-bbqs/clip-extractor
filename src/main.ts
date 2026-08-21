@@ -2923,7 +2923,7 @@ function updateDeliveryPreview(): void {
   els.downloadPreview.hidden = !show;
   if (!show) return;
   const entities = currentEntities(new Date());
-  els.downloadPreviewName.textContent = bundleFileName(entities.beh, entities.mode);
+  els.downloadPreviewName.textContent = bundleFileName(entities.beh);
 }
 
 function setDeliveryBusy(busy: boolean): void {
@@ -3323,7 +3323,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // Read off the module-level identity rather than `provenanceInput.user` (which is only ever set on
   // the upload route, since that field also drives the sidecar's own `uploaded_by`): a visitor can be
   // signed in while using Save, and deserves the same credit there.
-  const descriptions = mergedDatasetDescriptions(existing, generatedByEntry, sourceDataset, kind, createdAt, currentUser?.username ?? null);
+  const descriptions = mergedDatasetDescriptions(existing, generatedByEntry, sourceDataset, kind, currentUser?.username ?? null);
   for (const [path, doc] of [
     [DATASET_DESCRIPTION_PATH, descriptions.root],
     [DERIVATIVES_DESCRIPTION_PATH, descriptions.derivatives],
@@ -3358,7 +3358,7 @@ async function runDownload(): Promise<void> {
     });
     setStatus(els.downloadStatus, "Packing the bundle…");
     const bundle = await tarGzip(bundled, createdAt);
-    const filename = bundleFileName(entities.beh, entities.mode);
+    const filename = bundleFileName(entities.beh);
     saveBlob(bundle, filename);
     setDeliveryBusy(false);
     setStatusNaming(els.downloadStatus, "Saved ", filename, ` (${bundled.length} files, ${bytes(bundle.size)})`, "ok");

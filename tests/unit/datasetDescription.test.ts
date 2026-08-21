@@ -52,8 +52,6 @@ describe("readExistingDatasetDescriptions", () => {
   });
 });
 
-const createdAt = new Date("2026-08-10T01:23:56.482Z");
-
 describe("mergedDatasetDescriptions", () => {
   it("builds all three files fresh when none exists yet", () => {
     const entry = buildGeneratedByEntry();
@@ -62,13 +60,12 @@ describe("mergedDatasetDescriptions", () => {
       entry,
       sourceDataset,
       "snippet",
-      createdAt,
       null,
     );
     // Named after this delivery, and DatasetType: "study" — this root organizes sourcedata/rawbids/
     // (raw) and derivatives/ (derived) together, per BIDS's own convention for that.
     expect(root).toEqual({
-      Name: "Snippet extracted using the Clip Extractor on 2026-08-10T01:23:56.482Z",
+      Name: "Snippet extracted using the Clip Extractor",
       BIDSVersion: expect.any(String),
       DatasetType: "study",
       GeneratedBy: [entry],
@@ -101,7 +98,7 @@ describe("mergedDatasetDescriptions", () => {
       derivatives: null,
       sourcedata: null,
     };
-    const { root } = mergedDatasetDescriptions(existing, entry, sourceDataset, "snippet", createdAt, null);
+    const { root } = mergedDatasetDescriptions(existing, entry, sourceDataset, "snippet", null);
     expect(root.GeneratedBy).toEqual([other, entry]);
     // Left as it was found, not renamed after this delivery.
     expect(root.Name).toBe("My Study");
@@ -109,14 +106,7 @@ describe("mergedDatasetDescriptions", () => {
 
   it("accumulates a second video into SourceDatasets on a repeat delivery, rather than losing it", () => {
     const entry = buildGeneratedByEntry();
-    const first = mergedDatasetDescriptions(
-      { root: null, derivatives: null, sourcedata: null },
-      entry,
-      sourceDataset,
-      "snippet",
-      createdAt,
-      null,
-    );
+    const first = mergedDatasetDescriptions({ root: null, derivatives: null, sourcedata: null }, entry, sourceDataset, "snippet", null);
     const otherVideo: SourceDatasetEntry = {
       Filename: "gerbil.mp4",
       Checksum: { algorithm: "dandi:dandi-etag", value: `${"b".repeat(32)}-1` },
@@ -126,7 +116,6 @@ describe("mergedDatasetDescriptions", () => {
       entry,
       otherVideo,
       "snippet",
-      createdAt,
       null,
     );
     expect(second.derivatives.SourceDatasets).toEqual([sourceDataset, otherVideo]);
@@ -141,7 +130,6 @@ describe("mergedDatasetDescriptions", () => {
       entry,
       sourceDataset,
       "snippet",
-      createdAt,
       "cody",
     );
     expect(root.Authors).toEqual(["cody"]);
