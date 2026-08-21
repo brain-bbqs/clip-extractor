@@ -3,12 +3,15 @@ import {
   PROVENANCE_FORMAT,
   buildBehSidecar,
   buildCompanionSidecar,
-  buildGeneratedBySourceVideo,
   buildProvenance,
+  buildSourceDatasetEntry,
   imageTechnicalFields,
   videoTechnicalFields,
+  type FileDigest,
   type ProvenanceInput,
 } from "../../src/lib/provenance";
+
+const digest: FileDigest = { md5: "1".repeat(32), dandiEtag: `${"a".repeat(32)}-1` };
 
 const base: ProvenanceInput = {
   createdAt: new Date("2026-08-10T01:23:56.000Z"),
@@ -270,12 +273,25 @@ describe("videoTechnicalFields / imageTechnicalFields", () => {
     expect(videoTechnicalFields(0, 640, 480, 90).RecordingDuration).toBe(0);
   });
 
-  it("omits VideoCodec when it was never given one", () => {
-    expect(videoTechnicalFields(30, 640, 480, 90)).not.toHaveProperty("VideoCodec");
+  it("omits every optional technical field when none was given", () => {
+    const fields = videoTechnicalFields(30, 640, 480, 90);
+    expect(fields).not.toHaveProperty("VideoCodec");
+    expect(fields).not.toHaveProperty("VideoCodecRFC6381");
+    expect(fields).not.toHaveProperty("ImagePixelFormat");
+    expect(fields).not.toHaveProperty("ImageBitDepth");
   });
 
-  it("carries VideoCodec when given one", () => {
-    expect(videoTechnicalFields(30, 640, 480, 90, "h264").VideoCodec).toBe("h264");
+  it("carries whichever of codec, its RFC 6381 string, pixel format and bit depth are given", () => {
+    const fields = videoTechnicalFields(30, 640, 480, 90, {
+      codec: "h264",
+      codecRFC6381: "avc1.640028",
+      pixelFormat: "yuv420p",
+      bitDepth: 8,
+    });
+    expect(fields.VideoCodec).toBe("h264");
+    expect(fields.VideoCodecRFC6381).toBe("avc1.640028");
+    expect(fields.ImagePixelFormat).toBe("yuv420p");
+    expect(fields.ImageBitDepth).toBe(8);
   });
 
   it("carries only width and height for a still image", () => {
@@ -283,36 +299,55 @@ describe("videoTechnicalFields / imageTechnicalFields", () => {
   });
 });
 
-describe("buildGeneratedBySourceVideo", () => {
-  it("matches buildProvenance's own source_video block, in GeneratedByEntry's shape", () => {
-    const sourceVideo = buildGeneratedBySourceVideo(base);
-    const provenance = buildProvenance(base);
-    expect(sourceVideo).toEqual({
-      filename: provenance.source_video.filename,
-      url: provenance.source_video.url,
-      size_bytes: provenance.source_video.size_bytes,
-      checksum: provenance.source_video.checksum,
-      checksum_unavailable: provenance.source_video.checksum_unavailable,
-      fps: provenance.source_video.fps,
-      width: provenance.source_video.width,
-      height: provenance.source_video.height,
-      num_frames: provenance.source_video.num_frames,
+describe("buildSourceDatasetEntry", () => {
+  it("names the file and its checksum for a local file, with no URL", () => {
+    expect(buildSourceDatasetEntry(base)).toEqual({
+      Filename: "mice.mp4",
+      Checksum: { algorithm: "dandi:dandi-etag", value: `${"a".repeat(32)}-1` },
     });
+  });
+
+  it("names the URL too, when the source was streamed from one", () => {
+    const streamed: ProvenanceInput = { ...base, source: { ...base.source, url: "https://api.test/assets/1/download/" } };
+    expect(buildSourceDatasetEntry(streamed)).toEqual({
+      URL: "https://api.test/assets/1/download/",
+      Filename: "mice.mp4",
+      Checksum: { algorithm: "dandi:dandi-etag", value: `${"a".repeat(32)}-1` },
+    });
+  });
+
+  it("omits Checksum when the source has none", () => {
+    const noChecksum: ProvenanceInput = { ...base, source: { ...base.source, checksum: null } };
+    expect(buildSourceDatasetEntry(noChecksum)).toEqual({ Filename: "mice.mp4" });
   });
 });
 
 describe("buildBehSidecar", () => {
   const technical = videoTechnicalFields(30, 640, 480, 30);
 
-  it("puts the description and the technical fields at the top level, alongside GeneratedBy", () => {
-    const sidecar = buildBehSidecar({ ...base, description: "Two mice groom each other here." }, technical);
+  it("puts the description at the top level, alongside GeneratedBy and Checksum", () => {
+    const sidecar = buildBehSidecar({ ...base, description: "Two mice groom each other here." }, technical, digest);
     expect(sidecar.Description).toBe("Two mice groom each other here.");
-    expect(sidecar.RecordingDuration).toBe(1);
     expect((sidecar.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
   });
 
+  it("names this file's own MD5 and dandi-etag under Checksum, SPDX-shaped", () => {
+    const sidecar = buildBehSidecar(base, technical, digest);
+    expect(sidecar.Checksum).toEqual([
+      { ChecksumAlgorithm: "spdx:checksumAlgorithm_md5", ChecksumValue: digest.md5 },
+      { ChecksumAlgorithm: "dandi:dandi-etag", ChecksumValue: digest.dandiEtag },
+    ]);
+  });
+
+  it("groups BEP047's own technical keys together, last", () => {
+    const sidecar = buildBehSidecar(base, technical, digest);
+    const keys = Object.keys(sidecar);
+    const technicalKeys = Object.keys(technical);
+    expect(keys.slice(-technicalKeys.length)).toEqual(technicalKeys);
+  });
+
   it("nests this app's full record under its own key, so nothing the old provenance file held is lost", () => {
-    const sidecar = buildBehSidecar(base, technical);
+    const sidecar = buildBehSidecar(base, technical, digest);
     const nested = sidecar["clip-extractor"] as { format: string };
     expect(nested.format).toBe(PROVENANCE_FORMAT);
   });
@@ -325,12 +360,17 @@ describe("buildCompanionSidecar", () => {
       technical: imageTechnicalFields(640, 480),
       sources: ["sourcedata/sub-1/beh/mice.mp4"],
       generatedByTool: false,
+      checksum: digest,
     });
     expect(sidecar).toEqual({
       Description: "The untouched original.",
+      Sources: ["sourcedata/sub-1/beh/mice.mp4"],
+      Checksum: [
+        { ChecksumAlgorithm: "spdx:checksumAlgorithm_md5", ChecksumValue: digest.md5 },
+        { ChecksumAlgorithm: "dandi:dandi-etag", ChecksumValue: digest.dandiEtag },
+      ],
       ImageWidth: 640,
       ImageHeight: 480,
-      Sources: ["sourcedata/sub-1/beh/mice.mp4"],
     });
   });
 
@@ -340,6 +380,7 @@ describe("buildCompanionSidecar", () => {
       technical: imageTechnicalFields(640, 480),
       sources: ["derivatives/clip-extractor/sub-1/beh/sub-1_recording-1_video.mp4"],
       generatedByTool: true,
+      checksum: digest,
     });
     expect((sidecar.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
   });
@@ -350,7 +391,18 @@ describe("buildCompanionSidecar", () => {
       technical: imageTechnicalFields(640, 480),
       sources: [],
       generatedByTool: false,
+      checksum: digest,
     });
     expect(sidecar).not.toHaveProperty("Sources");
+  });
+
+  it("omits Checksum entirely for a file BEP047 gives no checksum-worthy identity to, like a .slp", () => {
+    const sidecar = buildCompanionSidecar({
+      description: "SLEAP pose annotations.",
+      sources: [],
+      generatedByTool: false,
+      checksum: null,
+    });
+    expect(sidecar).not.toHaveProperty("Checksum");
   });
 });

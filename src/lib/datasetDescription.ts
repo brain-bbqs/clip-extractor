@@ -18,7 +18,10 @@ import {
   mergeAuthor,
   mergeDatasetLinks,
   mergeGeneratedBy,
+  mergeSource,
+  mergeSourceDataset,
   type DatasetDescription,
+  type SourceDatasetEntry,
 } from "./generatedBy";
 
 export const DATASET_DESCRIPTION_PATH = "dataset_description.json";
@@ -28,9 +31,11 @@ export const SOURCEDATA_DESCRIPTION_PATH = `sourcedata/${SOURCEDATA_RAWBIDS}/dat
 // The two `DatasetLinks` aliases `mergedDatasetDescriptions` below writes: the study root's own
 // `clip`, naming the derivatives pipeline's directory, and the derivatives file's own `raw`, naming
 // its way back to sourcedata/rawbids/ — relative from two levels down (`derivatives/clip-extractor/`),
-// the same way any other BIDS-relative path in this app is written.
+// the same way any other BIDS-relative path in this app is written. `SOURCEDATA_DIRECTORY` is the same
+// place, written from the study root itself (no `../../` needed) for the root's own `source` key.
 const DERIVATIVES_DIRECTORY = `derivatives/${DERIVATIVES_PIPELINE}`;
-const SOURCEDATA_DIRECTORY_FROM_DERIVATIVES = `../../sourcedata/${SOURCEDATA_RAWBIDS}`;
+const SOURCEDATA_DIRECTORY = `sourcedata/${SOURCEDATA_RAWBIDS}`;
+const SOURCEDATA_DIRECTORY_FROM_DERIVATIVES = `../../${SOURCEDATA_DIRECTORY}`;
 
 /** The three `dataset_description.json` files, wherever a delivery finds them: null for any that is
  * not registered in the dandiset yet. */
@@ -67,30 +72,40 @@ export async function readExistingDatasetDescriptions(cfg: ArchiveConfig): Promi
 /** Folds this delivery's `GeneratedBy` entry into all three files, creating any one fresh only when
  * `existing` says nothing is registered there yet — all three named after this delivery, `mode` and
  * `createdAt` (see lib/generatedBy.ts's `freshRootDescription`/`freshDerivativesDescription`/
- * `freshSourcedataDescription`). A fresh derivatives description's own `SourceDatasets` comes
- * straight off `entry.SourceVideo`, so it names the same source the sidecar files do. `username`
- * credits the signed-in archive account on all three too (see `mergeAuthor`) — null for a local Save
- * or an anonymous upload, which leaves `Authors` as it was found rather than inventing an entry. The
- * root and the derivatives file also get their own `DatasetLinks` alias (see `mergeDatasetLinks`) —
- * `clip` on the root, naming the derivatives directory, and `raw` on the derivatives file, naming its
- * way back to sourcedata/rawbids/ — so either can be followed without spelling the other's path out. */
+ * `freshSourcedataDescription`). `sourceDataset` folds into the derivatives file's own
+ * `SourceDatasets` (see `mergeSourceDataset`) — one entry per distinct video this tool version has
+ * ever run against, accumulated across deliveries rather than fixed at whichever delivery created the
+ * file. `username` credits the signed-in archive account on all three too (see `mergeAuthor`) — null
+ * for a local Save or an anonymous upload, which leaves `Authors` as it was found rather than
+ * inventing an entry. The root and the derivatives file also get their own `DatasetLinks` alias (see
+ * `mergeDatasetLinks`) — `clip` on the root, naming the derivatives directory, and `raw` on the
+ * derivatives file, naming its way back to sourcedata/rawbids/ — so either can be followed without
+ * spelling the other's path out; the root additionally gets a plain `source` key naming the same
+ * sourcedata/rawbids/ path directly (see `mergeSource`). */
 export function mergedDatasetDescriptions(
   existing: ExistingDatasetDescriptions,
   entry: import("./generatedBy").GeneratedByEntry,
+  sourceDataset: SourceDatasetEntry,
   mode: "snippet" | "frame",
   createdAt: Date,
   username: string | null,
 ): { root: DatasetDescription; derivatives: DatasetDescription; sourcedata: DatasetDescription } {
   return {
-    root: mergeDatasetLinks(
-      mergeAuthor(mergeGeneratedBy(existing.root, entry, freshRootDescription(mode, createdAt)), username),
-      "clip",
-      DERIVATIVES_DIRECTORY,
+    root: mergeSource(
+      mergeDatasetLinks(
+        mergeAuthor(mergeGeneratedBy(existing.root, entry, freshRootDescription(mode, createdAt)), username),
+        "clip",
+        DERIVATIVES_DIRECTORY,
+      ),
+      SOURCEDATA_DIRECTORY,
     ),
-    derivatives: mergeDatasetLinks(
-      mergeAuthor(mergeGeneratedBy(existing.derivatives, entry, freshDerivativesDescription(mode, createdAt, entry.SourceVideo)), username),
-      "raw",
-      SOURCEDATA_DIRECTORY_FROM_DERIVATIVES,
+    derivatives: mergeSourceDataset(
+      mergeDatasetLinks(
+        mergeAuthor(mergeGeneratedBy(existing.derivatives, entry, freshDerivativesDescription(mode, createdAt)), username),
+        "raw",
+        SOURCEDATA_DIRECTORY_FROM_DERIVATIVES,
+      ),
+      sourceDataset,
     ),
     sourcedata: mergeAuthor(mergeGeneratedBy(existing.sourcedata, entry, freshSourcedataDescription(mode, createdAt)), username),
   };

@@ -101,11 +101,12 @@ import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./
 import {
   buildBehSidecar,
   buildCompanionSidecar,
-  buildGeneratedBySourceVideo,
+  buildSourceDatasetEntry,
   imageTechnicalFields,
   videoTechnicalFields,
   type ProvenanceAnnotationsInput,
   type ProvenanceInput,
+  type TechnicalDetail,
 } from "./lib/provenance";
 import { buildGeneratedByEntry } from "./lib/generatedBy";
 import {
@@ -3116,12 +3117,13 @@ async function deliverOverlay(
   const technical =
     entities.mode === "frame"
       ? imageTechnicalFields(state.width, state.height)
-      : videoTechnicalFields(state.fps, state.width, state.height, entities.outFrame - entities.inFrame + 1, media.codec);
+      : videoTechnicalFields(state.fps, state.width, state.height, entities.outFrame - entities.inFrame + 1, { codec: media.codec });
   const sidecar = buildCompanionSidecar({
     description: "The selection with the pose overlay drawn into the pixels.",
     technical,
     sources: [mediaPath],
     generatedByTool: true,
+    checksum: { md5: digest.md5, dandiEtag: digest.etag },
   });
   const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
   const sidecarPath = uploadAssetPath(directory, sidecarFileName(entities.beh, entities.mode, "overlay"));
@@ -3167,14 +3169,29 @@ async function deliverOriginalVideo(
   // The technical properties of the source itself — already read off its own container when it was
   // loaded (see loadVideo), not re-derived here — so the raw file sitting in `sourcedata` carries the
   // same kind of sidecar a BEP047 media file does, without needing a probing library of its own.
-  // The codec is only known when the streaming backend named it; the sleap-io.js fallback backends
-  // never expose one to this app, so nothing is claimed rather than guessed.
-  const sourceCodec = state.backend instanceof StreamingVideoBackend ? (state.backend.codec ?? undefined) : undefined;
+  // Codec, its RFC 6381 string, pixel format and bit depth are only known when the streaming backend
+  // itself named them; the sleap-io.js fallback backends never expose any of this to this app, so
+  // nothing is claimed rather than guessed. A `?test&mock_video` preview is the one exception: its
+  // synthesized clip is really VP8 (see lib/testInjection.ts's synthesizeVideoFile), an implementation
+  // detail of the mock rather than anything worth previewing — the values below are h264's own typical
+  // ones instead, which is what a real delivery's own source almost always reports.
+  const isMockVideo = testInjection?.mockVideoFrames != null || testInjection?.mockVideoLongSeconds != null;
+  const sourceDetail: TechnicalDetail = isMockVideo
+    ? { codec: "h264", codecRFC6381: "avc1.42E01E", pixelFormat: "yuv420p", bitDepth: 8 }
+    : state.backend instanceof StreamingVideoBackend
+      ? {
+          codec: state.backend.codec ?? undefined,
+          codecRFC6381: state.backend.codecRFC6381 ?? undefined,
+          pixelFormat: state.backend.imagePixelFormat ?? undefined,
+          bitDepth: state.backend.imageBitDepth ?? undefined,
+        }
+      : {};
   await deliverSidecar(deliver, directory, original.name, onProgress, {
     description: "The source video this selection was clipped from.",
-    technical: videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames, sourceCodec),
+    technical: videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames, sourceDetail),
     sources: [],
     generatedByTool: false,
+    checksum: { md5: originalDigest.md5, dandiEtag: originalDigest.etag },
   });
   return { original, originalDigest, originalPath };
 }
@@ -3199,6 +3216,8 @@ async function deliverAnnotationFile(
     description: "SLEAP pose annotations loaded alongside the source video, covering (at least) this delivery's selection.",
     sources: sourcePath ? [sourcePath] : [],
     generatedByTool: false,
+    // Not a video/image asset BEP047 gives a `Checksum`-worthy identity to — see buildCompanionSidecar.
+    checksum: null,
   });
   return { digest, path };
 }
@@ -3344,8 +3363,8 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   const technical =
     kind === "frame"
       ? imageTechnicalFields(state.width, state.height)
-      : videoTechnicalFields(state.fps, state.width, state.height, hi - lo + 1, media.codec);
-  const sidecar = buildBehSidecar(provenanceInput, technical);
+      : videoTechnicalFields(state.fps, state.width, state.height, hi - lo + 1, { codec: media.codec });
+  const sidecar = buildBehSidecar(provenanceInput, technical, { md5: mediaDigest.md5, dandiEtag: mediaDigest.etag });
   const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
   const sidecarPath = uploadAssetPath(directories.derivatives, sidecarFileName(beh, kind));
   const sidecarLabel = "the sidecar record";
@@ -3366,11 +3385,12 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // writes them fresh; unpacked into a dataset that already has its own, a person reconciles them by
   // hand, same as any other file a bundle might collide with.
   const existing = (await params.existingDescriptions?.()) ?? { root: null, derivatives: null, sourcedata: null };
-  const generatedByEntry = buildGeneratedByEntry(buildGeneratedBySourceVideo(provenanceInput));
+  const generatedByEntry = buildGeneratedByEntry();
+  const sourceDataset = buildSourceDatasetEntry(provenanceInput);
   // Read off the module-level identity rather than `provenanceInput.user` (which is only ever set on
   // the upload route, since that field also drives the sidecar's own `uploaded_by`): a visitor can be
   // signed in while using Save, and deserves the same credit there.
-  const descriptions = mergedDatasetDescriptions(existing, generatedByEntry, kind, createdAt, currentUser?.username ?? null);
+  const descriptions = mergedDatasetDescriptions(existing, generatedByEntry, sourceDataset, kind, createdAt, currentUser?.username ?? null);
   for (const [path, doc] of [
     [DATASET_DESCRIPTION_PATH, descriptions.root],
     [DERIVATIVES_DESCRIPTION_PATH, descriptions.derivatives],

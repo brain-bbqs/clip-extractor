@@ -10,22 +10,6 @@ import { version as TOOL_VERSION } from "../../package.json";
 export const TOOL_NAME = "clip-extractor";
 export const TOOL_CODE_URL = "https://github.com/brain-bbqs/clip-extractor";
 
-/** As much as is known about the source video a `GeneratedBy` entry's own delivery cut a selection
- * out of — the same information as the sidecar's own `source_video` block (see lib/provenance.ts's
- * `ProvenanceSource`), duplicated here so the dataset-level files carry it too, not just the file it
- * was extracted into. */
-export interface GeneratedBySourceVideo {
-  filename: string;
-  url: string | null;
-  size_bytes: number | null;
-  checksum: { algorithm: "dandi:dandi-etag"; value: string } | null;
-  checksum_unavailable: string | null;
-  fps: number;
-  width: number;
-  height: number;
-  num_frames: number;
-}
-
 // Field order below (Name, then Description, then the version-y stuff) is deliberate, not just
 // declaration order: object literals preserve insertion order through JSON.stringify, and every
 // dataset_description.json/sidecar this app writes reads Name and Description first, before anything
@@ -35,24 +19,21 @@ export interface GeneratedByEntry {
   Description?: string;
   Version: string;
   CodeURL?: string;
-  /** Omitted only for an entry recorded some other way than a real delivery — every one this app
-   * writes carries one. */
-  SourceVideo?: GeneratedBySourceVideo;
 }
 
-/** This delivery's own `GeneratedBy` entry — the same on every file it writes, except that its
- * `SourceVideo`, when given, is what tells two deliveries of two different videos, at the same tool
- * version, apart (see `mergeGeneratedBy` below) rather than being collapsed into one. Passed only
- * where a `GeneratedBy` array actually accumulates across deliveries — the three
- * `dataset_description.json` files (see lib/datasetDescription.ts) — since a single file's own
- * sidecar already names its source video in full, without needing it repeated here too. */
-export function buildGeneratedByEntry(sourceVideo?: GeneratedBySourceVideo): GeneratedByEntry {
+/** This delivery's own `GeneratedBy` entry — identical on every file it writes and across every
+ * delivery of the same tool version, deduplicated to one entry per version rather than one per
+ * delivery (see `mergeGeneratedBy` below). Which source videos this tool version actually ran
+ * against is `SourceDatasets`' own job to record instead (see `mergeSourceDataset`, which — unlike
+ * `GeneratedBy` — accumulates one entry per distinct video across repeat deliveries): BEP028 does not
+ * define a field on `GeneratedBy` for naming an individual input file, so this app no longer invents
+ * one there. */
+export function buildGeneratedByEntry(): GeneratedByEntry {
   return {
     Name: TOOL_NAME,
     Description: "Extracted a trimmed clip or still frame from a source video for a BIDS dataset.",
     Version: TOOL_VERSION,
     CodeURL: TOOL_CODE_URL,
-    ...(sourceVideo ? { SourceVideo: sourceVideo } : {}),
   };
 }
 
@@ -99,28 +80,27 @@ export interface DatasetDescription {
    * elsewhere in the dataset (`bids::clip/...`/`bids::raw/...`) does not have to spell either path out
    * in full. */
   DatasetLinks?: Record<string, string>;
+  /** This app's own convention, not a BIDS-defined field — lowercase to read unambiguously as such
+   * next to `DatasetType`/`SourceDatasets`/etc, which are always capitalized. Set only on the study
+   * root, naming its own `sourcedata/rawbids/` subtree directly, in addition to (not instead of) the
+   * `DatasetLinks` alias `derivatives/clip-extractor/dataset_description.json` carries back to it. */
+  source?: string;
 }
 
 /** The BIDS version these sidecars and `dataset_description.json` files are written against. */
 export const BIDS_VERSION = "1.10.0";
 
-/** Whichever of checksum, URL or filename actually identifies the video — the first that is known,
- * in that order of how well it actually distinguishes one video from another. */
-function videoIdentity(v: GeneratedBySourceVideo | undefined): string {
-  return v?.checksum?.value ?? v?.url ?? v?.filename ?? "";
-}
-
 function sameEntry(a: GeneratedByEntry, b: GeneratedByEntry): boolean {
-  return a.Name === b.Name && a.Version === b.Version && videoIdentity(a.SourceVideo) === videoIdentity(b.SourceVideo);
+  return a.Name === b.Name && a.Version === b.Version;
 }
 
 /**
  * Folds this delivery's `GeneratedBy` entry into an existing (or freshly created)
  * `dataset_description.json`, without disturbing whatever else is already in it — other pipelines'
  * entries, custom keys another tool wrote, anything. An entry for the same tool at the same version
- * *and* the same source video is left in place rather than duplicated (saving a bundle and then
- * uploading it, say), but a second video at the same tool version gets its own entry — otherwise the
- * array would read as "this tool ran once" no matter how many different videos it actually processed.
+ * is left in place rather than duplicated (saving a bundle and then uploading it, say, or a second
+ * delivery of a different video at the same tool version) — see `mergeSourceDataset` for what tracks
+ * *which* videos this tool version actually ran against, which `GeneratedBy` itself no longer does.
  */
 export function mergeGeneratedBy(
   existing: DatasetDescription | null,
@@ -131,6 +111,32 @@ export function mergeGeneratedBy(
   const generatedBy = base.GeneratedBy ?? [];
   const already = generatedBy.some((g) => sameEntry(g, entry));
   return { ...base, GeneratedBy: already ? generatedBy : [...generatedBy, entry] };
+}
+
+/** Whichever of checksum, URL or filename actually identifies a `SourceDatasets` entry's video — the
+ * first that is known, in that order of how well it actually distinguishes one video from another. */
+function sourceIdentity(s: SourceDatasetEntry): string {
+  return s.Checksum?.value ?? s.URL ?? s.Filename ?? "";
+}
+
+/** Adds `source` to `doc.SourceDatasets`, unless a video with the same identity (see `sourceIdentity`)
+ * is already listed — so a re-delivery of the same video does not duplicate its entry, but a second,
+ * different video processed by the same pipeline gets its own, rather than being lost the way a fixed,
+ * write-once `SourceDatasets` would lose it. `source: null` (nothing at all is known about this
+ * delivery's video — never actually the case for a real delivery, but keeps this safe to call
+ * unconditionally) leaves `doc` untouched. */
+export function mergeSourceDataset(doc: DatasetDescription, source: SourceDatasetEntry | null): DatasetDescription {
+  if (!source || !Object.keys(source).length) return doc;
+  const sources = doc.SourceDatasets ?? [];
+  const already = sources.some((s) => sourceIdentity(s) === sourceIdentity(source));
+  return already ? doc : { ...doc, SourceDatasets: [...sources, source] };
+}
+
+/** Sets the study root's own `source` key (see `DatasetDescription.source`) to `sourcedata/rawbids/`'s
+ * path, if it is not already there. */
+export function mergeSource(doc: DatasetDescription, source: string): DatasetDescription {
+  if (doc.source === source) return doc;
+  return { ...doc, source };
 }
 
 /** Credits the signed-in archive username on `doc`, alongside whoever is already listed there —
@@ -177,26 +183,13 @@ export function freshRootDescription(mode: "snippet" | "frame", createdAt: Date)
 }
 
 /** `derivatives/clip-extractor/dataset_description.json` — the pipeline's own, required by BIDS
- * derivatives regardless of what (if anything) the raw dataset's own file says. `SourceDatasets`
- * names where the derivative content came from — `URL` when the source was streamed from a real
- * address, `Filename`/`Checksum` when it is only known as a locally dropped file, whichever of those
- * this delivery actually has. The `Name` matches the study's own, so the two read as the same
- * delivery's two halves rather than unrelated datasets. */
-export function freshDerivativesDescription(
-  mode: "snippet" | "frame",
-  createdAt: Date,
-  sourceVideo?: GeneratedBySourceVideo,
-): Omit<DatasetDescription, "GeneratedBy"> {
-  const source: SourceDatasetEntry = {};
-  if (sourceVideo?.url) source.URL = sourceVideo.url;
-  if (sourceVideo?.filename) source.Filename = sourceVideo.filename;
-  if (sourceVideo?.checksum) source.Checksum = sourceVideo.checksum;
-  return {
-    Name: `${studyName(mode, createdAt)} (Extracted)`,
-    BIDSVersion: BIDS_VERSION,
-    DatasetType: "derivative",
-    ...(Object.keys(source).length ? { SourceDatasets: [source] } : {}),
-  };
+ * derivatives regardless of what (if anything) the raw dataset's own file says. Its `SourceDatasets`
+ * is not set here — a delivery folds its own entry in afterwards via `mergeSourceDataset`, the same
+ * way `GeneratedBy` and `Authors` are folded in rather than written once at creation. The `Name`
+ * matches the study's own, so the two read as the same delivery's two halves rather than unrelated
+ * datasets. */
+export function freshDerivativesDescription(mode: "snippet" | "frame", createdAt: Date): Omit<DatasetDescription, "GeneratedBy"> {
+  return { Name: `${studyName(mode, createdAt)} (Extracted)`, BIDSVersion: BIDS_VERSION, DatasetType: "derivative" };
 }
 
 /** `sourcedata/rawbids/dataset_description.json` — its own `DatasetType: "raw"`, so

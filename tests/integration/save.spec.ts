@@ -107,13 +107,14 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   // "study": this root organizes sourcedata/rawbids/ (raw) and derivatives/ (derived) together.
   expect(rootDescription.DatasetType).toBe("study");
   expect(rootDescription.Name).toMatch(/^Frame extracted using the Clip Extractor on \d{4}-\d{2}-\d{2}T/);
-  const generatedBy = rootDescription.GeneratedBy as { Name: string; SourceVideo: { filename: string } }[];
+  const generatedBy = rootDescription.GeneratedBy as { Name: string }[];
   expect(generatedBy[0].Name).toBe("clip-extractor");
-  expect(generatedBy[0].SourceVideo.filename).toBe("file_example_480 - Copy.webm");
   // Nobody signed in for a local Save, so nobody is credited — not even the field added.
   expect(rootDescription.Authors).toBeUndefined();
   // Names its own derivatives directory, so it can be followed without spelling the path out.
   expect(rootDescription.DatasetLinks).toEqual({ clip: "derivatives/clip-extractor" });
+  // Points at sourcedata/rawbids/ directly too — this app's own convention, not a BIDS-defined field.
+  expect(rootDescription.source).toBe("sourcedata/rawbids");
   const derivativesDescription = JSON.parse(entries[5].text) as Record<string, unknown>;
   expect(derivativesDescription.DatasetType).toBe("derivative");
   // The same study name, with a suffix, so the three read as one related set.

@@ -10,7 +10,7 @@ import {
   UrlSource,
   VideoSampleSink,
 } from "mediabunny";
-import type { InputVideoTrack, Source, VideoSample } from "mediabunny";
+import type { InputVideoTrack, Source, VideoSample, VideoSamplePixelFormat } from "mediabunny";
 import { bytes } from "./format";
 import type { SleapVideoBackend } from "./types";
 
@@ -236,6 +236,36 @@ function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/** What a decoded frame's own pixel format says about it, in BEP047's own vocabulary —
+ * `ImagePixelFormat`'s FFmpeg `pix_fmt` naming (`"yuv420p"`, `"yuv420p10le"`, …) and
+ * `ImageBitDepth`'s plain integer, rather than mediabunny's WebCodecs-style format string
+ * (`"I420"`, `"I420P10"`, …) directly. */
+interface PixelFormatInfo {
+  pixelFormat: string;
+  bitDepth: number;
+}
+
+// mediabunny names a decoded frame's pixel format after the WebCodecs spec
+// (https://www.w3.org/TR/webcodecs/#pixel-format); BEP047 asks for FFmpeg's own `pix_fmt` naming
+// instead. The two vocabularies name the same handful of planar YUV and packed RGB layouts, just
+// with different spellings — this is that translation, not a guess: every WebCodecs format
+// mediabunny can produce (see VIDEO_SAMPLE_PIXEL_FORMATS in mediabunny's own sample.ts) has a real
+// FFmpeg pix_fmt counterpart named here.
+const YUV_PIXEL_FORMAT = /^I(420|422|444)(A)?(P10|P12)?$/;
+const PACKED_PIXEL_FORMATS: Record<string, string> = { NV12: "nv12", RGBA: "rgba", RGBX: "rgb0", BGRA: "bgra", BGRX: "bgr0" };
+
+export function pixelFormatInfo(format: VideoSamplePixelFormat): PixelFormatInfo | null {
+  const yuv = YUV_PIXEL_FORMAT.exec(format);
+  if (yuv) {
+    const [, chroma, alpha, depthSuffix] = yuv;
+    const bitDepth = depthSuffix === "P10" ? 10 : depthSuffix === "P12" ? 12 : 8;
+    const depthTag = depthSuffix ? `${bitDepth}le` : "";
+    return { pixelFormat: `yuv${alpha ? "a" : ""}${chroma}p${depthTag}`, bitDepth };
+  }
+  const packed = PACKED_PIXEL_FORMATS[format];
+  return packed ? { pixelFormat: packed, bitDepth: 8 } : null;
+}
+
 /** Checks a constant-rate model against frames spread through the file, including one frame past
  * its end, which has to land back on the last frame or the count is wrong. */
 export async function modelHolds(
@@ -334,6 +364,17 @@ export class StreamingVideoBackend implements SleapVideoBackend {
   /** The source container's own video codec (mediabunny's own naming, e.g. `"avc"`, `"vp9"`), for
    * provenance sidecars — null on the rare track mediabunny itself cannot name. */
   readonly codec: string | null;
+  /** The same codec, as the full RFC 6381 parameter string (e.g. `"avc1.640028"`) — what BEP047's
+   * `VideoCodecRFC6381` names, more specific than `codec` alone since it also carries the profile and
+   * level a decoder needs. Null wherever `codec` itself is, or on the rarer track mediabunny can name
+   * loosely but not build a full parameter string for. */
+  readonly codecRFC6381: string | null;
+  /** The first decoded frame's own pixel format and bit depth, in BEP047's `ImagePixelFormat`/
+   * `ImageBitDepth` vocabulary (see `pixelFormatInfo`) — null on a layout that vocabulary has no name
+   * for, rather than a guess. Read once at open time (see `open`): every frame of one track shares one
+   * layout, so there is nothing a later frame could tell this that the first one didn't already. */
+  readonly imagePixelFormat: string | null;
+  readonly imageBitDepth: number | null;
 
   private readonly cache: FrameCache<ImageBitmap>;
   private readonly sink: VideoSampleSink;
@@ -347,6 +388,8 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     private readonly track: InputVideoTrack,
     private readonly index: FrameIndex,
     cacheSize: number,
+    codecRFC6381: string | null,
+    pixelFormat: PixelFormatInfo | null,
   ) {
     this.sink = new VideoSampleSink(track);
     this.cache = new FrameCache<ImageBitmap>(Math.max(1, cacheSize));
@@ -354,6 +397,9 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     this.height = track.displayHeight;
     this.fps = index.fps;
     this.codec = track.codec ?? null;
+    this.codecRFC6381 = codecRFC6381;
+    this.imagePixelFormat = pixelFormat?.pixelFormat ?? null;
+    this.imageBitDepth = pixelFormat?.bitDepth ?? null;
     this.shape = [index.count, this.height, this.width, 3];
   }
 
@@ -402,7 +448,20 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       }
       const index = constant ?? enumeratedIndex(await enumerateFrameTimes(packets, budget));
       if (!index.count) throw new Error("No frames found in video track");
-      return new StreamingVideoBackend(input, track, index, options.cacheSize ?? DEFAULT_CACHE_SIZE);
+      // Best-effort: some tracks name a codec loosely (`track.codec`) but cannot be built into a full
+      // parameter string, which is a real "don't know", not a failure to open the file over.
+      const codecRFC6381 = await track.getCodecParameterString().catch(() => null);
+      // One frame decoded and immediately closed again, purely to read its pixel format: every frame
+      // of a track shares one layout, so the first is as good a source for it as any other.
+      const pixelFormat = await new VideoSampleSink(track)
+        .getSample(index.time(0))
+        .then((sample) => {
+          const info = sample?.format ? pixelFormatInfo(sample.format) : null;
+          sample?.close();
+          return info;
+        })
+        .catch(() => null);
+      return new StreamingVideoBackend(input, track, index, options.cacheSize ?? DEFAULT_CACHE_SIZE, codecRFC6381, pixelFormat);
     } catch (e) {
       // Nothing was handed back, so nothing else can dispose the input or the requests behind it.
       input.dispose();

@@ -7,21 +7,16 @@ import {
   mergeAuthor,
   mergeDatasetLinks,
   mergeGeneratedBy,
-  type GeneratedBySourceVideo,
+  mergeSource,
+  mergeSourceDataset,
+  type SourceDatasetEntry,
 } from "../../src/lib/generatedBy";
 
 const createdAt = new Date("2026-08-10T01:23:56.482Z");
 
-const video: GeneratedBySourceVideo = {
-  filename: "mice.mp4",
-  url: null,
-  size_bytes: 4096,
-  checksum: { algorithm: "dandi:dandi-etag", value: `${"a".repeat(32)}-1` },
-  checksum_unavailable: null,
-  fps: 30,
-  width: 640,
-  height: 480,
-  num_frames: 900,
+const video: SourceDatasetEntry = {
+  Filename: "mice.mp4",
+  Checksum: { algorithm: "dandi:dandi-etag", value: `${"a".repeat(32)}-1` },
 };
 
 describe("buildGeneratedByEntry", () => {
@@ -30,11 +25,6 @@ describe("buildGeneratedByEntry", () => {
     expect(entry.Name).toBe("clip-extractor");
     expect(entry.Version).toMatch(/^\d+\.\d+\.\d+/);
     expect(entry.CodeURL).toBe("https://github.com/brain-bbqs/clip-extractor");
-    expect(entry.SourceVideo).toBeUndefined();
-  });
-
-  it("carries the source video when given one", () => {
-    expect(buildGeneratedByEntry(video).SourceVideo).toEqual(video);
   });
 
   it("orders its keys Name, Description, then the version-y fields — object literals preserve this through JSON.stringify", () => {
@@ -67,25 +57,13 @@ describe("freshRootDescription / freshDerivativesDescription", () => {
     expect(doc.Name).toBe(`${freshRootDescription("snippet", createdAt).Name} (Original)`);
   });
 
-  it("omits SourceDatasets when nothing is known about the source video", () => {
+  it("has no SourceDatasets of its own — a delivery folds its own entry in afterwards", () => {
     expect(freshDerivativesDescription("snippet", createdAt).SourceDatasets).toBeUndefined();
-  });
-
-  it("names the source by URL when it was streamed from one", () => {
-    const doc = freshDerivativesDescription("snippet", createdAt, { ...video, url: "https://api.test/assets/1/download/" });
-    expect(doc.SourceDatasets).toEqual([
-      { URL: "https://api.test/assets/1/download/", Filename: video.filename, Checksum: video.checksum },
-    ]);
-  });
-
-  it("omits URL but still names the file and its checksum for a local file", () => {
-    const doc = freshDerivativesDescription("snippet", createdAt, video);
-    expect(doc.SourceDatasets).toEqual([{ Filename: video.filename, Checksum: video.checksum }]);
   });
 });
 
 describe("mergeGeneratedBy", () => {
-  const entry = buildGeneratedByEntry(video);
+  const entry = buildGeneratedByEntry();
 
   it("creates the fallback fresh, with just this entry, when nothing exists yet", () => {
     const doc = mergeGeneratedBy(null, entry, freshRootDescription("snippet", createdAt));
@@ -99,9 +77,18 @@ describe("mergeGeneratedBy", () => {
     expect(doc).toEqual({ ...existing, GeneratedBy: [other, entry] });
   });
 
-  it("does not duplicate an entry for the same tool at the same version and the same source video", () => {
+  it("does not duplicate an entry for the same tool at the same version", () => {
     const existing = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const, GeneratedBy: [entry] };
     const doc = mergeGeneratedBy(existing, entry, freshRootDescription("snippet", createdAt));
+    expect(doc.GeneratedBy).toEqual([entry]);
+  });
+
+  it("does not duplicate it even for a second delivery of a different video, at the same tool version", () => {
+    // GeneratedBy only ever names the tool and its version — which videos it ran against is
+    // SourceDatasets' own job (see the mergeSourceDataset suite below), so a second video does not
+    // get a second GeneratedBy entry the way it gets a second SourceDatasets one.
+    const existing = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const, GeneratedBy: [entry] };
+    const doc = mergeGeneratedBy(existing, buildGeneratedByEntry(), freshRootDescription("snippet", createdAt));
     expect(doc.GeneratedBy).toEqual([entry]);
   });
 
@@ -111,16 +98,45 @@ describe("mergeGeneratedBy", () => {
     const doc = mergeGeneratedBy(existing, entry, freshRootDescription("snippet", createdAt));
     expect(doc.GeneratedBy).toEqual([older, entry]);
   });
+});
 
-  it("adds a second entry for a different source video at the same tool version, rather than collapsing them", () => {
-    const otherVideo = buildGeneratedByEntry({
-      ...video,
-      filename: "gerbil.mp4",
-      checksum: { algorithm: "dandi:dandi-etag", value: `${"b".repeat(32)}-1` },
-    });
-    const existing = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const, GeneratedBy: [entry] };
-    const doc = mergeGeneratedBy(existing, otherVideo, freshRootDescription("snippet", createdAt));
-    expect(doc.GeneratedBy).toEqual([entry, otherVideo]);
+describe("mergeSourceDataset", () => {
+  const doc = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "derivative" as const };
+
+  it("adds the entry when there is none yet", () => {
+    expect(mergeSourceDataset(doc, video)).toEqual({ ...doc, SourceDatasets: [video] });
+  });
+
+  it("leaves the document untouched — not even adding the field — for an empty entry", () => {
+    expect(mergeSourceDataset(doc, {})).toBe(doc);
+    expect(mergeSourceDataset(doc, null)).toBe(doc);
+  });
+
+  it("does not duplicate the same video delivered twice", () => {
+    const withVideo = { ...doc, SourceDatasets: [video] };
+    expect(mergeSourceDataset(withVideo, video)).toBe(withVideo);
+  });
+
+  it("adds a second entry for a different video, rather than collapsing them", () => {
+    const otherVideo: SourceDatasetEntry = {
+      Filename: "gerbil.mp4",
+      Checksum: { algorithm: "dandi:dandi-etag", value: `${"b".repeat(32)}-1` },
+    };
+    const withVideo = { ...doc, SourceDatasets: [video] };
+    expect(mergeSourceDataset(withVideo, otherVideo)).toEqual({ ...doc, SourceDatasets: [video, otherVideo] });
+  });
+});
+
+describe("mergeSource", () => {
+  const doc = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const };
+
+  it("sets the source key when there is none yet", () => {
+    expect(mergeSource(doc, "sourcedata/rawbids")).toEqual({ ...doc, source: "sourcedata/rawbids" });
+  });
+
+  it("leaves the document untouched once it is already correct", () => {
+    const withSource = { ...doc, source: "sourcedata/rawbids" };
+    expect(mergeSource(withSource, "sourcedata/rawbids")).toBe(withSource);
   });
 });
 

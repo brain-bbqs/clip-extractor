@@ -6,8 +6,13 @@ import {
   mergedDatasetDescriptions,
   readExistingDatasetDescriptions,
 } from "../../src/lib/datasetDescription";
-import { buildGeneratedByEntry } from "../../src/lib/generatedBy";
+import { buildGeneratedByEntry, type SourceDatasetEntry } from "../../src/lib/generatedBy";
 import type { ArchiveConfig, Asset } from "../../src/lib/types";
+
+const sourceDataset: SourceDatasetEntry = {
+  Filename: "mice.mp4",
+  Checksum: { algorithm: "dandi:dandi-etag", value: `${"a".repeat(32)}-1` },
+};
 
 const cfg: ArchiveConfig = { api: "https://api.test/api", web: "https://web.test", accessToken: "tok", dandisetId: "000123" };
 
@@ -55,6 +60,7 @@ describe("mergedDatasetDescriptions", () => {
     const { root, derivatives, sourcedata } = mergedDatasetDescriptions(
       { root: null, derivatives: null, sourcedata: null },
       entry,
+      sourceDataset,
       "snippet",
       createdAt,
       null,
@@ -67,12 +73,16 @@ describe("mergedDatasetDescriptions", () => {
       DatasetType: "study",
       GeneratedBy: [entry],
       DatasetLinks: { clip: "derivatives/clip-extractor" },
+      source: "sourcedata/rawbids",
     });
     expect(derivatives.DatasetType).toBe("derivative");
     expect(derivatives.GeneratedBy).toEqual([entry]);
     // Its own alias back the other way, so either file can be followed without spelling the other's
     // path out.
     expect(derivatives.DatasetLinks).toEqual({ raw: "../../sourcedata/rawbids" });
+    // This delivery's own video, named on the derivatives file — nowhere else.
+    expect(derivatives.SourceDatasets).toEqual([sourceDataset]);
+    expect(root.SourceDatasets).toBeUndefined();
     // Its own DatasetType: "raw" too — sourcedata/rawbids/ is meant to validate as a complete raw
     // BIDS dataset by itself, independent of the dandiset it sits inside.
     expect(sourcedata.DatasetType).toBe("raw");
@@ -92,10 +102,37 @@ describe("mergedDatasetDescriptions", () => {
       derivatives: null,
       sourcedata: null,
     };
-    const { root } = mergedDatasetDescriptions(existing, entry, "snippet", createdAt, null);
+    const { root } = mergedDatasetDescriptions(existing, entry, sourceDataset, "snippet", createdAt, null);
     expect(root.GeneratedBy).toEqual([other, entry]);
     // Left as it was found, not renamed after this delivery.
     expect(root.Name).toBe("My Study");
+  });
+
+  it("accumulates a second video into SourceDatasets on a repeat delivery, rather than losing it", () => {
+    const entry = buildGeneratedByEntry();
+    const first = mergedDatasetDescriptions(
+      { root: null, derivatives: null, sourcedata: null },
+      entry,
+      sourceDataset,
+      "snippet",
+      createdAt,
+      null,
+    );
+    const otherVideo: SourceDatasetEntry = {
+      Filename: "gerbil.mp4",
+      Checksum: { algorithm: "dandi:dandi-etag", value: `${"b".repeat(32)}-1` },
+    };
+    const second = mergedDatasetDescriptions(
+      { root: first.root, derivatives: first.derivatives, sourcedata: first.sourcedata },
+      entry,
+      otherVideo,
+      "snippet",
+      createdAt,
+      null,
+    );
+    expect(second.derivatives.SourceDatasets).toEqual([sourceDataset, otherVideo]);
+    // GeneratedBy itself is still just the one entry — the same tool, the same version.
+    expect(second.derivatives.GeneratedBy).toEqual([entry]);
   });
 
   it("credits the signed-in username on all three files when one is given", () => {
@@ -103,6 +140,7 @@ describe("mergedDatasetDescriptions", () => {
     const { root, derivatives, sourcedata } = mergedDatasetDescriptions(
       { root: null, derivatives: null, sourcedata: null },
       entry,
+      sourceDataset,
       "snippet",
       createdAt,
       "cody",

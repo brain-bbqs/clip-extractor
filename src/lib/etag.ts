@@ -92,3 +92,27 @@ export async function computeDandiEtag(blob: Blob, parts: FilePart[], onProgress
   onProgress(1);
   return combineDigests(digests, parts.length);
 }
+
+/** Plain whole-file MD5 — independent of the dandi-etag above, which even for a single-part blob is
+ * `md5(md5(file))` rather than `md5(file)` (see `ProvenanceChecksum`'s own comment on that). A
+ * sidecar's own `Checksum` field (lib/provenance.ts) names both, since only the dandi-etag identifies
+ * the blob to the archive but a plain MD5 is what most tooling outside it expects. Streamed in the
+ * same HASH_CHUNK-sized reads as `hashPart`, so a large source video never lands in memory whole; a
+ * separate pass over the bytes rather than folded into `computeDandiEtag`'s, since that one resets its
+ * digest at every part boundary and this one must not. */
+export async function computeMd5(blob: Blob, onProgress: (fraction: number) => void = () => {}): Promise<string> {
+  const spark = new SparkMD5.ArrayBuffer();
+  let read = 0;
+  while (read < blob.size) {
+    const n = Math.min(HASH_CHUNK, blob.size - read);
+    const buf = await blob.slice(read, read + n).arrayBuffer();
+    if (buf.byteLength !== n) {
+      throw new Error("The source file changed while hashing — please re-load it.");
+    }
+    spark.append(buf);
+    read += n;
+    onProgress(blob.size ? read / blob.size : 1);
+  }
+  onProgress(1);
+  return spark.end();
+}
