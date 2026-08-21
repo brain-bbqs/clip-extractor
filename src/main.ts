@@ -3096,7 +3096,6 @@ async function deliverOverlay(
     description: "The selection with the pose overlay drawn into the pixels.",
     technical,
     sources: [mediaPath],
-    generatedByTool: true,
     checksum: { md5: digest.md5, dandiEtag: digest.etag },
   });
   const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
@@ -3166,7 +3165,6 @@ async function deliverOriginalVideo(
     description: "The source video this selection was clipped from.",
     technical: videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames, sourceDetail),
     sources: [],
-    generatedByTool: false,
     checksum: { md5: originalDigest.md5, dandiEtag: originalDigest.etag },
   });
   return { original, originalDigest, originalPath };
@@ -3191,7 +3189,6 @@ async function deliverAnnotationFile(
   await deliverSidecar(deliver, directory, slpFile.name, onProgress, {
     description: "SLEAP pose annotations loaded alongside the source video, covering (at least) this delivery's selection.",
     sources: sourcePath ? [sourcePath] : [],
-    generatedByTool: false,
     // Not a video/image asset BEP047 gives a `Checksum`-worthy identity to — see buildCompanionSidecar.
     checksum: null,
   });

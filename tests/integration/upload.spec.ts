@@ -59,12 +59,12 @@ test("an upload registers the extract, the original and a matching sidecar", asy
   expect(originalSidecar.Description).toBe("The source video this selection was clipped from.");
   expect(originalSidecar.GeneratedBy).toBeUndefined();
 
-  // The sidecar that actually went up carries the description written for this selection, the
-  // standard BEP047 technical keys, and a BEP028 GeneratedBy entry — no nested, app-specific record
-  // alongside them.
+  // The sidecar that actually went up carries the description written for this selection and the
+  // standard BEP047 technical keys — no nested, app-specific record, and no GeneratedBy either: that
+  // already lives in the dataset_description.json files below.
   const sidecar = JSON.parse(jsonBodies[1]) as Record<string, unknown>;
   expect(sidecar.Description).toBe("Frame 5 is where the two tracks swap identities.");
-  expect((sidecar.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
+  expect(sidecar).not.toHaveProperty("GeneratedBy");
   expect(sidecar).not.toHaveProperty("clip-extractor");
 
   // All three `dataset_description.json` files credit the signed-in account too, not just the

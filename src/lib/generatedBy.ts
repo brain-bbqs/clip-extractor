@@ -45,8 +45,10 @@ export type DatasetType = "raw" | "derivative" | "study";
 
 /** One entry of `SourceDatasets` — BIDS's own `URL`/`DOI`/`Version`, all themselves optional, plus
  * `Filename`/`Checksum` (not part of the vocabulary BIDS defines for this object, but nothing there
- * forbids naming a source some other way when it has no dereferencable URL at all — a locally
- * dropped file, which is the ordinary case for this app). */
+ * forbids naming a source more precisely alongside its `URL`). This app only ever builds one when a
+ * video's own `URL` is known — see lib/provenance.ts's `buildSourceDatasetEntry` — since a locally
+ * dropped file has no dereferencable address for `SourceDatasets` to add over what the sidecar's own
+ * `Description`/`Checksum` already say. */
 export interface SourceDatasetEntry {
   URL?: string;
   DOI?: string;

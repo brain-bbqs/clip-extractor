@@ -62,14 +62,11 @@ describe("videoTechnicalFields / imageTechnicalFields", () => {
 });
 
 describe("buildSourceDatasetEntry", () => {
-  it("names the file and its checksum for a local file, with no URL", () => {
-    expect(buildSourceDatasetEntry(base)).toEqual({
-      Filename: "mice.mp4",
-      Checksum: { algorithm: "dandi:dandi-etag", value: `${"a".repeat(32)}-1` },
-    });
+  it("names nothing for a local file, with no URL — SourceDatasets would only repeat the sidecar's own Filename/Checksum", () => {
+    expect(buildSourceDatasetEntry(base)).toBeNull();
   });
 
-  it("names the URL too, when the source was streamed from one", () => {
+  it("names the URL (and the file/checksum alongside it), when the source was streamed from one", () => {
     const streamed: ProvenanceInput = { ...base, source: { ...base.source, url: "https://api.test/assets/1/download/" } };
     expect(buildSourceDatasetEntry(streamed)).toEqual({
       URL: "https://api.test/assets/1/download/",
@@ -78,19 +75,25 @@ describe("buildSourceDatasetEntry", () => {
     });
   });
 
-  it("omits Checksum when the source has none", () => {
-    const noChecksum: ProvenanceInput = { ...base, source: { ...base.source, checksum: null } };
-    expect(buildSourceDatasetEntry(noChecksum)).toEqual({ Filename: "mice.mp4" });
+  it("omits Checksum when the source has none, but still needs a URL to name anything at all", () => {
+    const streamedNoChecksum: ProvenanceInput = {
+      ...base,
+      source: { ...base.source, url: "https://api.test/assets/1/download/", checksum: null },
+    };
+    expect(buildSourceDatasetEntry(streamedNoChecksum)).toEqual({
+      URL: "https://api.test/assets/1/download/",
+      Filename: "mice.mp4",
+    });
   });
 });
 
 describe("buildBehSidecar", () => {
   const technical = videoTechnicalFields(30, 640, 480, 30);
 
-  it("puts the description at the top level, alongside GeneratedBy and Checksum — no nested record", () => {
+  it("puts the description at the top level, alongside Checksum — no nested record, and no GeneratedBy (already in dataset_description.json)", () => {
     const sidecar = buildBehSidecar({ ...base, description: "Two mice groom each other here." }, technical, digest);
     expect(sidecar.Description).toBe("Two mice groom each other here.");
-    expect((sidecar.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
+    expect(sidecar).not.toHaveProperty("GeneratedBy");
     expect(sidecar).not.toHaveProperty("clip-extractor");
   });
 
@@ -119,12 +122,11 @@ describe("buildBehSidecar", () => {
 });
 
 describe("buildCompanionSidecar", () => {
-  it("names what it is, points back at its source, and skips GeneratedBy for a plain copy", () => {
+  it("names what it is and points back at its source — no GeneratedBy, plain copy or not (already in dataset_description.json)", () => {
     const sidecar = buildCompanionSidecar({
       description: "The untouched original.",
       technical: imageTechnicalFields(640, 480),
       sources: ["sourcedata/sub-1/beh/mice.mp4"],
-      generatedByTool: false,
       checksum: digest,
     });
     expect(sidecar).toEqual({
@@ -139,15 +141,14 @@ describe("buildCompanionSidecar", () => {
     });
   });
 
-  it("carries GeneratedBy for something this tool actually rendered", () => {
+  it("carries no GeneratedBy even for something this tool actually rendered", () => {
     const sidecar = buildCompanionSidecar({
       description: "The pose overlay.",
       technical: imageTechnicalFields(640, 480),
       sources: ["derivatives/clip-extractor/sub-1/beh/sub-1_recording-1_video.mp4"],
-      generatedByTool: true,
       checksum: digest,
     });
-    expect((sidecar.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
+    expect(sidecar).not.toHaveProperty("GeneratedBy");
   });
 
   it("omits Sources entirely for the untouched source video, which has no upstream to name", () => {
@@ -155,7 +156,6 @@ describe("buildCompanionSidecar", () => {
       description: "The source video this selection was clipped from.",
       technical: imageTechnicalFields(640, 480),
       sources: [],
-      generatedByTool: false,
       checksum: digest,
     });
     expect(sidecar).not.toHaveProperty("Sources");
@@ -165,7 +165,6 @@ describe("buildCompanionSidecar", () => {
     const sidecar = buildCompanionSidecar({
       description: "SLEAP pose annotations.",
       sources: [],
-      generatedByTool: false,
       checksum: null,
     });
     expect(sidecar).not.toHaveProperty("Checksum");

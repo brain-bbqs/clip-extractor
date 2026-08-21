@@ -160,13 +160,14 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-/** The same fixed `sub-01/ses-01` this module's own `fakeArchiveBrowse` names its first fake video
- * with — `from_archive` previews the archive-sourced case with one fixed, known-good path rather than
- * a hand-typed subject/session, so there is nothing to get wrong pasting the link. */
+/** A fixed `sub-01/ses-02` — a distinct subject *and* session, unlike `fakeArchiveBrowse`'s own first
+ * fake video (`sub-01/ses-01`) — so `from_archive` previews the archive-sourced case with one fixed,
+ * known-good path rather than a hand-typed subject/session, and with nothing to mistake for a bug
+ * where the two entities happen to share a number. */
 const FROM_ARCHIVE_PATH_PREFIX = `sub-${pad2(1)}/ses-${pad2(2)}`;
 
 /** The fake archive-relative path {@link applyMockVideo} (in main.ts) hands to `loadVideo` so the mock
- * video reads, to `behEntities`, exactly as a real archive video at `sub-01/ses-01/…` would. Null
+ * video reads, to `behEntities`, exactly as a real archive video at `sub-01/ses-02/…` would. Null
  * without `from_archive`, which leaves the mock video as the "dropped locally" case it always was. */
 export function fromArchiveSourcePath(injection: TestInjection, filename: string): string | null {
   return injection.fromArchive ? `${FROM_ARCHIVE_PATH_PREFIX}/${filename}` : null;

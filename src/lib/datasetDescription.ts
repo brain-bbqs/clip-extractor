@@ -72,9 +72,11 @@ export async function readExistingDatasetDescriptions(cfg: ArchiveConfig): Promi
  * `existing` says nothing is registered there yet — all three named after this delivery, `mode` and
  * `createdAt` (see lib/generatedBy.ts's `freshRootDescription`/`freshDerivativesDescription`/
  * `freshSourcedataDescription`). `sourceDataset` folds into the derivatives file's own
- * `SourceDatasets` (see `mergeSourceDataset`) — one entry per distinct video this tool version has
- * ever run against, accumulated across deliveries rather than fixed at whichever delivery created the
- * file. `username` credits the signed-in archive account on all three too (see `mergeAuthor`) — null
+ * `SourceDatasets` (see `mergeSourceDataset`) when this delivery's video has a real `URL` to name —
+ * one entry per distinct such video this tool version has ever run against, accumulated across
+ * deliveries rather than fixed at whichever delivery created the file; null (a locally dropped file)
+ * leaves `SourceDatasets` untouched. `username` credits the signed-in archive account on all three
+ * too (see `mergeAuthor`) — null
  * for a local Save or an anonymous upload, which leaves `Authors` as it was found rather than
  * inventing an entry. All three also get their own `DatasetLinks` aliases (see `mergeDatasetLinks`) —
  * `clip` and `source` on the root, naming the derivatives directory and sourcedata/rawbids/ directly,
@@ -83,7 +85,7 @@ export async function readExistingDatasetDescriptions(cfg: ArchiveConfig): Promi
 export function mergedDatasetDescriptions(
   existing: ExistingDatasetDescriptions,
   entry: import("./generatedBy").GeneratedByEntry,
-  sourceDataset: SourceDatasetEntry,
+  sourceDataset: SourceDatasetEntry | null,
   mode: "snippet" | "frame",
   createdAt: Date,
   username: string | null,

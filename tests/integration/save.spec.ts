@@ -110,10 +110,9 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   expect(derivativesDescription.DatasetType).toBe("derivative");
   // The same study name, with a suffix, so the three read as one related set.
   expect(derivativesDescription.Name).toBe(`${rootDescription.Name} (Extracted)`);
-  // No real URL for a locally dropped file, but its name and checksum still are.
-  expect(derivativesDescription.SourceDatasets).toEqual([
-    { Filename: "file_example_480 - Copy.webm", Checksum: { algorithm: "dandi:dandi-etag", value: expect.any(String) } },
-  ]);
+  // No SourceDatasets entry for a locally dropped file: with no dereferencable URL, a bare
+  // Filename/Checksum pair would only repeat what the extract's own sidecar already says.
+  expect(derivativesDescription.SourceDatasets).toBeUndefined();
   // Names its own way back to sourcedata/rawbids/, the other half of the same pair.
   expect(derivativesDescription.DatasetLinks).toEqual({ raw: "../../sourcedata/rawbids" });
   // sourcedata/rawbids's own — DatasetType: "raw" too, so that subtree validates independently.
@@ -152,19 +151,17 @@ test("leaving the original out saves the extract and its sidecar alone, plus all
   const sidecar = JSON.parse(entries[1].text) as Record<string, unknown>;
   expect(sidecar.Description).toBe("A clean frame, kept as a reference.");
 
-  // Left out of the bundle, but still named and checksummed in the derivatives dataset_description's
-  // own SourceDatasets: that is what ties the frame to it, even with the original excluded.
+  // Left out of the bundle, and no SourceDatasets entry either — a local file has no URL for
+  // SourceDatasets to name, so nothing here ties the frame back to it once the original is excluded.
   const derivativesDescription = JSON.parse(entries[3].text) as Record<string, unknown>;
-  expect(derivativesDescription.SourceDatasets).toEqual([
-    { Filename: "mice.webm", Checksum: { algorithm: "dandi:dandi-etag", value: expect.stringMatching(/^[0-9a-f]{32}-\d+$/) } },
-  ]);
+  expect(derivativesDescription.SourceDatasets).toBeUndefined();
 });
 
 // mock_ready's own two cases (a still frame, needing no ffmpeg.wasm/CDN; a short snippet, which does),
-// crossed with from_archive's own two (dropped locally, sub-unknown; opened out of a fixed archive
-// path, previewing the more advanced metadata that carries — SourceDatasets' own URL, a known
-// subject/session) — four combinations in total, each landing on a saveable state with no manual
-// selection or description.
+// crossed with from_archive's own two (dropped locally, sub-unknown, and so no SourceDatasets entry —
+// see lib/provenance.ts's buildSourceDatasetEntry; opened out of a fixed archive path, previewing the
+// more advanced metadata that carries — SourceDatasets' own URL, a known subject/session) — four
+// combinations in total, each landing on a saveable state with no manual selection or description.
 
 test("mock_ready lands on a saveable state with no manual selection or description", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
@@ -175,6 +172,14 @@ test("mock_ready lands on a saveable state with no manual selection or descripti
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
   expect(download.suggestedFilename()).toMatch(/^sub-unknown_recording-\d{17}_desc-frame_bundle\.tar\.gz$/);
+
+  // Dropped locally, no URL to name — unlike the from_archive case below, nothing here goes into
+  // SourceDatasets at all.
+  const entries = listTar(readFileSync((await download.path())!));
+  const derivativesDescription = JSON.parse(
+    entries.find((e) => e.path.endsWith("derivatives/clip-extractor/dataset_description.json"))!.text,
+  );
+  expect(derivativesDescription.SourceDatasets).toBeUndefined();
 });
 
 test("mock_ready=snippet lands on a saveable state, extracting a real clip", async ({ page }) => {

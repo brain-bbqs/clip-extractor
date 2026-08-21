@@ -13,6 +13,8 @@
 - `?test&mock_video&mock_ready` gained a `=snippet` variant (extracting a real clip instead of a still frame) and can be crossed with a new `&from_archive` flag, which previews the case of a video opened out of the archive (a known `sub-01/ses-02`, with a real source URL) rather than dropped locally ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - Removed the ad hoc `clip-extractor` provenance block nested in the sidecar JSON; a later PR will add a proper W3C PROV record in its place ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - The plain extracted clip/frame is now named `desc-extracted+clip`, alongside its pose-overlay sibling's existing `desc-overlay`, instead of carrying no `desc` at all ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- Every sidecar's `GeneratedBy` entry is gone; that's already recorded once in each `dataset_description.json`, so repeating it per-file was redundant ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- `SourceDatasets` no longer names a locally dropped video by filename and checksum alone; without a real URL that pair would only repeat what the file's own sidecar already says, so a local delivery now leaves `SourceDatasets` out entirely ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 
 ## 1.0.0
 

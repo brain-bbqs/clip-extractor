@@ -1,4 +1,4 @@
-import { buildGeneratedByEntry, type GeneratedByEntry, type SourceDatasetEntry } from "./generatedBy";
+import type { SourceDatasetEntry } from "./generatedBy";
 
 // A small sidecar written beside every upload, so a clip found later in the archive can be traced
 // back to which video it came from and what the person extracting it wrote about it.
@@ -48,13 +48,16 @@ function checksum(value: string | null): ProvenanceChecksum | null {
   return value ? { algorithm: "dandi:dandi-etag", value } : null;
 }
 
-/** The source video, in the shape `lib/generatedBy.ts`'s `SourceDatasets` entries take — `URL` when
- * it was streamed from a real address, `Filename`/`Checksum` when it is only known as a locally
- * dropped file, whichever of those this delivery actually has (never neither: every delivery names at
- * least the file it read). */
-export function buildSourceDatasetEntry(input: ProvenanceInput): SourceDatasetEntry {
-  const entry: SourceDatasetEntry = {};
-  if (input.source.url) entry.URL = input.source.url;
+/** The source video, in the shape `lib/generatedBy.ts`'s `SourceDatasets` entries take — or null for
+ * a locally dropped file, which has no dereferencable `URL` and so nothing `SourceDatasets` names any
+ * differently than the sidecar's own `Description`/`Checksum` already do; a bare `Filename`/`Checksum`
+ * pair would not actually identify a *source dataset* the way BIDS means the field, just repeat what
+ * is already on the file itself. Only a video opened from a real address (streamed from the archive,
+ * say) gets an entry — that address is the one thing worth recording here that is not already known
+ * from the delivery's own files. */
+export function buildSourceDatasetEntry(input: ProvenanceInput): SourceDatasetEntry | null {
+  if (!input.source.url) return null;
+  const entry: SourceDatasetEntry = { URL: input.source.url };
   if (input.source.filename) entry.Filename = input.source.filename;
   const c = checksum(input.source.checksum);
   if (c) entry.Checksum = c;
@@ -171,12 +174,14 @@ function checksumField(digest: FileDigest): SidecarChecksum[] {
 }
 
 /** The full sidecar for the delivery's primary output — the extracted clip or frame itself. Standard
- * BEP047 keys and `GeneratedBy` (BEP028) — no nested, app-specific record alongside them (see this
- * module's own header comment). `digest` is this same file's own — always given, since the primary
- * output is always checksummed on its way up (see main.ts's `assembleSelection`). BEP047's own
- * technical keys (`VideoFrameRate`, `ImageWidth`, …) are written last, grouped together at the end of
- * the file rather than interleaved with everything else, so the "what is this and where did it come
- * from" keys read together first. */
+ * BEP047 keys — no nested, app-specific record alongside them (see this module's own header
+ * comment), and no `GeneratedBy` (BEP028) either: that already lives in `dataset_description.json`
+ * (see lib/generatedBy.ts/lib/datasetDescription.ts), which is where BEP028 defines it, so repeating
+ * it per-file would only be redundant. `digest` is this same file's own — always given, since the
+ * primary output is always checksummed on its way up (see main.ts's `assembleSelection`). BEP047's
+ * own technical keys (`VideoFrameRate`, `ImageWidth`, …) are written last, grouped together at the
+ * end of the file rather than interleaved with everything else, so the "what is this and where did
+ * it come from" keys read together first. */
 export function buildBehSidecar(
   input: ProvenanceInput,
   technical: VideoTechnicalFields | ImageTechnicalFields,
@@ -185,14 +190,14 @@ export function buildBehSidecar(
   return {
     Description: input.description?.trim() || null,
     Checksum: checksumField(digest),
-    GeneratedBy: [buildGeneratedByEntry()],
     ...technical,
   };
 }
 
 /** A lighter sidecar for a companion file — the pose overlay, the original source copied alongside
  * its derivative, or a loaded `.slp` — that only needs to name what it is and point back at whatever
- * it came from, rather than repeat the primary sidecar's whole record a second time. */
+ * it came from, rather than repeat the primary sidecar's whole record a second time. No `GeneratedBy`
+ * here either, for the same reason `buildBehSidecar` above has none. */
 export interface CompanionSidecarInput {
   description: string;
   /** Omitted for a file BEP047 has no technical vocabulary for at all — a `.slp`, say — rather than
@@ -201,10 +206,6 @@ export interface CompanionSidecarInput {
   /** The asset path(s) this file was derived or copied from, relative to the dataset root; empty for
    * the untouched source video itself, which has no upstream to name. */
   sources: string[];
-  /** Whether this file was produced by this tool (the overlay) or merely copied by it (the original
-   * source, or a `.slp` this app did not generate) — a copy carries no `GeneratedBy`, since the tool
-   * did not generate its content. */
-  generatedByTool: boolean;
   /** This file's own digest, or null for one BEP047 gives no `Checksum`-worthy identity to — a `.slp`,
    * which is not itself a video/image asset (see `checksumField`). Video/image companions (the pose
    * overlay, the copied-along original) always pass their own real digest. */
@@ -217,7 +218,6 @@ export function buildCompanionSidecar(input: CompanionSidecarInput): Record<stri
   // absent `Sources` says that more plainly than one that names nothing.
   if (input.sources.length) sidecar.Sources = input.sources;
   if (input.checksum) sidecar.Checksum = checksumField(input.checksum);
-  if (input.generatedByTool) sidecar.GeneratedBy = [buildGeneratedByEntry()] as GeneratedByEntry[];
   // BEP047's own technical keys, grouped together last — see buildBehSidecar's own comment on why.
   Object.assign(sidecar, input.technical);
   return sidecar;
