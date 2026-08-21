@@ -31,7 +31,7 @@ export interface GeneratedByEntry {
 export function buildGeneratedByEntry(): GeneratedByEntry {
   return {
     Name: TOOL_NAME,
-    Description: "Extracted a trimmed clip or still frame from a source video for a BIDS dataset.",
+    Description: "Extracted a trimmed clip or still frame from a source video.",
     Version: TOOL_VERSION,
     CodeURL: TOOL_CODE_URL,
   };
@@ -74,17 +74,13 @@ export interface DatasetDescription {
    * have. */
   Authors?: string[];
   /** BIDS's own alias table for pointing at another dataset by a short key instead of a full relative
-   * path — the study root names its own `derivatives/clip-extractor/` under `clip`, and
-   * `derivatives/clip-extractor/`'s own file names `sourcedata/rawbids/` back under `raw` (see
-   * `mergeDatasetLinks` and lib/datasetDescription.ts's `mergedDatasetDescriptions`), so a reference
-   * elsewhere in the dataset (`bids::clip/...`/`bids::raw/...`) does not have to spell either path out
-   * in full. */
+   * path — the study root names its own `derivatives/clip-extractor/` under `clip` and
+   * `sourcedata/rawbids/` under `source`, and `derivatives/clip-extractor/`'s own file names
+   * `sourcedata/rawbids/` back under `raw` (see `mergeDatasetLinks` and
+   * lib/datasetDescription.ts's `mergedDatasetDescriptions`), so a reference elsewhere in the dataset
+   * (`bids::clip/...`/`bids::raw/...`/`bids::source/...`) does not have to spell any of the three
+   * paths out in full. */
   DatasetLinks?: Record<string, string>;
-  /** This app's own convention, not a BIDS-defined field — lowercase to read unambiguously as such
-   * next to `DatasetType`/`SourceDatasets`/etc, which are always capitalized. Set only on the study
-   * root, naming its own `sourcedata/rawbids/` subtree directly, in addition to (not instead of) the
-   * `DatasetLinks` alias `derivatives/clip-extractor/dataset_description.json` carries back to it. */
-  source?: string;
 }
 
 /** The BIDS version these sidecars and `dataset_description.json` files are written against. */
@@ -130,13 +126,6 @@ export function mergeSourceDataset(doc: DatasetDescription, source: SourceDatase
   const sources = doc.SourceDatasets ?? [];
   const already = sources.some((s) => sourceIdentity(s) === sourceIdentity(source));
   return already ? doc : { ...doc, SourceDatasets: [...sources, source] };
-}
-
-/** Sets the study root's own `source` key (see `DatasetDescription.source`) to `sourcedata/rawbids/`'s
- * path, if it is not already there. */
-export function mergeSource(doc: DatasetDescription, source: string): DatasetDescription {
-  if (doc.source === source) return doc;
-  return { ...doc, source };
 }
 
 /** Credits the signed-in archive username on `doc`, alongside whoever is already listed there —

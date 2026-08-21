@@ -111,10 +111,9 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   expect(generatedBy[0].Name).toBe("clip-extractor");
   // Nobody signed in for a local Save, so nobody is credited — not even the field added.
   expect(rootDescription.Authors).toBeUndefined();
-  // Names its own derivatives directory, so it can be followed without spelling the path out.
-  expect(rootDescription.DatasetLinks).toEqual({ clip: "derivatives/clip-extractor" });
-  // Points at sourcedata/rawbids/ directly too — this app's own convention, not a BIDS-defined field.
-  expect(rootDescription.source).toBe("sourcedata/rawbids");
+  // Names its own derivatives directory and sourcedata/rawbids/ directly, so either can be followed
+  // without spelling its path out.
+  expect(rootDescription.DatasetLinks).toEqual({ clip: "derivatives/clip-extractor", source: "sourcedata/rawbids" });
   const derivativesDescription = JSON.parse(entries[5].text) as Record<string, unknown>;
   expect(derivativesDescription.DatasetType).toBe("derivative");
   // The same study name, with a suffix, so the three read as one related set.
@@ -167,39 +166,6 @@ test("leaving the original out saves the extract and its sidecar alone, plus all
   expect(source.filename).toBe("mice.webm");
   expect((source.checksum as { value: string }).value).toMatch(/^[0-9a-f]{32}-\d+$/);
   expect(sidecar.Description).toBe("A clean frame, kept as a reference.");
-});
-
-test("a known subject and session get date-/time- entities in derivatives, and no disambiguator at all in sourcedata", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
-  // `?test&mock_video&mock_sub=`/`&mock_ses=` (see lib/testInjection.ts) makes the mock video look,
-  // to lib/bidsPath.ts's behEntities, as if it were opened from the archive at sub-01/ses-02/…
-  await page.goto("/?test&mock_video&mock_sub=01&mock_ses=02");
-  await page.locator('#modeSeg button[data-mode="frame"]').click();
-  await page.locator("#selectionDescription").fill("A known subject, for once.");
-
-  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  const entries = listTar(readFileSync((await download.path())!));
-  expect(entries.map((e) => e.path)).toEqual([
-    expect.stringMatching(/^derivatives\/clip-extractor\/sub-01\/ses-02\/beh\/sub-01_ses-02_date-\d{8}_time-\d{6}_image\.png$/),
-    "sourcedata/rawbids/sub-01/ses-02/beh/test-injection-mock-video.webm",
-    "sourcedata/rawbids/sub-01/ses-02/beh/test-injection-mock-video.json",
-    expect.stringMatching(/^derivatives\/clip-extractor\/sub-01\/ses-02\/beh\/sub-01_ses-02_date-\d{8}_time-\d{6}_image\.json$/),
-    "dataset_description.json",
-    "derivatives/clip-extractor/dataset_description.json",
-    "sourcedata/rawbids/dataset_description.json",
-  ]);
-
-  // A known subject/session also means a fake, non-resolving asset URL (see testInjection.ts's
-  // mockSourceUrl) — a known subject reads as opened out of EMBER, not dropped locally, so the
-  // derivatives description's SourceDatasets carries a URL, not just a filename and checksum.
-  const derivativesDescription = JSON.parse(entries[5].text) as Record<string, unknown>;
-  expect(derivativesDescription.SourceDatasets).toEqual([
-    {
-      URL: "https://test-injection.invalid/sub-01/ses-02/test-injection-mock-video.webm",
-      Filename: "test-injection-mock-video.webm",
-      Checksum: { algorithm: "dandi:dandi-etag", value: expect.any(String) },
-    },
-  ]);
 });
 
 test("mock_ready lands on a saveable state with no manual selection or description", async ({ page }) => {

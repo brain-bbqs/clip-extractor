@@ -72,8 +72,7 @@ describe("mergedDatasetDescriptions", () => {
       BIDSVersion: expect.any(String),
       DatasetType: "study",
       GeneratedBy: [entry],
-      DatasetLinks: { clip: "derivatives/clip-extractor" },
-      source: "sourcedata/rawbids",
+      DatasetLinks: { clip: "derivatives/clip-extractor", source: "sourcedata/rawbids" },
     });
     expect(derivatives.DatasetType).toBe("derivative");
     expect(derivatives.GeneratedBy).toEqual([entry]);

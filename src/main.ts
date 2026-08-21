@@ -127,8 +127,6 @@ import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type U
 import {
   fakeArchiveBrowse,
   fakeIncomingDatasets,
-  mockSourcePath,
-  mockSourceUrl,
   readTestInjection,
   synthesizeLongVideoFile,
   synthesizeVideoFile,
@@ -3633,17 +3631,16 @@ function applyMockReady(): void {
 async function applyMockVideo(): Promise<void> {
   if (testInjection?.mockVideoFrames != null) {
     const file = await synthesizeVideoFile(testInjection.mockVideoFrames);
-    // A fake URL only where mockSourcePath itself would name one (mock_sub given) — leaving
-    // `mock_video` alone as the "dropped locally" case it always was, with no URL to sync into the
-    // bar and no SourceDatasets URL to preview.
-    await loadVideo(file, file.name, mockSourceUrl(testInjection, file.name), undefined, mockSourcePath(testInjection, file.name));
+    // No URL and no archive path: `mock_video` is always the "dropped locally" case, same as any
+    // local file — see `fakeArchiveBrowse` for the archive-sourced, BIDS-entity-shaped case instead.
+    await loadVideo(file, file.name, null, undefined, null);
     if (testInjection.mockSlp) applyMockSlp();
     if (testInjection.mockReady) applyMockReady();
     return;
   }
   if (testInjection?.mockVideoLongSeconds != null) {
     const file = await synthesizeLongVideoFile(testInjection.mockVideoLongSeconds);
-    await loadVideo(file, file.name, mockSourceUrl(testInjection, file.name), undefined, mockSourcePath(testInjection, file.name));
+    await loadVideo(file, file.name, null, undefined, null);
     if (testInjection.mockReady) applyMockReady();
   }
 }

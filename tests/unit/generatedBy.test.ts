@@ -7,7 +7,6 @@ import {
   mergeAuthor,
   mergeDatasetLinks,
   mergeGeneratedBy,
-  mergeSource,
   mergeSourceDataset,
   type SourceDatasetEntry,
 } from "../../src/lib/generatedBy";
@@ -124,19 +123,6 @@ describe("mergeSourceDataset", () => {
     };
     const withVideo = { ...doc, SourceDatasets: [video] };
     expect(mergeSourceDataset(withVideo, otherVideo)).toEqual({ ...doc, SourceDatasets: [video, otherVideo] });
-  });
-});
-
-describe("mergeSource", () => {
-  const doc = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const };
-
-  it("sets the source key when there is none yet", () => {
-    expect(mergeSource(doc, "sourcedata/rawbids")).toEqual({ ...doc, source: "sourcedata/rawbids" });
-  });
-
-  it("leaves the document untouched once it is already correct", () => {
-    const withSource = { ...doc, source: "sourcedata/rawbids" };
-    expect(mergeSource(withSource, "sourcedata/rawbids")).toBe(withSource);
   });
 });
 

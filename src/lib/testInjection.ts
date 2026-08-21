@@ -51,15 +51,6 @@ export interface TestInjection {
   /** Makes the synthesized pose deliberately describe a different recording than the mock video, so
    * the SLEAP card's mismatch refusal can be previewed instead of a clean overlay. */
   mismatch: boolean;
-  /** Makes the mock video look, to `lib/bidsPath.ts`'s `behEntities`, as if it were opened out of the
-   * archive at `sub-<mockSub>/[ses-<mockSes>/]...` — so the Save/Upload preview name and the tree a
-   * real Save actually writes can be eyeballed for a known subject (and session) rather than only the
-   * `sub-unknown` fallback a locally dropped file gets. Null (the fallback) is itself a real,
-   * worthwhile case: it is what every video dropped from disk, rather than opened from Browse EMBER,
-   * produces. Only meaningful with `mockVideoFrames`/`mockVideoLongSeconds` set. */
-  mockSub: string | null;
-  /** The session half of the same fake path; only meaningful alongside `mockSub`. */
-  mockSes: string | null;
   /** Skips the manual steps a human would otherwise take before Save/Upload enable — selecting a
    * frame and typing a description — so a pasted `?test&mock_video&mock_ready` link lands directly on
    * a saveable state instead of the gated, "describe it first" one. Only meaningful alongside
@@ -82,8 +73,6 @@ const INERT: TestInjection = {
   mockVideoLongSeconds: null,
   mockSlp: false,
   mismatch: false,
-  mockSub: null,
-  mockSes: null,
   mockReady: false,
   remoteListing: null,
 };
@@ -116,38 +105,9 @@ export function readTestInjection(search: string): TestInjection | null {
     mockVideoLongSeconds: mockVideoLongRaw !== null && mockVideoLongRaw > 0 ? mockVideoLongRaw : mockVideoLongRaw !== null ? 14400 : null,
     mockSlp: params.has("mock_slp"),
     mismatch: params.has("mismatch"),
-    mockSub: params.get("mock_sub"),
-    mockSes: params.get("mock_ses"),
     mockReady: params.has("mock_ready"),
     remoteListing: params.has("remote_listing") ? intParam(params, "remote_listing", 8) : null,
   };
-}
-
-/**
- * The fake archive-relative path {@link applyMockVideo} hands to `loadVideo` so the mock video reads,
- * to `behEntities`, exactly as a real archive video at `sub-<mockSub>/[ses-<mockSes>/]...` would. Null
- * when `mock_sub` was not given, which leaves the mock video as it always was — sourced from nowhere
- * the archive names, falling back to `sub-unknown`.
- */
-export function mockSourcePath(injection: TestInjection, filename: string): string | null {
-  if (!injection.mockSub) return null;
-  const segments = [`sub-${injection.mockSub}`];
-  if (injection.mockSes) segments.push(`ses-${injection.mockSes}`);
-  segments.push(filename);
-  return segments.join("/");
-}
-
-/**
- * A fake asset URL for the same case {@link mockSourcePath} names — resolving nowhere real, like
- * every other test-injection URL (see `fakeArchiveBrowse`), but non-null wherever `mockSourcePath` is,
- * so a mock video with a known subject also previews what an EMBER-sourced one carries into
- * `SourceDatasets` (see lib/generatedBy.ts's `freshDerivativesDescription`): naming *how* it was
- * opened, not just where it would sit in the dandiset. `mock_video` alone (no `mock_sub`) stays the
- * "dropped locally" case, with no URL, same as it always was.
- */
-export function mockSourceUrl(injection: TestInjection, filename: string): string | null {
-  const path = mockSourcePath(injection, filename);
-  return path ? `https://test-injection.invalid/${path}` : null;
 }
 
 /** Same as {@link readTestInjection}, for a caller that always wants a value rather than null —
@@ -177,11 +137,21 @@ export function fakeIncomingDatasets(count: number, embargoed: boolean, humanSub
  * `remote_listing=N` still lands in one dataset, the common case worth eyeballing first. */
 const FAKE_VIDEOS_PER_DATASET = 4;
 
+/** Zero-padded two digits, matching the `sub-01`/`ses-01` style BIDS entities are conventionally
+ * written with — `lib/bidsPath.ts` itself does not require padding (`sub-1` is equally valid), but a
+ * fake listing reads as more true-to-life dressed the way a real one almost always is. */
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
 /**
  * Fakes the EMBER browse pane's listing: `n` video files, spread across as many fake datasets as it
  * takes to hold `FAKE_VIDEOS_PER_DATASET` each, bypassing the real bucket listing and manifest reads.
- * The video URLs resolve nowhere real — clicking one shows the ordinary "cannot be opened" refusal,
- * which is a truthful answer for a source this module invented, not a dead button.
+ * Each video's own path is BIDS-entity-shaped (`sub-01/ses-01/...`), the same structure a real
+ * dandiset's own asset paths carry — so a listing built this way previews `lib/bidsPath.ts`'s
+ * `behEntities` parsing the same way a real Browse EMBER selection would. The video URLs resolve
+ * nowhere real — clicking one shows the ordinary "cannot be opened" refusal, which is a truthful
+ * answer for a source this module invented, not a dead button.
  */
 export function fakeArchiveBrowse(n: number): { datasets: ArchiveDandiset[]; videos: Map<string, ArchiveVideo[]> } {
   const datasetCount = Math.max(1, Math.ceil(n / FAKE_VIDEOS_PER_DATASET));
@@ -196,7 +166,7 @@ export function fakeArchiveBrowse(n: number): { datasets: ArchiveDandiset[]; vid
       const url = `https://test-injection.invalid/${id}/video-${i + 1}.mp4`;
       return {
         dandisetId: id,
-        path: `sub-${d + 1}/session-${i + 1}.mp4`,
+        path: `sub-${pad2(d + 1)}/ses-${pad2(i + 1)}/video-${i + 1}.mp4`,
         size: 12_000_000 + i * 3_000_000,
         assetUrl: url,
         streamUrl: url,

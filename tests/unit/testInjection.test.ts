@@ -1,22 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mockSourcePath, mockSourceUrl, readTestInjection } from "../../src/lib/testInjection";
+import { fakeArchiveBrowse, readTestInjection } from "../../src/lib/testInjection";
 
 describe("readTestInjection", () => {
   it("returns null when the page was not asked to fake anything", () => {
     expect(readTestInjection("")).toBeNull();
     expect(readTestInjection("?foo=bar")).toBeNull();
-  });
-
-  it("reads mock_sub and mock_ses off the query string", () => {
-    expect(readTestInjection("?test&mock_video&mock_sub=01&mock_ses=02")).toMatchObject({ mockSub: "01", mockSes: "02" });
-  });
-
-  it("leaves both null when neither is given — the sub-unknown fallback case", () => {
-    expect(readTestInjection("?test&mock_video")).toMatchObject({ mockSub: null, mockSes: null });
-  });
-
-  it("reads mock_sub alone, with no session", () => {
-    expect(readTestInjection("?test&mock_video&mock_sub=1")).toMatchObject({ mockSub: "1", mockSes: null });
   });
 
   it("defaults mock_ready to off — the gated, 'describe it first' state mock_video alone previews", () => {
@@ -28,31 +16,30 @@ describe("readTestInjection", () => {
   });
 });
 
-describe("mockSourcePath", () => {
-  it("builds an archive-shaped path when mock_sub is given", () => {
-    const injection = readTestInjection("?test&mock_video&mock_sub=1")!;
-    expect(mockSourcePath(injection, "clip.webm")).toBe("sub-1/clip.webm");
+describe("fakeArchiveBrowse", () => {
+  it("names each fake video's path in BIDS-entity shape, zero-padded", () => {
+    const { videos } = fakeArchiveBrowse(1);
+    const [video] = [...videos.values()].flat();
+    expect(video.path).toBe("sub-01/ses-01/video-1.mp4");
   });
 
-  it("includes the session segment too, when there is one", () => {
-    const injection = readTestInjection("?test&mock_video&mock_sub=01&mock_ses=02")!;
-    expect(mockSourcePath(injection, "clip.webm")).toBe("sub-01/ses-02/clip.webm");
+  it("spreads across as many fake datasets as it takes, numbering each subject in turn", () => {
+    const { datasets, videos } = fakeArchiveBrowse(5);
+    expect(datasets).toHaveLength(2);
+    const [first, second] = datasets;
+    expect(videos.get(first.id)!.map((v) => v.path)).toEqual([
+      "sub-01/ses-01/video-1.mp4",
+      "sub-01/ses-02/video-2.mp4",
+      "sub-01/ses-03/video-3.mp4",
+      "sub-01/ses-04/video-4.mp4",
+    ]);
+    expect(videos.get(second.id)!.map((v) => v.path)).toEqual(["sub-02/ses-01/video-1.mp4"]);
   });
 
-  it("returns null with no mock_sub, leaving the mock video's source unnamed (sub-unknown)", () => {
-    const injection = readTestInjection("?test&mock_video")!;
-    expect(mockSourcePath(injection, "clip.webm")).toBeNull();
-  });
-});
-
-describe("mockSourceUrl", () => {
-  it("builds a fake, non-resolving URL naming the same path mockSourcePath does", () => {
-    const injection = readTestInjection("?test&mock_video&mock_sub=01&mock_ses=02")!;
-    expect(mockSourceUrl(injection, "clip.webm")).toBe("https://test-injection.invalid/sub-01/ses-02/clip.webm");
-  });
-
-  it("returns null with no mock_sub — the 'dropped locally', no-URL case mock_video alone previews", () => {
-    const injection = readTestInjection("?test&mock_video")!;
-    expect(mockSourceUrl(injection, "clip.webm")).toBeNull();
+  it("resolves each video's URL nowhere real, a truthful refusal rather than a dead button", () => {
+    const { videos } = fakeArchiveBrowse(1);
+    const [video] = [...videos.values()].flat();
+    expect(video.assetUrl).toMatch(/^https:\/\/test-injection\.invalid\//);
+    expect(video.streamUrl).toBe(video.assetUrl);
   });
 });
