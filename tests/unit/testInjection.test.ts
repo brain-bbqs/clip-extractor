@@ -18,6 +18,14 @@ describe("readTestInjection", () => {
   it("reads mock_sub alone, with no session", () => {
     expect(readTestInjection("?test&mock_video&mock_sub=1")).toMatchObject({ mockSub: "1", mockSes: null });
   });
+
+  it("defaults mock_ready to off — the gated, 'describe it first' state mock_video alone previews", () => {
+    expect(readTestInjection("?test&mock_video")).toMatchObject({ mockReady: false });
+  });
+
+  it("reads the bare mock_ready flag", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready")).toMatchObject({ mockReady: true });
+  });
 });
 
 describe("mockSourcePath", () => {

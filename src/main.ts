@@ -3591,6 +3591,17 @@ async function initFromUrl(): Promise<void> {
 // The single highest-value injection: most of the others are only interesting once a video is on
 // screen, and this is the only one that puts one there without a local file or a real stream.
 
+/** `mock_ready`'s own step: picks a frame and types a description, the two things Save/Upload gate on
+ * (see updateDeliveryGate), so the mock video lands directly on a saveable state — the whole point of
+ * the injection being to preview real Save/Upload *output* without doing that by hand each time.
+ * Frame mode, not a snippet, since a frame needs no ffmpeg.wasm (and so no CDN) to extract. */
+function applyMockReady(): void {
+  selectSeg(els.modeSeg, "frame");
+  setMode("frame");
+  els.selectionDescription.value = "Mock description, from a ?test&mock_ready live-test link.";
+  updateDeliveryGate();
+}
+
 /** Loads a synthesized clip exactly as if it had been dropped onto the picker, so every real load
  * path (frame decode, timeline, delivery panes) runs against it unmodified. `mock_video_long` takes
  * the sparse, fast-to-build path instead (see `synthesizeLongVideoFile`) — the two are mutually
@@ -3600,11 +3611,13 @@ async function applyMockVideo(): Promise<void> {
     const file = await synthesizeVideoFile(testInjection.mockVideoFrames);
     await loadVideo(file, file.name, null, undefined, mockSourcePath(testInjection, file.name));
     if (testInjection.mockSlp) applyMockSlp();
+    if (testInjection.mockReady) applyMockReady();
     return;
   }
   if (testInjection?.mockVideoLongSeconds != null) {
     const file = await synthesizeLongVideoFile(testInjection.mockVideoLongSeconds);
     await loadVideo(file, file.name, null, undefined, mockSourcePath(testInjection, file.name));
+    if (testInjection.mockReady) applyMockReady();
   }
 }
 

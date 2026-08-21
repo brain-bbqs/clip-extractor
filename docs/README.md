@@ -18,6 +18,7 @@
 | `?test&remote_listing=12`                  | Browse pane, 12 fake videos across 3 fake datasets         | [Open](https://clip-extractor.brain-bbqs.org/?test&remote_listing=12)                  |
 | `?test&mock_video&mock_sub=01`             | Save preview named `sub-01_recording-…`, not `sub-unknown` | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_sub=01)             |
 | `?test&mock_video&mock_sub=01&mock_ses=02` | Same, with a `ses-02` entity too                           | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_sub=01&mock_ses=02) |
+| `?test&mock_video&mock_ready`              | Frame picked, described, Save/Upload enabled — no clicking | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_ready)              |
 
 **Safety**: `?test` alone, with none of the params below, is a no-op. Nothing here writes to real
 `localStorage`, nothing touches real sign-in tokens, and every fake id is chosen from a range no real
@@ -47,7 +48,11 @@ lib/bidsPath.ts), as if it were opened out of the archive at `sub-<mock_sub>/[se
 previewing the Save/Upload destination tree for a known subject (and session) rather than only the
 `sub-unknown` fallback a locally dropped file gets, which is itself worth trying plain: `mock_video`
 alone is that fallback case. Save works fully offline, so the resulting `.tar.gz` can be downloaded
-and unpacked to see the whole tree either way, without needing a real EMBER sign-in.
+and unpacked to see the whole tree either way, without needing a real EMBER sign-in. Add `mock_ready`
+to skip the manual steps Save/Upload gate on entirely — picking a frame and typing a description — so
+the link lands directly on a saveable state, ready for one click, rather than the gated "describe it
+first" state `mock_video` alone previews (itself worth trying, since it is what a real visitor sees
+too).
 
 **A long recording**: `mock_video_long` (optionally `=N` for the duration in seconds, default 14400,
 4 hours) previews the sliding-window timeline a recording past half an hour gets (see

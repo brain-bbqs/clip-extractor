@@ -5,6 +5,7 @@
 #### 🚀 Enhancement
 
 - Save and Upload now write a BIDS-Study-shaped tree instead of a single ad hoc folder: a root `dataset_description.json` (`DatasetType: "study"`) organizes the source video under `sourcedata/rawbids/` (its own valid raw BIDS dataset) and the extracted clip or frame, its pose overlay, and any `.slp` under `derivatives/clip-extractor/`, named per BEP047's entities with BEP028-style provenance — naming the source video too — in their sidecars and in every `dataset_description.json` ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- `?test&mock_video&mock_ready` now picks a frame and types a description on its own, so the link lands directly on a saveable state instead of needing that done by hand before Save/Upload output can be previewed ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 
 ## 1.0.0
 

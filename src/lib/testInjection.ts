@@ -60,6 +60,12 @@ export interface TestInjection {
   mockSub: string | null;
   /** The session half of the same fake path; only meaningful alongside `mockSub`. */
   mockSes: string | null;
+  /** Skips the manual steps a human would otherwise take before Save/Upload enable — selecting a
+   * frame and typing a description — so a pasted `?test&mock_video&mock_ready` link lands directly on
+   * a saveable state instead of the gated, "describe it first" one. Only meaningful alongside
+   * `mockVideoFrames`/`mockVideoLongSeconds`; that gated state is itself worth previewing plain, which
+   * is what `mock_video` without this produces. */
+  mockReady: boolean;
   /** Fakes the EMBER browse pane's dataset/video listing with this many video files spread across a
    * handful of fake datasets, bypassing `listManifestObjects`/`listOwnedEmbargoedDandisets`. Null
    * when `remote_listing` was not given. */
@@ -78,6 +84,7 @@ const INERT: TestInjection = {
   mismatch: false,
   mockSub: null,
   mockSes: null,
+  mockReady: false,
   remoteListing: null,
 };
 
@@ -111,6 +118,7 @@ export function readTestInjection(search: string): TestInjection | null {
     mismatch: params.has("mismatch"),
     mockSub: params.get("mock_sub"),
     mockSes: params.get("mock_ses"),
+    mockReady: params.has("mock_ready"),
     remoteListing: params.has("remote_listing") ? intParam(params, "remote_listing", 8) : null,
   };
 }

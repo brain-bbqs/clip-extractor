@@ -182,3 +182,14 @@ test("a known subject and session get date-/time- entities in derivatives, and n
     "sourcedata/rawbids/dataset_description.json",
   ]);
 });
+
+test("mock_ready lands on a saveable state with no manual selection or description", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
+  // `?test&mock_video&mock_ready` (see lib/testInjection.ts) picks a frame and types a description on
+  // its own — the two things Save/Upload gate on — so this link alone previews real Save output.
+  await page.goto("/?test&mock_video&mock_ready");
+  await expect(page.locator("#btnDownload")).toBeEnabled();
+
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
+  expect(download.suggestedFilename()).toMatch(/^sub-unknown_recording-\d{17}_desc-frame_bundle\.tar\.gz$/);
+});
