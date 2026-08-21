@@ -47,8 +47,11 @@ optionally `mock_ses`) to make the mock video look, to the BEP047 path/filename 
 lib/bidsPath.ts), as if it were opened out of the archive at `sub-<mock_sub>/[ses-<mock_ses>/]…` —
 previewing the Save/Upload destination tree for a known subject (and session) rather than only the
 `sub-unknown` fallback a locally dropped file gets, which is itself worth trying plain: `mock_video`
-alone is that fallback case. Save works fully offline, so the resulting `.tar.gz` can be downloaded
-and unpacked to see the whole tree either way, without needing a real EMBER sign-in. Add `mock_ready`
+alone is that fallback case. `mock_sub` also gives the mock video a fake, non-resolving asset URL (see
+lib/testInjection.ts's `mockSourceUrl`), the same way a real EMBER selection would — so the derivatives
+`dataset_description.json`'s `SourceDatasets` carries a `URL` too, not just a filename and checksum.
+Save works fully offline, so the resulting `.tar.gz` can be downloaded and unpacked to see the whole
+tree either way, without needing a real EMBER sign-in. Add `mock_ready`
 to skip the manual steps Save/Upload gate on entirely — picking a frame and typing a description — so
 the link lands directly on a saveable state, ready for one click, rather than the gated "describe it
 first" state `mock_video` alone previews (itself worth trying, since it is what a real visitor sees

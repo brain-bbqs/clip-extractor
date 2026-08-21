@@ -110,6 +110,10 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   const generatedBy = rootDescription.GeneratedBy as { Name: string; SourceVideo: { filename: string } }[];
   expect(generatedBy[0].Name).toBe("clip-extractor");
   expect(generatedBy[0].SourceVideo.filename).toBe("file_example_480 - Copy.webm");
+  // Nobody signed in for a local Save, so nobody is credited — not even the field added.
+  expect(rootDescription.Authors).toBeUndefined();
+  // Names its own derivatives directory, so it can be followed without spelling the path out.
+  expect(rootDescription.DatasetLinks).toEqual({ clip: "derivatives/clip-extractor" });
   const derivativesDescription = JSON.parse(entries[5].text) as Record<string, unknown>;
   expect(derivativesDescription.DatasetType).toBe("derivative");
   // The same study name, with a suffix, so the three read as one related set.
@@ -118,6 +122,8 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   expect(derivativesDescription.SourceDatasets).toEqual([
     { Filename: "file_example_480 - Copy.webm", Checksum: { algorithm: "dandi:dandi-etag", value: expect.any(String) } },
   ]);
+  // Names its own way back to sourcedata/rawbids/, the other half of the same pair.
+  expect(derivativesDescription.DatasetLinks).toEqual({ raw: "../../sourcedata/rawbids" });
   // sourcedata/rawbids's own — DatasetType: "raw" too, so that subtree validates independently.
   const sourcedataDescription = JSON.parse(entries[6].text) as Record<string, unknown>;
   expect(sourcedataDescription.DatasetType).toBe("raw");
@@ -180,6 +186,18 @@ test("a known subject and session get date-/time- entities in derivatives, and n
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
     "sourcedata/rawbids/dataset_description.json",
+  ]);
+
+  // A known subject/session also means a fake, non-resolving asset URL (see testInjection.ts's
+  // mockSourceUrl) — a known subject reads as opened out of EMBER, not dropped locally, so the
+  // derivatives description's SourceDatasets carries a URL, not just a filename and checksum.
+  const derivativesDescription = JSON.parse(entries[5].text) as Record<string, unknown>;
+  expect(derivativesDescription.SourceDatasets).toEqual([
+    {
+      URL: "https://test-injection.invalid/sub-01/ses-02/test-injection-mock-video.webm",
+      Filename: "test-injection-mock-video.webm",
+      Checksum: { algorithm: "dandi:dandi-etag", value: expect.any(String) },
+    },
   ]);
 });
 

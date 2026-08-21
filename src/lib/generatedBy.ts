@@ -26,10 +26,14 @@ export interface GeneratedBySourceVideo {
   num_frames: number;
 }
 
+// Field order below (Name, then Description, then the version-y stuff) is deliberate, not just
+// declaration order: object literals preserve insertion order through JSON.stringify, and every
+// dataset_description.json/sidecar this app writes reads Name and Description first, before anything
+// about versions or provenance detail, for the same reason a file's own header reads that way.
 export interface GeneratedByEntry {
   Name: string;
-  Version: string;
   Description?: string;
+  Version: string;
   CodeURL?: string;
   /** Omitted only for an entry recorded some other way than a real delivery — every one this app
    * writes carries one. */
@@ -45,8 +49,8 @@ export interface GeneratedByEntry {
 export function buildGeneratedByEntry(sourceVideo?: GeneratedBySourceVideo): GeneratedByEntry {
   return {
     Name: TOOL_NAME,
-    Version: TOOL_VERSION,
     Description: "Extracted a trimmed clip or still frame from a source video for a BIDS dataset.",
+    Version: TOOL_VERSION,
     CodeURL: TOOL_CODE_URL,
     ...(sourceVideo ? { SourceVideo: sourceVideo } : {}),
   };
@@ -83,6 +87,18 @@ export interface DatasetDescription {
   /** BIDS derivatives' own field naming where a derivative pipeline's content came from — set only
    * on `derivatives/clip-extractor/dataset_description.json`, not the dataset root's. */
   SourceDatasets?: SourceDatasetEntry[];
+  /** BIDS's own field for who to credit. This app only ever contributes a minimal entry — the
+   * signed-in archive username, when there is one (see `mergeAuthor`) — rather than asking for a
+   * real name nobody typed in, so it names who ran the delivery without inventing detail it does not
+   * have. */
+  Authors?: string[];
+  /** BIDS's own alias table for pointing at another dataset by a short key instead of a full relative
+   * path — the study root names its own `derivatives/clip-extractor/` under `clip`, and
+   * `derivatives/clip-extractor/`'s own file names `sourcedata/rawbids/` back under `raw` (see
+   * `mergeDatasetLinks` and lib/datasetDescription.ts's `mergedDatasetDescriptions`), so a reference
+   * elsewhere in the dataset (`bids::clip/...`/`bids::raw/...`) does not have to spell either path out
+   * in full. */
+  DatasetLinks?: Record<string, string>;
 }
 
 /** The BIDS version these sidecars and `dataset_description.json` files are written against. */
@@ -115,6 +131,27 @@ export function mergeGeneratedBy(
   const generatedBy = base.GeneratedBy ?? [];
   const already = generatedBy.some((g) => sameEntry(g, entry));
   return { ...base, GeneratedBy: already ? generatedBy : [...generatedBy, entry] };
+}
+
+/** Credits the signed-in archive username on `doc`, alongside whoever is already listed there —
+ * appended rather than replacing, and left alone (not even the field added) once it is already
+ * present, since re-delivering the same selection is not a second contribution to credit. A local
+ * Save, or an upload nobody signed in for by the time this runs, passes `username: null` and leaves
+ * `doc` untouched: crediting no one is more honest than a placeholder. */
+export function mergeAuthor(doc: DatasetDescription, username: string | null): DatasetDescription {
+  if (!username) return doc;
+  const authors = doc.Authors ?? [];
+  return authors.includes(username) ? doc : { ...doc, Authors: [...authors, username] };
+}
+
+/** Adds (or keeps) one `key: target` alias in `doc.DatasetLinks`, without disturbing whatever other
+ * aliases — another pipeline's, or this app's own other one — are already there. Idempotent, like
+ * `mergeAuthor` — a re-delivery that finds the alias already correct leaves `doc` untouched rather
+ * than rewriting it. */
+export function mergeDatasetLinks(doc: DatasetDescription, key: string, target: string): DatasetDescription {
+  const links = doc.DatasetLinks ?? {};
+  if (links[key] === target) return doc;
+  return { ...doc, DatasetLinks: { ...links, [key]: target } };
 }
 
 /** Capitalized, for a human-readable `Name`. */

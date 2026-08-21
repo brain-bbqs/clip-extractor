@@ -137,6 +137,19 @@ export function mockSourcePath(injection: TestInjection, filename: string): stri
   return segments.join("/");
 }
 
+/**
+ * A fake asset URL for the same case {@link mockSourcePath} names — resolving nowhere real, like
+ * every other test-injection URL (see `fakeArchiveBrowse`), but non-null wherever `mockSourcePath` is,
+ * so a mock video with a known subject also previews what an EMBER-sourced one carries into
+ * `SourceDatasets` (see lib/generatedBy.ts's `freshDerivativesDescription`): naming *how* it was
+ * opened, not just where it would sit in the dandiset. `mock_video` alone (no `mock_sub`) stays the
+ * "dropped locally" case, with no URL, same as it always was.
+ */
+export function mockSourceUrl(injection: TestInjection, filename: string): string | null {
+  const path = mockSourcePath(injection, filename);
+  return path ? `https://test-injection.invalid/${path}` : null;
+}
+
 /** Same as {@link readTestInjection}, for a caller that always wants a value rather than null —
  * every field reads as "off", so branching on it is always safe. */
 export function testInjectionOrInert(search: string): TestInjection {

@@ -4,6 +4,8 @@ import {
   freshDerivativesDescription,
   freshRootDescription,
   freshSourcedataDescription,
+  mergeAuthor,
+  mergeDatasetLinks,
   mergeGeneratedBy,
   type GeneratedBySourceVideo,
 } from "../../src/lib/generatedBy";
@@ -33,6 +35,10 @@ describe("buildGeneratedByEntry", () => {
 
   it("carries the source video when given one", () => {
     expect(buildGeneratedByEntry(video).SourceVideo).toEqual(video);
+  });
+
+  it("orders its keys Name, Description, then the version-y fields — object literals preserve this through JSON.stringify", () => {
+    expect(Object.keys(buildGeneratedByEntry())).toEqual(["Name", "Description", "Version", "CodeURL"]);
   });
 });
 
@@ -115,5 +121,59 @@ describe("mergeGeneratedBy", () => {
     const existing = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const, GeneratedBy: [entry] };
     const doc = mergeGeneratedBy(existing, otherVideo, freshRootDescription("snippet", createdAt));
     expect(doc.GeneratedBy).toEqual([entry, otherVideo]);
+  });
+});
+
+describe("mergeAuthor", () => {
+  const doc = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const };
+
+  it("leaves the document untouched — not even adding the field — when nobody is signed in", () => {
+    expect(mergeAuthor(doc, null)).toBe(doc);
+  });
+
+  it("credits the signed-in username", () => {
+    expect(mergeAuthor(doc, "cody")).toEqual({ ...doc, Authors: ["cody"] });
+  });
+
+  it("appends to whoever is already credited, rather than replacing them", () => {
+    const withAuthor = { ...doc, Authors: ["someone-else"] };
+    expect(mergeAuthor(withAuthor, "cody")).toEqual({ ...doc, Authors: ["someone-else", "cody"] });
+  });
+
+  it("does not duplicate the same username credited twice", () => {
+    const withAuthor = { ...doc, Authors: ["cody"] };
+    expect(mergeAuthor(withAuthor, "cody")).toEqual(withAuthor);
+  });
+});
+
+describe("mergeDatasetLinks", () => {
+  const doc = { Name: "000123", BIDSVersion: "1.9.0", DatasetType: "study" as const };
+
+  it("adds the alias when there is none yet", () => {
+    expect(mergeDatasetLinks(doc, "clip", "derivatives/clip-extractor")).toEqual({
+      ...doc,
+      DatasetLinks: { clip: "derivatives/clip-extractor" },
+    });
+  });
+
+  it("adds a second alias beside whatever another pipeline already put there", () => {
+    const withLinks = { ...doc, DatasetLinks: { phenotype: "phenotype/" } };
+    expect(mergeDatasetLinks(withLinks, "clip", "derivatives/clip-extractor")).toEqual({
+      ...doc,
+      DatasetLinks: { phenotype: "phenotype/", clip: "derivatives/clip-extractor" },
+    });
+  });
+
+  it("leaves the document untouched once the alias is already correct", () => {
+    const withLink = { ...doc, DatasetLinks: { clip: "derivatives/clip-extractor" } };
+    expect(mergeDatasetLinks(withLink, "clip", "derivatives/clip-extractor")).toBe(withLink);
+  });
+
+  it("corrects the alias in place if it somehow pointed somewhere else", () => {
+    const withStaleLink = { ...doc, DatasetLinks: { clip: "derivatives/old-name" } };
+    expect(mergeDatasetLinks(withStaleLink, "clip", "derivatives/clip-extractor")).toEqual({
+      ...doc,
+      DatasetLinks: { clip: "derivatives/clip-extractor" },
+    });
   });
 });

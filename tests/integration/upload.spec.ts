@@ -71,6 +71,16 @@ test("an upload registers the extract, the original and a matching sidecar", asy
   });
   expect(provenance.uploaded_by).toEqual({ username: "ada-lovelace", name: "Ada Lovelace" });
 
+  // All three `dataset_description.json` files credit the signed-in account too, not just the
+  // sidecar's own `uploaded_by` — a minimal `Authors` entry, the archive username rather than a real
+  // name nobody typed in.
+  const rootDescription = JSON.parse(jsonBodies[2]) as Record<string, unknown>;
+  const derivativesDescription = JSON.parse(jsonBodies[3]) as Record<string, unknown>;
+  const sourcedataDescription = JSON.parse(jsonBodies[4]) as Record<string, unknown>;
+  expect(rootDescription.Authors).toEqual(["ada-lovelace"]);
+  expect(derivativesDescription.Authors).toEqual(["ada-lovelace"]);
+  expect(sourcedataDescription.Authors).toEqual(["ada-lovelace"]);
+
   // The completion link opens the archive's file browser at this upload's own derivatives directory.
   const directory = imagePath.slice(0, imagePath.lastIndexOf("/"));
   await expect(status.locator("a")).toHaveText("click here to view and share");

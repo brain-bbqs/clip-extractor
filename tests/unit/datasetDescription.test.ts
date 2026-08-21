@@ -57,6 +57,7 @@ describe("mergedDatasetDescriptions", () => {
       entry,
       "snippet",
       createdAt,
+      null,
     );
     // Named after this delivery, and DatasetType: "study" — this root organizes sourcedata/rawbids/
     // (raw) and derivatives/ (derived) together, per BIDS's own convention for that.
@@ -65,13 +66,22 @@ describe("mergedDatasetDescriptions", () => {
       BIDSVersion: expect.any(String),
       DatasetType: "study",
       GeneratedBy: [entry],
+      DatasetLinks: { clip: "derivatives/clip-extractor" },
     });
     expect(derivatives.DatasetType).toBe("derivative");
     expect(derivatives.GeneratedBy).toEqual([entry]);
+    // Its own alias back the other way, so either file can be followed without spelling the other's
+    // path out.
+    expect(derivatives.DatasetLinks).toEqual({ raw: "../../sourcedata/rawbids" });
     // Its own DatasetType: "raw" too — sourcedata/rawbids/ is meant to validate as a complete raw
     // BIDS dataset by itself, independent of the dandiset it sits inside.
     expect(sourcedata.DatasetType).toBe("raw");
     expect(sourcedata.GeneratedBy).toEqual([entry]);
+    // No signed-in visitor named, so nobody is credited.
+    expect(root.Authors).toBeUndefined();
+    // sourcedata/rawbids/ has nothing to link back to — it is the leaf, not the root or the
+    // derivative naming where its content came from.
+    expect(sourcedata.DatasetLinks).toBeUndefined();
   });
 
   it("folds into an existing set without disturbing another pipeline's entries", () => {
@@ -82,10 +92,24 @@ describe("mergedDatasetDescriptions", () => {
       derivatives: null,
       sourcedata: null,
     };
-    const { root } = mergedDatasetDescriptions(existing, entry, "snippet", createdAt);
+    const { root } = mergedDatasetDescriptions(existing, entry, "snippet", createdAt, null);
     expect(root.GeneratedBy).toEqual([other, entry]);
     // Left as it was found, not renamed after this delivery.
     expect(root.Name).toBe("My Study");
+  });
+
+  it("credits the signed-in username on all three files when one is given", () => {
+    const entry = buildGeneratedByEntry();
+    const { root, derivatives, sourcedata } = mergedDatasetDescriptions(
+      { root: null, derivatives: null, sourcedata: null },
+      entry,
+      "snippet",
+      createdAt,
+      "cody",
+    );
+    expect(root.Authors).toEqual(["cody"]);
+    expect(derivatives.Authors).toEqual(["cody"]);
+    expect(sourcedata.Authors).toEqual(["cody"]);
   });
 });
 

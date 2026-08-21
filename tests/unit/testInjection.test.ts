@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mockSourcePath, readTestInjection } from "../../src/lib/testInjection";
+import { mockSourcePath, mockSourceUrl, readTestInjection } from "../../src/lib/testInjection";
 
 describe("readTestInjection", () => {
   it("returns null when the page was not asked to fake anything", () => {
@@ -42,5 +42,17 @@ describe("mockSourcePath", () => {
   it("returns null with no mock_sub, leaving the mock video's source unnamed (sub-unknown)", () => {
     const injection = readTestInjection("?test&mock_video")!;
     expect(mockSourcePath(injection, "clip.webm")).toBeNull();
+  });
+});
+
+describe("mockSourceUrl", () => {
+  it("builds a fake, non-resolving URL naming the same path mockSourcePath does", () => {
+    const injection = readTestInjection("?test&mock_video&mock_sub=01&mock_ses=02")!;
+    expect(mockSourceUrl(injection, "clip.webm")).toBe("https://test-injection.invalid/sub-01/ses-02/clip.webm");
+  });
+
+  it("returns null with no mock_sub — the 'dropped locally', no-URL case mock_video alone previews", () => {
+    const injection = readTestInjection("?test&mock_video")!;
+    expect(mockSourceUrl(injection, "clip.webm")).toBeNull();
   });
 });

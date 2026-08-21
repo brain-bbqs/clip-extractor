@@ -4,7 +4,9 @@
 // `DatasetType: "raw"`, so that subtree validates independently — see lib/bidsPath.ts). All three
 // are fixed, dataset-level files rather than per-delivery ones — unlike everything else this app
 // writes, a second delivery does not get a second copy of any of them; it folds its own
-// `GeneratedBy` entry (BEP028) into whichever is already there.
+// `GeneratedBy` entry (BEP028) into whichever is already there, crediting the signed-in archive
+// account as an `Author` too, when there is one, and cross-linking the root and the derivatives file
+// to each other via `DatasetLinks`.
 
 import type { ArchiveConfig } from "./types";
 import { findExistingAsset } from "./upload";
@@ -13,6 +15,8 @@ import {
   freshDerivativesDescription,
   freshRootDescription,
   freshSourcedataDescription,
+  mergeAuthor,
+  mergeDatasetLinks,
   mergeGeneratedBy,
   type DatasetDescription,
 } from "./generatedBy";
@@ -20,6 +24,13 @@ import {
 export const DATASET_DESCRIPTION_PATH = "dataset_description.json";
 export const DERIVATIVES_DESCRIPTION_PATH = `derivatives/${DERIVATIVES_PIPELINE}/dataset_description.json`;
 export const SOURCEDATA_DESCRIPTION_PATH = `sourcedata/${SOURCEDATA_RAWBIDS}/dataset_description.json`;
+
+// The two `DatasetLinks` aliases `mergedDatasetDescriptions` below writes: the study root's own
+// `clip`, naming the derivatives pipeline's directory, and the derivatives file's own `raw`, naming
+// its way back to sourcedata/rawbids/ — relative from two levels down (`derivatives/clip-extractor/`),
+// the same way any other BIDS-relative path in this app is written.
+const DERIVATIVES_DIRECTORY = `derivatives/${DERIVATIVES_PIPELINE}`;
+const SOURCEDATA_DIRECTORY_FROM_DERIVATIVES = `../../sourcedata/${SOURCEDATA_RAWBIDS}`;
 
 /** The three `dataset_description.json` files, wherever a delivery finds them: null for any that is
  * not registered in the dandiset yet. */
@@ -57,16 +68,30 @@ export async function readExistingDatasetDescriptions(cfg: ArchiveConfig): Promi
  * `existing` says nothing is registered there yet — all three named after this delivery, `mode` and
  * `createdAt` (see lib/generatedBy.ts's `freshRootDescription`/`freshDerivativesDescription`/
  * `freshSourcedataDescription`). A fresh derivatives description's own `SourceDatasets` comes
- * straight off `entry.SourceVideo`, so it names the same source the sidecar files do. */
+ * straight off `entry.SourceVideo`, so it names the same source the sidecar files do. `username`
+ * credits the signed-in archive account on all three too (see `mergeAuthor`) — null for a local Save
+ * or an anonymous upload, which leaves `Authors` as it was found rather than inventing an entry. The
+ * root and the derivatives file also get their own `DatasetLinks` alias (see `mergeDatasetLinks`) —
+ * `clip` on the root, naming the derivatives directory, and `raw` on the derivatives file, naming its
+ * way back to sourcedata/rawbids/ — so either can be followed without spelling the other's path out. */
 export function mergedDatasetDescriptions(
   existing: ExistingDatasetDescriptions,
   entry: import("./generatedBy").GeneratedByEntry,
   mode: "snippet" | "frame",
   createdAt: Date,
+  username: string | null,
 ): { root: DatasetDescription; derivatives: DatasetDescription; sourcedata: DatasetDescription } {
   return {
-    root: mergeGeneratedBy(existing.root, entry, freshRootDescription(mode, createdAt)),
-    derivatives: mergeGeneratedBy(existing.derivatives, entry, freshDerivativesDescription(mode, createdAt, entry.SourceVideo)),
-    sourcedata: mergeGeneratedBy(existing.sourcedata, entry, freshSourcedataDescription(mode, createdAt)),
+    root: mergeDatasetLinks(
+      mergeAuthor(mergeGeneratedBy(existing.root, entry, freshRootDescription(mode, createdAt)), username),
+      "clip",
+      DERIVATIVES_DIRECTORY,
+    ),
+    derivatives: mergeDatasetLinks(
+      mergeAuthor(mergeGeneratedBy(existing.derivatives, entry, freshDerivativesDescription(mode, createdAt, entry.SourceVideo)), username),
+      "raw",
+      SOURCEDATA_DIRECTORY_FROM_DERIVATIVES,
+    ),
+    sourcedata: mergeAuthor(mergeGeneratedBy(existing.sourcedata, entry, freshSourcedataDescription(mode, createdAt)), username),
   };
 }

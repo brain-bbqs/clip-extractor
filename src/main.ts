@@ -127,6 +127,7 @@ import {
   fakeArchiveBrowse,
   fakeIncomingDatasets,
   mockSourcePath,
+  mockSourceUrl,
   readTestInjection,
   synthesizeLongVideoFile,
   synthesizeVideoFile,
@@ -3366,7 +3367,10 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // hand, same as any other file a bundle might collide with.
   const existing = (await params.existingDescriptions?.()) ?? { root: null, derivatives: null, sourcedata: null };
   const generatedByEntry = buildGeneratedByEntry(buildGeneratedBySourceVideo(provenanceInput));
-  const descriptions = mergedDatasetDescriptions(existing, generatedByEntry, kind, createdAt);
+  // Read off the module-level identity rather than `provenanceInput.user` (which is only ever set on
+  // the upload route, since that field also drives the sidecar's own `uploaded_by`): a visitor can be
+  // signed in while using Save, and deserves the same credit there.
+  const descriptions = mergedDatasetDescriptions(existing, generatedByEntry, kind, createdAt, currentUser?.username ?? null);
   for (const [path, doc] of [
     [DATASET_DESCRIPTION_PATH, descriptions.root],
     [DERIVATIVES_DESCRIPTION_PATH, descriptions.derivatives],
@@ -3609,14 +3613,17 @@ function applyMockReady(): void {
 async function applyMockVideo(): Promise<void> {
   if (testInjection?.mockVideoFrames != null) {
     const file = await synthesizeVideoFile(testInjection.mockVideoFrames);
-    await loadVideo(file, file.name, null, undefined, mockSourcePath(testInjection, file.name));
+    // A fake URL only where mockSourcePath itself would name one (mock_sub given) — leaving
+    // `mock_video` alone as the "dropped locally" case it always was, with no URL to sync into the
+    // bar and no SourceDatasets URL to preview.
+    await loadVideo(file, file.name, mockSourceUrl(testInjection, file.name), undefined, mockSourcePath(testInjection, file.name));
     if (testInjection.mockSlp) applyMockSlp();
     if (testInjection.mockReady) applyMockReady();
     return;
   }
   if (testInjection?.mockVideoLongSeconds != null) {
     const file = await synthesizeLongVideoFile(testInjection.mockVideoLongSeconds);
-    await loadVideo(file, file.name, null, undefined, mockSourcePath(testInjection, file.name));
+    await loadVideo(file, file.name, mockSourceUrl(testInjection, file.name), undefined, mockSourcePath(testInjection, file.name));
     if (testInjection.mockReady) applyMockReady();
   }
 }
