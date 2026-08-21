@@ -65,20 +65,15 @@ describe("overlayFileName", () => {
 });
 
 describe("bundleFileName", () => {
-  // desc-extracted+clip is the one thing naming what the container holds; there is no recording-/
-  // date-/time- stamp and no BEP047 suffix, so the same source saved twice lands on the same name
-  // (see this module's own header comment).
-  it("names the container after its subject and desc-extracted+clip alone", () => {
-    expect(bundleFileName(beh)).toBe("sub-mice_desc-extracted+clip.tar.gz");
+  // No BIDS entities at all: the bundle is a download, not a file in the tree it holds, and stops
+  // existing the moment it is unpacked (see this module's own header comment).
+  it("names the bundle after the dandiset it is destined for", () => {
+    expect(bundleFileName("000123")).toBe("000123.tar.gz");
   });
 
-  it("includes the session entity when there is one, and still no date-/time-", () => {
-    expect(bundleFileName(behWithSession)).toBe("sub-1_ses-2_desc-extracted+clip.tar.gz");
-  });
-
-  it("names a known subject's bundle the same way", () => {
-    const known: BehEntities = { sub: "1", ses: null, known: true, recording: "unused", date: "20260810", time: "012356" };
-    expect(bundleFileName(known)).toBe("sub-1_desc-extracted+clip.tar.gz");
+  it("falls back to the pipeline's own name when no dataset is picked — a signed-out Save", () => {
+    expect(bundleFileName("")).toBe("clip-extractor.tar.gz");
+    expect(bundleFileName("   ")).toBe("clip-extractor.tar.gz");
   });
 });
 

@@ -2922,8 +2922,7 @@ function updateDeliveryPreview(): void {
   const show = state.backend !== null && hasSelection();
   els.downloadPreview.hidden = !show;
   if (!show) return;
-  const entities = currentEntities(new Date());
-  els.downloadPreviewName.textContent = bundleFileName(entities.beh);
+  els.downloadPreviewName.textContent = bundleFileName(currentConfig().dandisetId);
 }
 
 function setDeliveryBusy(busy: boolean): void {
@@ -3345,7 +3344,7 @@ async function runDownload(): Promise<void> {
   setDeliveryBusy(true);
   try {
     const bundled: BundleEntry[] = [];
-    const { entities, createdAt } = await assembleSelection({
+    const { createdAt } = await assembleSelection({
       backend,
       onProgress: (message) => setStatus(els.downloadStatus, message),
       // Every file is hashed on its way in even though nothing is being uploaded: the sidecar
@@ -3358,7 +3357,7 @@ async function runDownload(): Promise<void> {
     });
     setStatus(els.downloadStatus, "Packing the bundle…");
     const bundle = await tarGzip(bundled, createdAt);
-    const filename = bundleFileName(entities.beh);
+    const filename = bundleFileName(currentConfig().dandisetId);
     saveBlob(bundle, filename);
     setDeliveryBusy(false);
     setStatusNaming(els.downloadStatus, "Saved ", filename, ` (${bundled.length} files, ${bytes(bundle.size)})`, "ok");

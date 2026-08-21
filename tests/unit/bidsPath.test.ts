@@ -5,7 +5,6 @@ import {
   behEntities,
   behFilename,
   behSidecarName,
-  bundleFilename,
   dateLabel,
   derivativesDirectory,
   parseSourceSubjectSession,
@@ -161,18 +160,6 @@ describe("behFilename", () => {
     expect(behFilename(knownBeh, { desc: "overlay", suffix: "video", ext: "mp4" })).toBe(
       "sub-1_date-20260810_time-012356_desc-overlay_video.mp4",
     );
-  });
-});
-
-describe("bundleFilename", () => {
-  // Neither the disambiguator nor a suffix: the bundle is the outer container, not a file in the
-  // tree it holds, so the same source saved twice lands on the same name.
-  it("names the container after its subject and desc- alone", () => {
-    expect(bundleFilename(unknownBeh, { desc: "extracted+clip", ext: "tar.gz" })).toBe("sub-unknown_desc-extracted+clip.tar.gz");
-  });
-
-  it("includes ses- when there is a session, and still no date-/time-", () => {
-    expect(bundleFilename(knownBehWithSession, { desc: "extracted+clip", ext: "tar.gz" })).toBe("sub-1_ses-2_desc-extracted+clip.tar.gz");
   });
 });
 

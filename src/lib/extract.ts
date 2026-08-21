@@ -5,7 +5,7 @@ import { drawPose } from "./pose";
 import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
 import type { StreamingVideoBackend } from "./streaming";
 import type { SelectionKind } from "./delivery";
-import { behFilename, behSidecarName, bundleFilename, type BehEntities } from "./bidsPath";
+import { behFilename, behSidecarName, DERIVATIVES_PIPELINE, type BehEntities } from "./bidsPath";
 import type { PoseModel, SleapVideoBackend, TrimMode } from "./types";
 
 // Turns the current selection into a single file, ready for either delivery route (download or
@@ -39,8 +39,8 @@ export type ExtractProgress = (message: string, fraction?: number) => void;
 //   sub-<label>_recording-<label>_desc-overlay_video.mp4
 // Files describing or rendering the same selection share every entity with it and differ only in
 // `desc-`, so they sit side by side in a listing. The original video is not renamed beyond that same
-// scheme — see deliverOriginalVideo in main.ts. The bundle those all pack into is named differently
-// again (see `bundleFileName`), being a download rather than a file in the tree.
+// scheme — see deliverOriginalVideo in main.ts. The bundle those all pack into carries no entities
+// at all (see `bundleFileName`), being a download rather than a file in the tree.
 
 /** The entities identifying one extraction, shared by every file it produces: which selection
  * (`sourceName`/`mode`/frame bounds, for the extraction logic itself) and which subject, session
@@ -53,14 +53,6 @@ export interface AssetEntities {
   outFrame: number;
   beh: BehEntities;
 }
-
-/** The saved bundle's own `desc-`, and the only place this app writes one besides `desc-overlay`.
- * BIDS labels may concatenate multiple applicable ones with `+` (see
- * https://bids-specification.readthedocs.io/en/stable/appendices/entities.html#desc), and what the
- * bundle holds is both — the thing this app *extracted*, and (frame or snippet alike) the *clip* the
- * app is named for. The files inside it need no such label: each is already named for what it is by
- * its own BEP047 suffix. */
-const EXTRACTED_CLIP_DESC = "extracted+clip";
 
 export function clipFileName(beh: BehEntities): string {
   return behFilename(beh, { suffix: "video", ext: "mp4" });
@@ -77,13 +69,15 @@ export function sidecarFileName(beh: BehEntities, mode: SelectionKind, desc?: st
 }
 
 /** The saved bundle: every file an upload would have written, tarred and gzipped into one download.
- * `desc-extracted+clip` says what the container holds, since nothing else in its name does — it
- * carries neither a BEP047 suffix nor this delivery's own disambiguating entity (see
- * lib/bidsPath.ts's `bundleFilename`), being the outer container rather than a file in the tree it
- * holds. That is what lets the same source saved twice land on the same name rather than a new one
- * minted around whichever instant it happened to be saved at. */
-export function bundleFileName(beh: BehEntities): string {
-  return bundleFilename(beh, { desc: EXTRACTED_CLIP_DESC, ext: "tar.gz" });
+ *
+ * Named for the dandiset it is destined for, or `clip-extractor` when no dataset is picked (a
+ * signed-out Save, say). Deliberately carries none of BEP047's entities — not the subject, not this
+ * delivery's own stamp: it is a download, and the moment it is unpacked it stops existing, leaving
+ * the entity-named tree inside it. A name built from a subject would also have claimed the bundle
+ * holds only that subject, which is not something the container itself promises. Naming it after the
+ * dandiset instead says the one thing about it worth knowing before unpacking: where it belongs. */
+export function bundleFileName(dandisetId: string): string {
+  return `${dandisetId.trim() || DERIVATIVES_PIPELINE}.tar.gz`;
 }
 
 /** The same selection with the pose drawn into the pixels — `desc-overlay` where the plain extract

@@ -13,7 +13,7 @@ const BLOCK = 512;
 // (see lib/bidsPath.ts's behEntities), and the recording entity is stamped from Save's own instant —
 // only its shape (17 digits) is pinned down here. It names both this delivery's own directory under
 // derivatives/ and every filename inside it (see lib/bidsPath.ts's derivativesDirectory) — but not
-// the bundle's own name, which stays disambiguator-free so the same source names the same bundle.
+// the bundle's own name, which carries none of BEP047's entities at all.
 const RECORDING = "\\d{17}";
 
 /** Walks the 512-byte headers of a tar, the way `tar tf` lists it. */
@@ -57,12 +57,12 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   await page.locator("#selectionDescription").fill("The mouse leaves frame here — the tracker keeps a stale track.");
   await expect(page.locator("#btnDownload")).toBeEnabled();
 
-  // The button names the bundle before it is written — no recording- and no suffix here, since the
-  // bundle is the outer container, not a file inside the delivery's own directory.
-  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-unknown_desc-extracted\+clip\.tar\.gz$/);
+  // The button names the bundle before it is written. Signed out there is no dataset to name it
+  // after, so it falls back to the pipeline's own name; none of BEP047's entities appear on it.
+  await expect(page.locator("#downloadPreviewName")).toHaveText(/^clip-extractor\.tar\.gz$/);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toMatch(/^sub-unknown_desc-extracted\+clip\.tar\.gz$/);
+  expect(download.suggestedFilename()).toMatch(/^clip-extractor\.tar\.gz$/);
   await expect(page.locator("#downloadStatus")).toContainText("Saved");
 
   const entries = listTar(readFileSync((await download.path())!));
@@ -174,8 +174,8 @@ test("leaving the original out saves the extract and its sidecar alone, plus all
 // snippet extraction needs ffmpeg.wasm off a CDN, which no spec in this suite depends on (see
 // blur.spec.ts's own header comment). What is skipped is the encode, not the thing under test — the
 // marked range and the selector mode below are the selection itself. The bundle name is checked too,
-// but proves less than it looks: it carries `desc-extracted+clip` either way, since the outer
-// container deliberately says nothing about which kind of selection it holds.
+// but proves less than it looks: with no dataset picked it is `clip-extractor.tar.gz` in every one
+// of these four cases, since the container carries none of BEP047's entities.
 
 const MOCK_FRAME = "12";
 const MOCK_RANGE = { in: "6", out: "21" };
@@ -190,7 +190,7 @@ test("?test&mock_video&mock_ready&from_local&frame saves a still frame of a loca
   await expect(page.locator("#curVal")).toHaveValue(MOCK_FRAME);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toBe("sub-unknown_desc-extracted+clip.tar.gz");
+  expect(download.suggestedFilename()).toBe("clip-extractor.tar.gz");
 
   const entries = listTar(readFileSync((await download.path())!));
   // Dropped locally: the sub-unknown fallback, a recording- directory, and no URL for SourceDatasets
@@ -216,20 +216,20 @@ test("?test&mock_video&mock_ready&from_local&snippet marks a real range of a loc
   await expect(page.locator("#inVal")).toHaveValue(MOCK_RANGE.in);
   await expect(page.locator("#outVal")).toHaveValue(MOCK_RANGE.out);
   await expect(page.locator("#curVal")).toHaveValue(MOCK_RANGE.in);
-  await expect(page.locator("#downloadPreviewName")).toHaveText("sub-unknown_desc-extracted+clip.tar.gz");
+  await expect(page.locator("#downloadPreviewName")).toHaveText("clip-extractor.tar.gz");
 });
 
 test("?test&mock_video&mock_ready&from_ember&frame saves a still frame of an archive-sourced video", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   // `from_ember` (see lib/testInjection.ts) makes the mock video look, to behEntities, as if it were
   // opened from sub-01/ses-02/… — a known subject and session, so its derivatives directory gets a
-  // date-/time- disambiguator (not recording-), while its bundle name carries neither.
+  // date-/time- disambiguator (not recording-), while the bundle name carries neither.
   await page.goto("/?test&mock_video&mock_ready&from_ember&frame");
   await expect(page.locator("#btnDownload")).toBeEnabled();
   await expect(page.locator("#curVal")).toHaveValue(MOCK_FRAME);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toBe("sub-01_ses-02_desc-extracted+clip.tar.gz");
+  expect(download.suggestedFilename()).toBe("clip-extractor.tar.gz");
 
   const entries = listTar(readFileSync((await download.path())!));
   expect(entries[0].path).toMatch(
@@ -258,7 +258,23 @@ test("?test&mock_video&mock_ready&from_ember&snippet marks a real range of an ar
   await expect(page.locator("#inVal")).toHaveValue(MOCK_RANGE.in);
   await expect(page.locator("#outVal")).toHaveValue(MOCK_RANGE.out);
   await expect(page.locator("#curVal")).toHaveValue(MOCK_RANGE.in);
-  await expect(page.locator("#downloadPreviewName")).toHaveText("sub-01_ses-02_desc-extracted+clip.tar.gz");
+  await expect(page.locator("#downloadPreviewName")).toHaveText("clip-extractor.tar.gz");
+});
+
+test("the bundle is named after the dataset it is destined for, when one is picked", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
+  // `num_datasets=1` picks the fake dandiset FAKE_DANDISET_ID_BASE (see lib/testInjection.ts), which
+  // is what the bundle is named after — the one thing worth knowing about the container before
+  // unpacking it. Without a dataset the other tests here fall back to `clip-extractor.tar.gz`.
+  await page.goto("/?test&mock_video&mock_ready&from_ember&frame&num_datasets=1");
+  await expect(page.locator("#dandisetSingleText")).toContainText("9900001");
+  // With a dataset to upload to, that is the side the delivery card leads with — so Save has to be
+  // asked for before its button is the one on screen.
+  await page.locator('#deliverSeg button[data-deliver="download"]').click();
+  await expect(page.locator("#downloadPreviewName")).toHaveText("9900001.tar.gz");
+
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
+  expect(download.suggestedFilename()).toBe("9900001.tar.gz");
 });
 
 test("&frame=<n> and &snippet=<lo>-<hi> pick their own indices, held to the video's own bounds", async ({ page }) => {

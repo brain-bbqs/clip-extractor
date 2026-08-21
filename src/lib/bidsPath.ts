@@ -32,16 +32,15 @@
 //     nothing identifies one locally dropped file from another either, so it is not a case this app
 //     tries to tell apart at all — same overwrite-not-duplicate treatment as the known-subject case.
 //
-// A saved bundle's own filename (see lib/extract.ts's `bundleFileName`) carries neither: it is the
-// outer container, not a file inside the tree it holds, and the same source saved again should name
-// the same bundle rather than mint a new, ever-changing name around a delivery's own instant.
+// A saved bundle's own filename carries none of this — no subject, no stamp, nothing BIDS defines.
+// It is a download rather than a file inside the tree it holds, and stops existing the moment it is
+// unpacked, so it is named for the dandiset it belongs to instead (see lib/extract.ts's
+// `bundleFileName`).
 //
 // `desc-<label>` — the entity BIDS derivatives already define for distinguishing outputs of the
 // same underlying recording — marks the pose-overlay rendering (`desc-overlay`), the one thing
 // BEP047's own vocabulary has no entity for. The plain extracted clip carries no `desc-` of its own:
-// it is the delivery's primary output, so there is nothing it needs setting apart from. The saved
-// bundle is the exception, taking `desc-extracted+clip` to say what the container holds, since
-// nothing else in its name does (see lib/extract.ts).
+// it is the delivery's primary output, so there is nothing it needs setting apart from.
 
 import { sanitizeSegment } from "./sanitize";
 
@@ -160,9 +159,8 @@ export interface BehFilenameParts {
   desc?: string;
   /** What the file holds: BEP047's `video`/`audio`/`audiovideo`/`image`, or (for content BEP047
    * has no suffix for, like a SLEAP `.slp`) a plain descriptive word — sourcedata is not validated
-   * as strictly as the rest of a BIDS tree. Omitted only by the saved bundle (see `bundleFilename`),
-   * which is not a file inside a BIDS tree at all and so has no suffix to carry. */
-  suffix?: string;
+   * as strictly as the rest of a BIDS tree. */
+  suffix: string;
   ext: string;
 }
 
@@ -175,25 +173,14 @@ function disambiguatorEntities(e: BehEntities): string[] {
   return e.known ? [`date-${e.date}`, `time-${e.time}`] : [`recording-${e.recording}`];
 }
 
-function joinEntities(bits: string[], parts: BehFilenameParts): string {
-  if (parts.desc) bits.push(`desc-${parts.desc}`);
-  if (parts.suffix) bits.push(parts.suffix);
-  return `${bits.join("_")}.${parts.ext}`;
-}
-
 /** `sub-<label>[_ses-<label>]_<date-<label>_time-<label>|recording-<label>>[_desc-<label>]_<suffix>.<ext>`
  * — every file one delivery writes shares this prefix and sits together in that delivery's own
  * directory (see `derivativesDirectory`). */
 export function behFilename(e: BehEntities, parts: BehFilenameParts): string {
-  return joinEntities([...subjectSessionSegments(e), ...disambiguatorEntities(e)], parts);
-}
-
-/** The saved bundle's own name — `sub-<label>[_ses-<label>][_desc-<label>].<ext>`, and neither the
- * disambiguating entity nor a BIDS suffix. It is the outer container, not a file in the tree it
- * holds: nothing about it is validated as BIDS, and leaving this delivery's own instant out is what
- * lets the same source saved twice land on the same name rather than an ever-changing one. */
-export function bundleFilename(e: BehEntities, parts: BehFilenameParts): string {
-  return joinEntities(subjectSessionSegments(e), parts);
+  const bits = [...subjectSessionSegments(e), ...disambiguatorEntities(e)];
+  if (parts.desc) bits.push(`desc-${parts.desc}`);
+  bits.push(parts.suffix);
+  return `${bits.join("_")}.${parts.ext}`;
 }
 
 /** The JSON sidecar for a BEP047 media file: same name, `.json` in place of the media extension. */
