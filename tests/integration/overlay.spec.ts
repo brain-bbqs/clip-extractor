@@ -10,8 +10,8 @@ const SLP_FIXTURE = fileURLToPath(new URL("../fixtures/mice_new.tracked.slp", im
 
 // No archive path names a locally dropped video, so its subject entity falls back to `sub-unknown`
 // (see lib/bidsPath.ts's behEntities), and the recording entity is stamped from the upload's own
-// instant — it names this delivery's own directory under derivatives/ (see lib/bidsPath.ts's
-// derivativesDirectory), read back from the first registered path rather than pinned down here.
+// instant — it names this delivery's own directory under derivatives/ and every filename inside it
+// (see lib/bidsPath.ts's derivativesDirectory), read back from the first registered path here.
 
 test("a loaded .slp adds the annotations file and a rendered overlay (with its own sidecar) to the upload", async ({ page }) => {
   const { registered } = await stubArchive(page);
@@ -37,15 +37,17 @@ test("a loaded .slp adds the annotations file and a rendered overlay (with its o
   // this delivery's own recording-<label>/ directory.
   const derivativesDir = registered[0].slice(0, registered[0].lastIndexOf("/"));
   expect(derivativesDir).toMatch(/^derivatives\/clip-extractor\/sub-unknown\/beh\/recording-\d{17}$/);
+  // The same stamp the directory carries is repeated in every filename inside it.
+  const recording = derivativesDir.match(/recording-(\d+)$/)![1];
   expect(registered).toEqual([
-    `${derivativesDir}/sub-unknown_desc-extracted+clip_image.png`,
-    `${derivativesDir}/sub-unknown_desc-overlay_image.png`,
-    `${derivativesDir}/sub-unknown_desc-overlay_image.json`,
+    `${derivativesDir}/sub-unknown_recording-${recording}_image.png`,
+    `${derivativesDir}/sub-unknown_recording-${recording}_desc-overlay_image.png`,
+    `${derivativesDir}/sub-unknown_recording-${recording}_desc-overlay_image.json`,
     "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.webm",
     "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.json",
     `${derivativesDir}/mice_new.tracked.slp`,
     `${derivativesDir}/mice_new.tracked.json`,
-    `${derivativesDir}/sub-unknown_desc-extracted+clip_image.json`,
+    `${derivativesDir}/sub-unknown_recording-${recording}_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
     "sourcedata/rawbids/dataset_description.json",
@@ -71,11 +73,12 @@ test("the overlay is uploaded even when the original content is excluded", async
 
   // No source video and no .slp, but the overlay and both sidecars are still there.
   const derivativesDir = registered[0].slice(0, registered[0].lastIndexOf("/"));
+  const recording = derivativesDir.match(/recording-(\d+)$/)![1];
   expect(registered).toEqual([
-    `${derivativesDir}/sub-unknown_desc-extracted+clip_image.png`,
-    `${derivativesDir}/sub-unknown_desc-overlay_image.png`,
-    `${derivativesDir}/sub-unknown_desc-overlay_image.json`,
-    `${derivativesDir}/sub-unknown_desc-extracted+clip_image.json`,
+    `${derivativesDir}/sub-unknown_recording-${recording}_image.png`,
+    `${derivativesDir}/sub-unknown_recording-${recording}_desc-overlay_image.png`,
+    `${derivativesDir}/sub-unknown_recording-${recording}_desc-overlay_image.json`,
+    `${derivativesDir}/sub-unknown_recording-${recording}_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
     "sourcedata/rawbids/dataset_description.json",

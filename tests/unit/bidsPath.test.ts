@@ -5,6 +5,7 @@ import {
   behEntities,
   behFilename,
   behSidecarName,
+  bundleFilename,
   dateLabel,
   derivativesDirectory,
   parseSourceSubjectSession,
@@ -142,28 +143,42 @@ describe("sourcedataOriginalFilename", () => {
 });
 
 describe("behFilename", () => {
-  // No recording-/date-/time- in the filename itself for any subject shape — that disambiguator
-  // lives in the enclosing directory instead (see derivativesDirectory above).
-  it("names an unknown (sub-unknown) subject plainly", () => {
-    expect(behFilename(unknownBeh, { suffix: "video", ext: "mp4" })).toBe("sub-unknown_video.mp4");
+  // The same disambiguator the enclosing directory carries (see derivativesDirectory above) is
+  // repeated here, so a file stays self-describing once it is away from that directory.
+  it("uses recording- to disambiguate an unknown (sub-unknown) subject", () => {
+    expect(behFilename(unknownBeh, { suffix: "video", ext: "mp4" })).toBe("sub-unknown_recording-20260810012356482_video.mp4");
   });
 
-  it("names a known subject the same way", () => {
-    expect(behFilename(knownBeh, { suffix: "video", ext: "mp4" })).toBe("sub-1_video.mp4");
+  it("uses date-/time- instead, for a known subject", () => {
+    expect(behFilename(knownBeh, { suffix: "video", ext: "mp4" })).toBe("sub-1_date-20260810_time-012356_video.mp4");
   });
 
   it("includes ses- when there is a session", () => {
-    expect(behFilename(knownBehWithSession, { suffix: "video", ext: "mp4" })).toBe("sub-1_ses-2_video.mp4");
+    expect(behFilename(knownBehWithSession, { suffix: "video", ext: "mp4" })).toBe("sub-1_ses-2_date-20260810_time-012356_video.mp4");
   });
 
-  it("includes desc- before the suffix, when given one", () => {
-    expect(behFilename(knownBeh, { desc: "overlay", suffix: "video", ext: "mp4" })).toBe("sub-1_desc-overlay_video.mp4");
+  it("includes desc- between the disambiguator and the suffix, when given one", () => {
+    expect(behFilename(knownBeh, { desc: "overlay", suffix: "video", ext: "mp4" })).toBe(
+      "sub-1_date-20260810_time-012356_desc-overlay_video.mp4",
+    );
+  });
+});
+
+describe("bundleFilename", () => {
+  // Neither the disambiguator nor a suffix: the bundle is the outer container, not a file in the
+  // tree it holds, so the same source saved twice lands on the same name.
+  it("names the container after its subject and desc- alone", () => {
+    expect(bundleFilename(unknownBeh, { desc: "extracted+clip", ext: "tar.gz" })).toBe("sub-unknown_desc-extracted+clip.tar.gz");
+  });
+
+  it("includes ses- when there is a session, and still no date-/time-", () => {
+    expect(bundleFilename(knownBehWithSession, { desc: "extracted+clip", ext: "tar.gz" })).toBe("sub-1_ses-2_desc-extracted+clip.tar.gz");
   });
 });
 
 describe("behSidecarName", () => {
   it("mirrors behFilename with .json in place of the media extension", () => {
-    expect(behSidecarName(knownBeh, { suffix: "video" })).toBe("sub-1_video.json");
+    expect(behSidecarName(knownBeh, { suffix: "video" })).toBe("sub-1_date-20260810_time-012356_video.json");
   });
 });
 

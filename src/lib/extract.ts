@@ -5,7 +5,7 @@ import { drawPose } from "./pose";
 import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
 import type { StreamingVideoBackend } from "./streaming";
 import type { SelectionKind } from "./delivery";
-import { behFilename, behSidecarName, type BehEntities } from "./bidsPath";
+import { behFilename, behSidecarName, bundleFilename, type BehEntities } from "./bidsPath";
 import type { PoseModel, SleapVideoBackend, TrimMode } from "./types";
 
 // Turns the current selection into a single file, ready for either delivery route (download or
@@ -30,15 +30,17 @@ export type ExtractProgress = (message: string, fraction?: number) => void;
 
 // Every file this app produces is named per BEP047 (see lib/bidsPath.ts), and every delivery's own
 // files land together in one directory of their own — `.../beh/<recording-<label>|date-..._time-...>/`
-// (see `derivativesDirectory`) — rather than repeating that disambiguator in each filename:
-//   sub-<label>_desc-extracted+clip_image.png
-//   sub-<label>_desc-extracted+clip_image.json
-//   sub-<label>_desc-extracted+clip_video.mp4
-//   sub-<label>_desc-extracted+clip_video.json
-//   sub-<label>_desc-overlay_video.mp4
+// (see `derivativesDirectory`) — whose disambiguating entity each of them also carries, so a file
+// stays self-describing away from that directory:
+//   sub-<label>_recording-<label>_image.png
+//   sub-<label>_recording-<label>_image.json
+//   sub-<label>_recording-<label>_video.mp4
+//   sub-<label>_recording-<label>_video.json
+//   sub-<label>_recording-<label>_desc-overlay_video.mp4
 // Files describing or rendering the same selection share every entity with it and differ only in
 // `desc-`, so they sit side by side in a listing. The original video is not renamed beyond that same
-// scheme — see deliverOriginalVideo in main.ts.
+// scheme — see deliverOriginalVideo in main.ts. The bundle those all pack into is named differently
+// again (see `bundleFileName`), being a download rather than a file in the tree.
 
 /** The entities identifying one extraction, shared by every file it produces: which selection
  * (`sourceName`/`mode`/frame bounds, for the extraction logic itself) and which subject, session
@@ -52,40 +54,41 @@ export interface AssetEntities {
   beh: BehEntities;
 }
 
-/** `desc-` for the plain extract itself (as opposed to `overlay`, or the source video its sidecar
- * carries no `desc` at all for): BIDS labels may concatenate multiple applicable ones with `+` (see
- * https://bids-specification.readthedocs.io/en/stable/appendices/entities.html#desc), and this file
- * is both — the thing this app *extracted*, and (frame or snippet alike) the *clip* the app is named
- * for. */
+/** The saved bundle's own `desc-`, and the only place this app writes one besides `desc-overlay`.
+ * BIDS labels may concatenate multiple applicable ones with `+` (see
+ * https://bids-specification.readthedocs.io/en/stable/appendices/entities.html#desc), and what the
+ * bundle holds is both — the thing this app *extracted*, and (frame or snippet alike) the *clip* the
+ * app is named for. The files inside it need no such label: each is already named for what it is by
+ * its own BEP047 suffix. */
 const EXTRACTED_CLIP_DESC = "extracted+clip";
 
 export function clipFileName(beh: BehEntities): string {
-  return behFilename(beh, { desc: EXTRACTED_CLIP_DESC, suffix: "video", ext: "mp4" });
+  return behFilename(beh, { suffix: "video", ext: "mp4" });
 }
 
 export function frameFileName(beh: BehEntities): string {
-  return behFilename(beh, { desc: EXTRACTED_CLIP_DESC, suffix: "image", ext: "png" });
+  return behFilename(beh, { suffix: "image", ext: "png" });
 }
 
 /** The sidecar shares every entity with the media file it describes, `.json` in place of the media
  * extension, so the pair sits side by side in a listing. */
-export function sidecarFileName(beh: BehEntities, mode: SelectionKind, desc: string = EXTRACTED_CLIP_DESC): string {
+export function sidecarFileName(beh: BehEntities, mode: SelectionKind, desc?: string): string {
   return behSidecarName(beh, { suffix: mode === "frame" ? "image" : "video", desc });
 }
 
 /** The saved bundle: every file an upload would have written, tarred and gzipped into one download.
- * Carries the same `desc-extracted+clip` as the extract inside it, and `bundle` names what it is —
- * but no per-delivery disambiguator, and nothing naming which kind of selection it holds either (see
- * lib/bidsPath.ts's own header comment): it is the outer container, not a file in the tree it holds,
- * so the same source saved again should name the same bundle rather than mint a new one around this
- * delivery's own instant or whether a frame or a range happened to be marked at the time. */
+ * `desc-extracted+clip` says what the container holds, since nothing else in its name does — it
+ * carries neither a BEP047 suffix nor this delivery's own disambiguating entity (see
+ * lib/bidsPath.ts's `bundleFilename`), being the outer container rather than a file in the tree it
+ * holds. That is what lets the same source saved twice land on the same name rather than a new one
+ * minted around whichever instant it happened to be saved at. */
 export function bundleFileName(beh: BehEntities): string {
-  return behFilename(beh, { desc: EXTRACTED_CLIP_DESC, suffix: "bundle", ext: "tar.gz" });
+  return bundleFilename(beh, { desc: EXTRACTED_CLIP_DESC, ext: "tar.gz" });
 }
 
-/** The same selection with the pose drawn into the pixels — `desc-overlay` in place of the plain
- * extract's own `desc-extracted+clip`, the derivatives entity BIDS already defines for "a different
- * output of the same recording". */
+/** The same selection with the pose drawn into the pixels — `desc-overlay` where the plain extract
+ * carries no `desc-` at all, the derivatives entity BIDS already defines for "a different output of
+ * the same recording". */
 export function overlayFileName(beh: BehEntities, mode: SelectionKind): string {
   return behFilename(beh, { desc: "overlay", suffix: mode === "frame" ? "image" : "video", ext: mode === "frame" ? "png" : "mp4" });
 }
