@@ -43,8 +43,8 @@ test("an upload registers the extract, the original and a matching sidecar", asy
     sourcedataDescriptionPath,
   ] = registered;
   expect(imagePath).toMatch(new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_image\\.png$`));
-  expect(originalPath).toBe("sourcedata/rawbids/sub-unknown/beh/file_example_480-Copy.webm");
-  expect(originalSidecarPath).toBe("sourcedata/rawbids/sub-unknown/beh/file_example_480-Copy.json");
+  expect(originalPath).toBe("sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.webm");
+  expect(originalSidecarPath).toBe("sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.json");
   expect(sidecarPath).toBe(imagePath.replace(/\.png$/, ".json"));
   expect(rootDescriptionPath).toBe("dataset_description.json");
   expect(derivativesDescriptionPath).toBe("derivatives/clip-extractor/dataset_description.json");
@@ -58,18 +58,12 @@ test("an upload registers the extract, the original and a matching sidecar", asy
   expect(originalSidecar.GeneratedBy).toBeUndefined();
 
   // The sidecar that actually went up carries the description written for this selection, the
-  // standard BEP047 technical keys, a BEP028 GeneratedBy entry, and this app's own full record
-  // nested under its own key.
+  // standard BEP047 technical keys, and a BEP028 GeneratedBy entry — no nested, app-specific record
+  // alongside them.
   const sidecar = JSON.parse(jsonBodies[1]) as Record<string, unknown>;
   expect(sidecar.Description).toBe("Frame 5 is where the two tracks swap identities.");
   expect((sidecar.GeneratedBy as { Name: string }[])[0].Name).toBe("clip-extractor");
-  const provenance = sidecar["clip-extractor"] as Record<string, unknown>;
-  expect(provenance.destination).toEqual({
-    api: "https://api-dandi.emberarchive.org/api",
-    dandiset_id: "000123",
-    directory: imagePath.slice(0, imagePath.lastIndexOf("/")),
-  });
-  expect(provenance.uploaded_by).toEqual({ username: "ada-lovelace", name: "Ada Lovelace" });
+  expect(sidecar).not.toHaveProperty("clip-extractor");
 
   // All three `dataset_description.json` files credit the signed-in account too, not just the
   // sidecar's own `uploaded_by` — a minimal `Authors` entry, the archive username rather than a real

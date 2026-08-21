@@ -18,14 +18,17 @@
 //
 //   - A known subject (the source video's own path named one) means its `sourcedata` copy is the
 //     one true copy of that recording — re-delivering it is expected to overwrite, not duplicate, so
-//     `sourcedata` gets no disambiguator at all (see deliverOriginalVideo in main.ts, which always
-//     names it verbatim regardless). `derivatives`, though, still needs one: two runs of
-//     clip-extractor over the same subject/session produce two different clips, so those get
-//     `date-<label>_time-<label>` — separate entities, the same spelling the pre-BIDS directory
-//     layout used, now inside the filename instead of a directory name.
+//     `sourcedata` gets no disambiguator at all (see `sourcedataOriginalFilename`, entity-shaped like
+//     everything else but with nothing appended to distinguish one delivery's copy from another's).
+//     `derivatives`, though, still needs one: two runs of clip-extractor over the same subject/session
+//     produce two different clips, so those get `date-<label>_time-<label>` — separate entities, the
+//     same spelling the pre-BIDS directory layout used, now inside the filename instead of a
+//     directory name.
 //   - `sub-unknown` (the source names no subject at all — a video dropped straight from disk) means
-//     there is nothing else tying two such deliveries apart, in either tree, so both keep the
-//     compact `recording-<label>` stamp instead.
+//     there is nothing else tying two such deliveries apart in `derivatives`, so that tree keeps the
+//     compact `recording-<label>` stamp there instead. `sourcedata` stays undisambiguated even here:
+//     nothing identifies one locally dropped file from another either, so it is not a case this app
+//     tries to tell apart at all — same overwrite-not-duplicate treatment as the known-subject case.
 //
 // `desc-<label>` — the entity BIDS derivatives already define for distinguishing outputs of the
 // same underlying recording — separates the plain extracted clip from its pose-overlay rendering,
@@ -117,6 +120,19 @@ export const SOURCEDATA_RAWBIDS = "rawbids";
  * `sourcedata/rawbids/sub-<label>/[ses-<label>/]beh`. */
 export function sourcedataDirectory(e: BehEntities): string {
   return ["sourcedata", SOURCEDATA_RAWBIDS, ...subjectSessionSegments(e), "beh"].join("/");
+}
+
+/** The original source video's own name under `sourcedata/rawbids/` — BEP047 entity-shaped like
+ * everything else this app writes, but with no disambiguating entity at all: re-delivering the same
+ * subject/session's source is expected to overwrite this copy, not duplicate it (see this module's
+ * own header comment) — and that holds for the `sub-unknown` fallback too, not just a known
+ * subject/session: nothing else identifies one locally dropped file from another either, so this is
+ * not a case `sourcedata` tries to disambiguate at all. Keeps the original file's own extension —
+ * BEP047 says nothing about which container a `_video` suffix must sit in. */
+export function sourcedataOriginalFilename(e: BehEntities, originalName: string): string {
+  const dot = originalName.lastIndexOf(".");
+  const ext = dot > 0 ? originalName.slice(dot + 1).toLowerCase() : "mp4";
+  return `${subjectSessionSegments(e).join("_")}_video.${ext}`;
 }
 
 /** Where this app's own output sits — `derivatives/clip-extractor/sub-<label>/[ses-<label>/]beh`. */

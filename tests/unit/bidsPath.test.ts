@@ -10,6 +10,7 @@ import {
   parseSourceSubjectSession,
   recordingLabel,
   sourcedataDirectory,
+  sourcedataOriginalFilename,
   timeLabel,
   type BehEntities,
 } from "../../src/lib/bidsPath";
@@ -114,6 +115,25 @@ describe("sourcedataDirectory / derivativesDirectory", () => {
   it("include the session entity when there is one", () => {
     expect(sourcedataDirectory(knownBehWithSession)).toBe("sourcedata/rawbids/sub-1/ses-2/beh");
     expect(derivativesDirectory(knownBehWithSession)).toBe("derivatives/clip-extractor/sub-1/ses-2/beh");
+  });
+});
+
+describe("sourcedataOriginalFilename", () => {
+  it("names it entity-shaped, with no disambiguator — a known subject/session's copy overwrites, not duplicates", () => {
+    expect(sourcedataOriginalFilename(knownBeh, "mice.mp4")).toBe("sub-1_video.mp4");
+    expect(sourcedataOriginalFilename(knownBehWithSession, "mice.mp4")).toBe("sub-1_ses-2_video.mp4");
+  });
+
+  it("keeps sub-unknown undisambiguated too — nothing else tells apart two locally dropped files", () => {
+    expect(sourcedataOriginalFilename(unknownBeh, "mice.mp4")).toBe("sub-unknown_video.mp4");
+  });
+
+  it("keeps the original file's own extension, lowercased", () => {
+    expect(sourcedataOriginalFilename(knownBeh, "mice.WEBM")).toBe("sub-1_video.webm");
+  });
+
+  it("falls back to mp4 when the original name carries no extension", () => {
+    expect(sourcedataOriginalFilename(knownBeh, "mice")).toBe("sub-1_video.mp4");
   });
 });
 

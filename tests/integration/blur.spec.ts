@@ -86,10 +86,10 @@ test("blur areas are placed, resized and removed on the picture", async ({ page 
   await expect(page.locator("#blurTools")).toBeVisible();
 });
 
-test("a blurred selection is uploaded without the original, and says what it hid", async ({ page }) => {
+test("a blurred selection is uploaded without the original", async ({ page }) => {
   // The one test in this file that actually uploads, so it needs the real stubbed archive to verify
   // what landed on it — `?test&mock_video` only replaces the video-loading half of the setup.
-  const { registered, uploaded } = await stubArchive(page, { humanSubjects: true });
+  const { registered } = await stubArchive(page, { humanSubjects: true });
   await page.goto("/?test&mock_video");
   await expect(page.locator("#dandisetSingleText")).toContainText("000123");
   await page.locator('#modeSeg button[data-mode="frame"]').click();
@@ -112,20 +112,4 @@ test("a blurred selection is uploaded without the original, and says what it hid
   // two: all three are dataset-level, not tied to what any one delivery actually put underneath).
   expect(registered).toHaveLength(5);
   expect(registered.some((path) => path.startsWith("sourcedata/") && !path.endsWith("dataset_description.json"))).toBe(false);
-
-  const sidecar = uploaded.map((part) => part.toString()).find((body) => body.startsWith("{"));
-  const provenance = (JSON.parse(sidecar!) as { "clip-extractor": unknown })["clip-extractor"] as {
-    blur: { method: string; sigma: number; regions: { x: number; y: number; radius: number }[] };
-    source_video: { uploaded: boolean };
-    extracted: { encoding: string };
-  };
-  expect(provenance.blur.method).toBe("gaussian");
-  expect(provenance.blur.sigma).toBe(8);
-  expect(provenance.blur.regions).toHaveLength(1);
-  // Placed at the middle of a 320x240 recording, to within the rounding of a display-pixel click.
-  expect(provenance.blur.regions[0].radius).toBe(24);
-  expect(Math.abs(provenance.blur.regions[0].x - 160)).toBeLessThanOrEqual(2);
-  expect(Math.abs(provenance.blur.regions[0].y - 120)).toBeLessThanOrEqual(2);
-  expect(provenance.source_video.uploaded).toBe(false);
-  expect(provenance.extracted.encoding).toContain("1 blurred region, gaussian sigma 8");
 });

@@ -74,8 +74,8 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   const recording = entries[0].path.match(/recording-(\d+)/)![1];
   expect(entries.map((e) => e.path)).toEqual([
     `${derivativesDir}/sub-unknown_recording-${recording}_image.png`,
-    "sourcedata/rawbids/sub-unknown/beh/file_example_480-Copy.webm",
-    "sourcedata/rawbids/sub-unknown/beh/file_example_480-Copy.json",
+    "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.webm",
+    "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.json",
     `${derivativesDir}/sub-unknown_recording-${recording}_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
@@ -85,16 +85,8 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
 
   const sidecar = JSON.parse(entries[3].text) as Record<string, unknown>;
   expect(sidecar.Description).toBe("The mouse leaves frame here — the tracker keeps a stale track.");
-  const provenance = sidecar["clip-extractor"] as Record<string, unknown>;
-  expect(provenance.format).toBe("clip-extractor-provenance/v1");
-  // Nothing was uploaded, so there is no archive to name — only the directory inside the bundle.
-  expect(provenance.destination).toEqual({ api: null, dandiset_id: null, directory: derivativesDir });
-  expect(provenance.uploaded_by).toBeNull();
-  // The original rode along, checksummed exactly as an upload would have registered it.
-  const source = provenance.source_video as Record<string, unknown>;
-  expect(source.uploaded).toBe(true);
-  expect(source.asset_path).toBe("sourcedata/rawbids/sub-unknown/beh/file_example_480-Copy.webm");
-  expect((source.checksum as { value: string }).value).toMatch(/^[0-9a-f]{32}-\d+$/);
+  // No nested, app-specific record alongside the standard BEP047/BEP028 keys.
+  expect(sidecar).not.toHaveProperty("clip-extractor");
 
   // The original's own sidecar carries its real technical properties, not a copy of the extract's.
   const originalSidecar = JSON.parse(entries[2].text) as Record<string, unknown>;
@@ -158,15 +150,21 @@ test("leaving the original out saves the extract and its sidecar alone, plus all
   );
 
   const sidecar = JSON.parse(entries[1].text) as Record<string, unknown>;
-  // Left out of the bundle, but still named and checksummed: that is what ties the frame to it.
-  const provenance = sidecar["clip-extractor"] as Record<string, unknown>;
-  const source = provenance.source_video as Record<string, unknown>;
-  expect(source.uploaded).toBe(false);
-  expect(source.asset_path).toBeNull();
-  expect(source.filename).toBe("mice.webm");
-  expect((source.checksum as { value: string }).value).toMatch(/^[0-9a-f]{32}-\d+$/);
   expect(sidecar.Description).toBe("A clean frame, kept as a reference.");
+
+  // Left out of the bundle, but still named and checksummed in the derivatives dataset_description's
+  // own SourceDatasets: that is what ties the frame to it, even with the original excluded.
+  const derivativesDescription = JSON.parse(entries[3].text) as Record<string, unknown>;
+  expect(derivativesDescription.SourceDatasets).toEqual([
+    { Filename: "mice.webm", Checksum: { algorithm: "dandi:dandi-etag", value: expect.stringMatching(/^[0-9a-f]{32}-\d+$/) } },
+  ]);
 });
+
+// mock_ready's own two cases (a still frame, needing no ffmpeg.wasm/CDN; a short snippet, which does),
+// crossed with from_archive's own two (dropped locally, sub-unknown; opened out of a fixed archive
+// path, previewing the more advanced metadata that carries — SourceDatasets' own URL, a known
+// subject/session) — four combinations in total, each landing on a saveable state with no manual
+// selection or description.
 
 test("mock_ready lands on a saveable state with no manual selection or description", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
@@ -177,4 +175,48 @@ test("mock_ready lands on a saveable state with no manual selection or descripti
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
   expect(download.suggestedFilename()).toMatch(/^sub-unknown_recording-\d{17}_desc-frame_bundle\.tar\.gz$/);
+});
+
+test("mock_ready=snippet lands on a saveable state, extracting a real clip", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
+  await page.goto("/?test&mock_video&mock_ready=snippet");
+  await expect(page.locator("#btnDownload")).toBeEnabled();
+  // The name alone is checked here, not a real download: snippet extraction needs ffmpeg.wasm off a
+  // CDN, which this sandboxed environment cannot reach reliably (see the other specs' own frame-only
+  // choice, e.g. blur.spec.ts's header comment) — the button's own preview text is populated from the
+  // same filename-building code path a real Save would use, without paying for the extraction itself.
+  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-unknown_recording-\d{17}_desc-snippet_bundle\.tar\.gz$/);
+});
+
+test("mock_ready&from_archive previews the archive-sourced case, still a frame", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
+  // `from_archive` (see lib/testInjection.ts) makes the mock video look, to behEntities, as if it were
+  // opened from sub-01/ses-02/… — a known subject and session get date-/time- entities, not recording-.
+  await page.goto("/?test&mock_video&mock_ready&from_archive");
+  await expect(page.locator("#btnDownload")).toBeEnabled();
+
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
+  expect(download.suggestedFilename()).toMatch(/^sub-01_ses-02_date-\d{8}_time-\d{6}_desc-frame_bundle\.tar\.gz$/);
+
+  const entries = listTar(readFileSync((await download.path())!));
+  const derivativesDescription = JSON.parse(
+    entries.find((e) => e.path.endsWith("derivatives/clip-extractor/dataset_description.json"))!.text,
+  );
+  // A real URL, not just a filename and checksum: this reads as opened out of EMBER, not dropped
+  // locally — the "more advanced metadata" from_archive exists to preview.
+  expect(derivativesDescription.SourceDatasets).toEqual([
+    {
+      URL: "https://test-injection.invalid/sub-01/ses-02/test-injection-mock-video.mp4",
+      Filename: "test-injection-mock-video.mp4",
+      Checksum: { algorithm: "dandi:dandi-etag", value: expect.stringMatching(/^[0-9a-f]{32}-\d+$/) },
+    },
+  ]);
+});
+
+test("mock_ready=snippet&from_archive previews both at once", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
+  await page.goto("/?test&mock_video&mock_ready=snippet&from_archive");
+  await expect(page.locator("#btnDownload")).toBeEnabled();
+  // Same reasoning as the snippet-only case above: the preview name, not a real extraction.
+  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-01_ses-02_date-\d{8}_time-\d{6}_desc-snippet_bundle\.tar\.gz$/);
 });

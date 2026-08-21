@@ -52,11 +52,23 @@ export interface TestInjection {
    * the SLEAP card's mismatch refusal can be previewed instead of a clean overlay. */
   mismatch: boolean;
   /** Skips the manual steps a human would otherwise take before Save/Upload enable — selecting a
-   * frame and typing a description — so a pasted `?test&mock_video&mock_ready` link lands directly on
-   * a saveable state instead of the gated, "describe it first" one. Only meaningful alongside
-   * `mockVideoFrames`/`mockVideoLongSeconds`; that gated state is itself worth previewing plain, which
-   * is what `mock_video` without this produces. */
+   * frame (or, with `mock_ready=snippet`, a short range) and typing a description — so a pasted
+   * `?test&mock_video&mock_ready` link lands directly on a saveable state instead of the gated,
+   * "describe it first" one. Only meaningful alongside `mockVideoFrames`/`mockVideoLongSeconds`; that
+   * gated state is itself worth previewing plain, which is what `mock_video` without this produces. */
   mockReady: boolean;
+  /** Which selection `mockReady` makes: a still frame (`mock_ready` bare, the default — needs no
+   * ffmpeg.wasm/CDN to extract) or a short snippet (`mock_ready=snippet`). Meaningless without
+   * `mockReady` itself set. */
+  mockReadySnippet: boolean;
+  /** Makes the mock video look, to `lib/bidsPath.ts`'s `behEntities`, as if it had been opened out of
+   * the archive at a fixed, BIDS-entity-shaped path (`sub-01/ses-01/…`, the same convention
+   * `fakeArchiveBrowse` names its own fake listing with) rather than dropped locally — so the more
+   * advanced metadata `SourceDatasets`/`GeneratedBy` carry for an archive-sourced delivery (a real
+   * `URL`, a known subject/session in the derivatives path) can be previewed too, combined with
+   * `mock_ready`'s own frame/snippet choice. `mock_video` alone (no `from_archive`) stays the
+   * "dropped locally" case, with no URL and the `sub-unknown` fallback. */
+  fromArchive: boolean;
   /** Fakes the EMBER browse pane's dataset/video listing with this many video files spread across a
    * handful of fake datasets, bypassing `listManifestObjects`/`listOwnedEmbargoedDandisets`. Null
    * when `remote_listing` was not given. */
@@ -74,6 +86,8 @@ const INERT: TestInjection = {
   mockSlp: false,
   mismatch: false,
   mockReady: false,
+  mockReadySnippet: false,
+  fromArchive: false,
   remoteListing: null,
 };
 
@@ -106,6 +120,8 @@ export function readTestInjection(search: string): TestInjection | null {
     mockSlp: params.has("mock_slp"),
     mismatch: params.has("mismatch"),
     mockReady: params.has("mock_ready"),
+    mockReadySnippet: params.get("mock_ready") === "snippet",
+    fromArchive: params.has("from_archive"),
     remoteListing: params.has("remote_listing") ? intParam(params, "remote_listing", 8) : null,
   };
 }
@@ -142,6 +158,28 @@ const FAKE_VIDEOS_PER_DATASET = 4;
  * fake listing reads as more true-to-life dressed the way a real one almost always is. */
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
+}
+
+/** The same fixed `sub-01/ses-01` this module's own `fakeArchiveBrowse` names its first fake video
+ * with — `from_archive` previews the archive-sourced case with one fixed, known-good path rather than
+ * a hand-typed subject/session, so there is nothing to get wrong pasting the link. */
+const FROM_ARCHIVE_PATH_PREFIX = `sub-${pad2(1)}/ses-${pad2(2)}`;
+
+/** The fake archive-relative path {@link applyMockVideo} (in main.ts) hands to `loadVideo` so the mock
+ * video reads, to `behEntities`, exactly as a real archive video at `sub-01/ses-01/…` would. Null
+ * without `from_archive`, which leaves the mock video as the "dropped locally" case it always was. */
+export function fromArchiveSourcePath(injection: TestInjection, filename: string): string | null {
+  return injection.fromArchive ? `${FROM_ARCHIVE_PATH_PREFIX}/${filename}` : null;
+}
+
+/** A fake asset URL for the same case {@link fromArchiveSourcePath} names — resolving nowhere real,
+ * like every other test-injection URL (see `fakeArchiveBrowse`), but non-null wherever
+ * `fromArchiveSourcePath` is, so an archive-sourced mock video also previews what a real EMBER
+ * selection carries into `SourceDatasets`: naming *how* it was opened, not just where it would sit in
+ * the dandiset. */
+export function fromArchiveSourceUrl(injection: TestInjection, filename: string): string | null {
+  const path = fromArchiveSourcePath(injection, filename);
+  return path ? `https://test-injection.invalid/${path}` : null;
 }
 
 /**
@@ -191,7 +229,7 @@ const MOCK_VIDEO_HEIGHT = 240;
  * uses from outside the page, run here from inside it so a pasted `?test&mock_video` URL needs no
  * local file and no Playwright driving it.
  */
-export async function synthesizeVideoFile(frames: number, filename = "test-injection-mock-video.webm"): Promise<File> {
+export async function synthesizeVideoFile(frames: number, filename = "test-injection-mock-video.mp4"): Promise<File> {
   const canvas = document.createElement("canvas");
   canvas.width = MOCK_VIDEO_WIDTH;
   canvas.height = MOCK_VIDEO_HEIGHT;
@@ -214,7 +252,11 @@ export async function synthesizeVideoFile(frames: number, filename = "test-injec
     recorder.onstop = () => resolve();
     recorder.stop();
   });
-  return new File(chunks, filename, { type: "video/webm" });
+  // The bytes are real VP8/WebM (MediaRecorder has no other option here), but the mock stands in for
+  // what the app would actually see out of an archive-sourced recording — an mp4 container, h264
+  // inside — so the name and MIME type are deliberately mislabeled to match, same as the forced
+  // `VideoCodec: "h264"` override applies to this same mock elsewhere.
+  return new File(chunks, filename, { type: "video/mp4" });
 }
 
 /** How densely a synthesized long recording is sampled, in seconds per real frame. `showsWindow`
@@ -239,7 +281,7 @@ const LONG_MOCK_SECONDS_PER_FRAME = 10;
  * whatever explicit timestamp they are given, decoupled from wall-clock time entirely, so the same
  * span of container duration comes from frames encoded in a fraction of a second.
  */
-export async function synthesizeLongVideoFile(durationSeconds: number, filename = "test-injection-mock-long-video.webm"): Promise<File> {
+export async function synthesizeLongVideoFile(durationSeconds: number, filename = "test-injection-mock-long-video.mp4"): Promise<File> {
   const canvas = document.createElement("canvas");
   canvas.width = MOCK_VIDEO_WIDTH;
   canvas.height = MOCK_VIDEO_HEIGHT;
@@ -262,5 +304,7 @@ export async function synthesizeLongVideoFile(durationSeconds: number, filename 
     await source.add(timestamp, step);
   }
   await output.finalize();
-  return new File([target.buffer!], filename, { type: "video/webm" });
+  // Same deliberate mislabeling as `synthesizeVideoFile` above — real WebM bytes, named and typed as
+  // the mp4/h264 this mock stands in for.
+  return new File([target.buffer!], filename, { type: "video/mp4" });
 }

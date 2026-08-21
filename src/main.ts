@@ -40,16 +40,7 @@ import {
   type SlpSourceMeta,
 } from "./lib/match";
 import { alignDenseFrames, probeNwbSeriesLength } from "./lib/nwb";
-import {
-  blurSigma,
-  clampRegion,
-  defaultBlurRadius,
-  frameFit,
-  maxBlurRadius,
-  paintBlurRegions,
-  MIN_BLUR_RADIUS,
-  type BlurRegion,
-} from "./lib/blur";
+import { clampRegion, defaultBlurRadius, frameFit, maxBlurRadius, paintBlurRegions, MIN_BLUR_RADIUS, type BlurRegion } from "./lib/blur";
 import { containsHumanSubjects, fetchDraftMetadata } from "./lib/humanSubjects";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
@@ -83,7 +74,7 @@ import {
   type DeliveryMode,
   type SelectionKind,
 } from "./lib/delivery";
-import { behEntities } from "./lib/bidsPath";
+import { behEntities, sourcedataOriginalFilename, type BehEntities } from "./lib/bidsPath";
 import { verbatimFilename } from "./lib/sanitize";
 import {
   bundleFileName,
@@ -104,7 +95,6 @@ import {
   buildSourceDatasetEntry,
   imageTechnicalFields,
   videoTechnicalFields,
-  type ProvenanceAnnotationsInput,
   type ProvenanceInput,
   type TechnicalDetail,
 } from "./lib/provenance";
@@ -117,7 +107,6 @@ import {
   SOURCEDATA_DESCRIPTION_PATH,
   type ExistingDatasetDescriptions,
 } from "./lib/datasetDescription";
-import { countLabeledFramesInRange } from "./lib/annotations";
 import { fetchArchiveUser, type ArchiveUser } from "./lib/users";
 import { friendlyError } from "./lib/errors";
 import { renderIdentity } from "./ui/connection";
@@ -127,6 +116,8 @@ import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type U
 import {
   fakeArchiveBrowse,
   fakeIncomingDatasets,
+  fromArchiveSourcePath,
+  fromArchiveSourceUrl,
   readTestInjection,
   synthesizeLongVideoFile,
   synthesizeVideoFile,
@@ -3040,21 +3031,6 @@ async function uploadOne(cfg: ArchiveConfig, file: DeliverableFile): Promise<voi
   log(`Uploaded ${file.path}`, "ok");
 }
 
-/** What was loaded from a `.slp`, restricted to the selection, or null when there is none. */
-function annotationsSummary(lo: number, hi: number, slp: DeliveredSlp | null): ProvenanceAnnotationsInput | null {
-  const pose = els.slpToggle.checked ? state.pose : null;
-  if (!pose) return null;
-  return {
-    filename: state.slpFile?.name ?? null,
-    checksum: slp?.digest.etag ?? null,
-    uploaded: slp?.path != null,
-    assetPath: slp?.path ?? null,
-    skeletonNodeCount: pose.skeleton.nodes.length,
-    trackCount: pose.tracks.length,
-    labeledFramesInSelection: countLabeledFramesInRange(pose, lo, hi),
-  };
-}
-
 /** A loaded `.slp` that was checksummed, and delivered too when `path` is set. */
 interface DeliveredSlp {
   digest: BlobDigest;
@@ -3142,6 +3118,7 @@ async function deliverOverlay(
 async function deliverOriginalVideo(
   deliver: DeliverFile,
   directory: string,
+  beh: BehEntities,
   onProgress: ExtractProgress,
 ): Promise<{ original: File | null; originalDigest: BlobDigest | null; originalPath: string | null }> {
   const original = state.sourceFile;
@@ -3151,11 +3128,12 @@ async function deliverOriginalVideo(
   // many selections are cut out of them, and this is the hash that can take minutes.
   const originalDigest = await sourceDigestOnce(`source-${sourceGeneration}`, () => checksumFor(original, label, onProgress));
   if (!els.uploadOriginal.checked) return { original, originalDigest, originalPath: null };
-  // Carried under the name it arrived with, not a derived one: it is the untouched source, and its
-  // verbatim name is what the provenance record reports. `sourcedata` is not itself validated
-  // against BIDS entity syntax the way `derivatives`/raw are — mirroring the subject/session
-  // structure is what BEP047 asks of it, not renaming what already sits inside.
-  const originalPath = uploadAssetPath(directory, verbatimFilename(original.name));
+  // BEP047 entity-shaped, like everything else this app writes — not the name it arrived with — but
+  // with no disambiguator at all (see lib/bidsPath.ts's own header comment and
+  // `sourcedataOriginalFilename`): re-delivering the same source is expected to overwrite this copy,
+  // not duplicate it.
+  const originalName = sourcedataOriginalFilename(beh, original.name);
+  const originalPath = uploadAssetPath(directory, originalName);
   await deliver({
     blob: original,
     path: originalPath,
@@ -3184,7 +3162,7 @@ async function deliverOriginalVideo(
           bitDepth: state.backend.imageBitDepth ?? undefined,
         }
       : {};
-  await deliverSidecar(deliver, directory, original.name, onProgress, {
+  await deliverSidecar(deliver, directory, originalName, onProgress, {
     description: "The source video this selection was clipped from.",
     technical: videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames, sourceDetail),
     sources: [],
@@ -3256,9 +3234,6 @@ interface AssembleParams {
   /** Runs once after extraction, before the first file is handed over — where the upload route
    * refreshes its token, so a long encode cannot age it out mid-transfer. */
   onReady?: () => Promise<void>;
-  /** The archive the files are bound for, read after `onReady`; null for a bundle saved locally,
-   * which is not bound for one. */
-  destination: () => { api: string; dandisetId: string; user: ArchiveUser | null } | null;
   /** Reads whichever of the two `dataset_description.json` files (see lib/datasetDescription.ts)
    * already exist at the destination, so this delivery's `GeneratedBy` entry folds into them rather
    * than replacing whatever another pipeline already recorded there. Omitted for a saved bundle,
@@ -3298,7 +3273,6 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
     return { media, digest: await checksumFor(media.blob, `the ${kind}`, onProgress) };
   });
   await params.onReady?.();
-  const destination = params.destination();
   const directories = deliveryDirectories(beh);
 
   // The extracted selection goes first: it is the point of the delivery, and the original — which
@@ -3306,58 +3280,21 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   const mediaPath = uploadAssetPath(directories.derivatives, media.filename);
   await deliver({ blob: media.blob, path: mediaPath, contentType: media.mime, label: `the ${kind}`, digest: mediaDigest });
 
-  const overlay = await deliverOverlay(deliver, directories.derivatives, mediaPath, entities, backend, blur, onProgress);
-  const { original, originalDigest, originalPath } = await deliverOriginalVideo(deliver, directories.sourcedata, onProgress);
-  const slp = await deliverAnnotationFile(deliver, directories.derivatives, originalPath, onProgress);
+  await deliverOverlay(deliver, directories.derivatives, mediaPath, entities, backend, blur, onProgress);
+  const { originalDigest, originalPath } = await deliverOriginalVideo(deliver, directories.sourcedata, beh, onProgress);
+  await deliverAnnotationFile(deliver, directories.derivatives, originalPath, onProgress);
 
   const provenanceInput: ProvenanceInput = {
-    createdAt,
-    pageUrl: location.href.split("?")[0],
     description: els.selectionDescription.value,
-    user: destination?.user ?? null,
-    api: destination?.api ?? null,
-    dandisetId: destination?.dandisetId ?? null,
-    directory: directories.derivatives,
-    mode: kind,
-    fps: state.fps,
-    width: state.width,
-    height: state.height,
-    totalFrames: state.totalFrames,
-    inFrame: lo,
-    outFrame: hi,
-    blur,
-    blurSigma: blurSigma(blur),
     source: {
       filename: state.sourceName,
       url: state.sourceUrl,
-      sizeBytes: original?.size ?? null,
       checksum: originalDigest?.etag ?? null,
-      checksumUnavailable: original ? null : "The source video was streamed from a URL, so its bytes were never held locally to hash.",
-      uploaded: originalPath !== null,
-      assetPath: originalPath,
     },
-    extracted: {
-      filename: media.filename,
-      assetPath: mediaPath,
-      mediaType: media.mime,
-      sizeBytes: media.blob.size,
-      checksum: mediaDigest.etag,
-      encoding: media.encoding,
-    },
-    overlay: overlay && {
-      filename: overlay.media.filename,
-      assetPath: overlay.path,
-      mediaType: overlay.media.mime,
-      sizeBytes: overlay.media.blob.size,
-      checksum: overlay.digest.etag,
-      encoding: overlay.media.encoding,
-    },
-    annotations: annotationsSummary(lo, hi, slp),
   };
 
-  // The sidecar the extracted clip/frame itself carries: BEP047's own technical keys and a BEP028
-  // `GeneratedBy` entry at the top level, the description typed for this delivery and everything
-  // this app has always recorded nested under its own key — see lib/provenance.ts.
+  // The sidecar the extracted clip/frame itself carries: BEP047's own technical keys, a BEP028
+  // `GeneratedBy` entry, and the description typed for this delivery — see lib/provenance.ts.
   const technical =
     kind === "frame"
       ? imageTechnicalFields(state.width, state.height)
@@ -3412,7 +3349,6 @@ async function runDownload(): Promise<void> {
     const bundled: BundleEntry[] = [];
     const { entities, createdAt } = await assembleSelection({
       backend,
-      destination: () => null,
       onProgress: (message) => setStatus(els.downloadStatus, message),
       // Every file is hashed on its way in even though nothing is being uploaded: the sidecar
       // inside the bundle quotes the same digests an upload would have registered, so a selection
@@ -3458,10 +3394,6 @@ async function runUpload(): Promise<void> {
         // The sidecar names the uploader, so resolve the account here if the header's own lookup has
         // not landed (or was never made) yet.
         currentUser ??= await fetchArchiveUser(cfg).catch(() => null);
-      },
-      destination: () => {
-        const cfg = currentConfig();
-        return { api: cfg.api, dandisetId: cfg.dandisetId, user: currentUser };
       },
       existingDescriptions: () => readExistingDatasetDescriptions(currentConfig()),
       onProgress: (message, fraction) => {
@@ -3613,13 +3545,21 @@ async function initFromUrl(): Promise<void> {
 // The single highest-value injection: most of the others are only interesting once a video is on
 // screen, and this is the only one that puts one there without a local file or a real stream.
 
-/** `mock_ready`'s own step: picks a frame and types a description, the two things Save/Upload gate on
- * (see updateDeliveryGate), so the mock video lands directly on a saveable state — the whole point of
- * the injection being to preview real Save/Upload *output* without doing that by hand each time.
- * Frame mode, not a snippet, since a frame needs no ffmpeg.wasm (and so no CDN) to extract. */
-function applyMockReady(): void {
-  selectSeg(els.modeSeg, "frame");
-  setMode("frame");
+/** `mock_ready`'s own step: picks a selection and types a description, the two things Save/Upload
+ * gate on (see updateDeliveryGate), so the mock video lands directly on a saveable state — the whole
+ * point of the injection being to preview real Save/Upload *output* without doing that by hand each
+ * time. `snippet` previews a short range instead of the default still frame — frame mode needs no
+ * ffmpeg.wasm (and so no CDN) to extract, which is why it is the default, but a snippet is worth
+ * previewing live too (`extracted`'s own `VideoCodec`/etc, an overlay if `mock_slp` is also given). */
+function applyMockReady(snippet: boolean): void {
+  if (snippet) {
+    state.inF = 0;
+    state.outF = Math.min(state.totalFrames - 1, 5);
+    selectionChanged();
+  } else {
+    selectSeg(els.modeSeg, "frame");
+    setMode("frame");
+  }
   els.selectionDescription.value = "Mock description, from a ?test&mock_ready live-test link.";
   updateDeliveryGate();
 }
@@ -3627,21 +3567,35 @@ function applyMockReady(): void {
 /** Loads a synthesized clip exactly as if it had been dropped onto the picker, so every real load
  * path (frame decode, timeline, delivery panes) runs against it unmodified. `mock_video_long` takes
  * the sparse, fast-to-build path instead (see `synthesizeLongVideoFile`) — the two are mutually
- * exclusive, since both stand in for the same drop. */
+ * exclusive, since both stand in for the same drop. `from_archive` gives the mock video a fixed,
+ * BIDS-entity-shaped source path/URL instead (see lib/testInjection.ts's `fromArchiveSourcePath`),
+ * previewing the more advanced metadata an archive-sourced delivery carries — a real `URL` in
+ * `SourceDatasets`, a known subject/session in the derivatives path — rather than the `sub-unknown`,
+ * no-URL fallback `mock_video` alone (still the common, "dropped locally" case) previews. */
 async function applyMockVideo(): Promise<void> {
   if (testInjection?.mockVideoFrames != null) {
     const file = await synthesizeVideoFile(testInjection.mockVideoFrames);
-    // No URL and no archive path: `mock_video` is always the "dropped locally" case, same as any
-    // local file — see `fakeArchiveBrowse` for the archive-sourced, BIDS-entity-shaped case instead.
-    await loadVideo(file, file.name, null, undefined, null);
+    await loadVideo(
+      file,
+      file.name,
+      fromArchiveSourceUrl(testInjection, file.name),
+      undefined,
+      fromArchiveSourcePath(testInjection, file.name),
+    );
     if (testInjection.mockSlp) applyMockSlp();
-    if (testInjection.mockReady) applyMockReady();
+    if (testInjection.mockReady) applyMockReady(testInjection.mockReadySnippet);
     return;
   }
   if (testInjection?.mockVideoLongSeconds != null) {
     const file = await synthesizeLongVideoFile(testInjection.mockVideoLongSeconds);
-    await loadVideo(file, file.name, null, undefined, null);
-    if (testInjection.mockReady) applyMockReady();
+    await loadVideo(
+      file,
+      file.name,
+      fromArchiveSourceUrl(testInjection, file.name),
+      undefined,
+      fromArchiveSourcePath(testInjection, file.name),
+    );
+    if (testInjection.mockReady) applyMockReady(testInjection.mockReadySnippet);
   }
 }
 

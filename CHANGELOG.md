@@ -9,6 +9,9 @@
 - Every `dataset_description.json` a delivery writes now credits the signed-in archive account as an `Author`, when there is one, and the root and derivatives files cross-link each other by a `DatasetLinks` alias ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - Video/image sidecars now carry a `Checksum` (both MD5 and dandi-etag) and, where known, `VideoCodecRFC6381`/`ImagePixelFormat`/`ImageBitDepth`; `SourceDatasets` now accumulates one entry per distinct source video across repeat deliveries instead of only naming the first; and the study root's `DatasetLinks` names its own `sourcedata/rawbids/` subtree directly, alongside `derivatives/clip-extractor/` ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - `?test&mock_video&mock_sub=`/`&mock_ses=` are gone; `?test&remote_listing=` previews a known-subject/session path instead, its fake video listing now named `sub-01/ses-01/…` and up ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- The source video's own copy under `sourcedata/rawbids/` is now named per BEP047 (`sub-<label>[_ses-<label>]_video.<ext>`) instead of keeping its original filename, and a repeat delivery of the same subject/session now overwrites that copy instead of piling up duplicates ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- `?test&mock_video&mock_ready` gained a `=snippet` variant (extracting a real clip instead of a still frame) and can be crossed with a new `&from_archive` flag, which previews the case of a video opened out of the archive (a known `sub-01/ses-02`, with a real source URL) rather than dropped locally ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- Removed the ad hoc `clip-extractor` provenance block nested in the sidecar JSON; a later PR will add a proper W3C PROV record in its place ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 
 ## 1.0.0
 
