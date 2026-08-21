@@ -158,59 +158,80 @@ test("leaving the original out saves the extract and its sidecar alone, plus all
   expect(derivativesDescription.SourceDatasets).toBeUndefined();
 });
 
-// mock_ready's own two cases (a still frame, needing no ffmpeg.wasm/CDN; a short snippet, which does),
-// crossed with from_archive's own two (dropped locally, sub-unknown, and so no SourceDatasets entry —
-// see lib/provenance.ts's buildSourceDatasetEntry; opened out of a fixed archive path, previewing the
-// more advanced metadata that carries — SourceDatasets' own URL, a known subject/session) — four
-// combinations in total, each landing on a saveable state with no manual selection or description.
+// The four live-test links `?test&mock_video&mock_ready` crosses: where the video came from
+// (`&from_local`, dropped locally — sub-unknown, no URL, and so no SourceDatasets entry at all, see
+// lib/provenance.ts's buildSourceDatasetEntry; `&from_ember`, opened out of a fixed archive path —
+// SourceDatasets' own URL and a known subject/session, so a date-/time- directory rather than
+// recording-) against what is selected in it (`&frame`, a still frame; `&snippet`, a range). Each
+// lands on a saveable state with no manual selection or description, and each marks a real,
+// mid-clip selection rather than the whole recording or the frame it opened on — frame 12 and
+// frames 6–21 of `mock_video`'s own 30 (see lib/testInjection.ts's MOCK_READY_FRAME/_RANGE).
+//
+// The two `&snippet` cases stop at the state and the name Save would write rather than pressing it:
+// a real snippet extraction needs ffmpeg.wasm off a CDN, which no spec in this suite depends on (see
+// blur.spec.ts's own header comment). The preview name comes off the same filename-building path a
+// real Save uses, and the readouts below are the selection itself, so what is skipped is the encode,
+// not the thing under test.
 
-test("mock_ready lands on a saveable state with no manual selection or description", async ({ page }) => {
+const MOCK_FRAME = "12";
+const MOCK_RANGE = { in: "6", out: "21" };
+
+test("?test&mock_video&mock_ready&from_local&frame saves a still frame of a locally dropped video", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
-  // `?test&mock_video&mock_ready` (see lib/testInjection.ts) picks a frame and types a description on
-  // its own — the two things Save/Upload gate on — so this link alone previews real Save output.
-  await page.goto("/?test&mock_video&mock_ready");
+  await page.goto("/?test&mock_video&mock_ready&from_local&frame");
   await expect(page.locator("#btnDownload")).toBeEnabled();
+  // A frame somebody would have had to seek to by hand, not the one the video opened on.
+  await expect(page.locator("#curVal")).toHaveValue(MOCK_FRAME);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toMatch(/^sub-unknown_desc-frame_bundle\.tar\.gz$/);
+  expect(download.suggestedFilename()).toBe("sub-unknown_desc-frame_bundle.tar.gz");
 
-  // Dropped locally, no URL to name — unlike the from_archive case below, nothing here goes into
-  // SourceDatasets at all.
   const entries = listTar(readFileSync((await download.path())!));
+  // Dropped locally: the sub-unknown fallback, a recording- directory, and no URL for SourceDatasets
+  // to name — unlike the from_ember cases below.
+  expect(entries[0].path).toMatch(
+    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/recording-${RECORDING}/sub-unknown_desc-extracted\\+clip_image\\.png$`),
+  );
   const derivativesDescription = JSON.parse(
     entries.find((e) => e.path.endsWith("derivatives/clip-extractor/dataset_description.json"))!.text,
   );
   expect(derivativesDescription.SourceDatasets).toBeUndefined();
 });
 
-test("mock_ready=snippet lands on a saveable state, extracting a real clip", async ({ page }) => {
+test("?test&mock_video&mock_ready&from_local&snippet marks a real range of a locally dropped video", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
-  await page.goto("/?test&mock_video&mock_ready=snippet");
+  await page.goto("/?test&mock_video&mock_ready&from_local&snippet");
   await expect(page.locator("#btnDownload")).toBeEnabled();
-  // The name alone is checked here, not a real download: snippet extraction needs ffmpeg.wasm off a
-  // CDN, which this sandboxed environment cannot reach reliably (see the other specs' own frame-only
-  // choice, e.g. blur.spec.ts's header comment) — the button's own preview text is populated from the
-  // same filename-building code path a real Save would use, without paying for the extraction itself.
-  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-unknown_desc-snippet_bundle\.tar\.gz$/);
+
+  // A sub-range with recording on either side of it, and the playhead parked inside what would be
+  // extracted rather than back at the start of the video.
+  await expect(page.locator("#inVal")).toHaveValue(MOCK_RANGE.in);
+  await expect(page.locator("#outVal")).toHaveValue(MOCK_RANGE.out);
+  await expect(page.locator("#curVal")).toHaveValue(MOCK_RANGE.in);
+  await expect(page.locator("#downloadPreviewName")).toHaveText("sub-unknown_desc-snippet_bundle.tar.gz");
 });
 
-test("mock_ready&from_archive previews the archive-sourced case, still a frame", async ({ page }) => {
+test("?test&mock_video&mock_ready&from_ember&frame saves a still frame of an archive-sourced video", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
-  // `from_archive` (see lib/testInjection.ts) makes the mock video look, to behEntities, as if it were
+  // `from_ember` (see lib/testInjection.ts) makes the mock video look, to behEntities, as if it were
   // opened from sub-01/ses-02/… — a known subject and session, so its derivatives directory gets a
-  // date-/time- disambiguator (not recording-), and its bundle name still carries neither.
-  await page.goto("/?test&mock_video&mock_ready&from_archive");
+  // date-/time- disambiguator (not recording-), while its bundle name carries neither.
+  await page.goto("/?test&mock_video&mock_ready&from_ember&frame");
   await expect(page.locator("#btnDownload")).toBeEnabled();
+  await expect(page.locator("#curVal")).toHaveValue(MOCK_FRAME);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toMatch(/^sub-01_ses-02_desc-frame_bundle\.tar\.gz$/);
+  expect(download.suggestedFilename()).toBe("sub-01_ses-02_desc-frame_bundle.tar.gz");
 
   const entries = listTar(readFileSync((await download.path())!));
+  expect(entries[0].path).toMatch(
+    /^derivatives\/clip-extractor\/sub-01\/ses-02\/beh\/date-\d{8}_time-\d{6}\/sub-01_ses-02_desc-extracted\+clip_image\.png$/,
+  );
   const derivativesDescription = JSON.parse(
     entries.find((e) => e.path.endsWith("derivatives/clip-extractor/dataset_description.json"))!.text,
   );
   // A real URL, not just a filename and checksum: this reads as opened out of EMBER, not dropped
-  // locally — the "more advanced metadata" from_archive exists to preview.
+  // locally — the "more advanced metadata" from_ember exists to preview.
   expect(derivativesDescription.SourceDatasets).toEqual([
     {
       URL: "https://test-injection.invalid/sub-01/ses-02/test-injection-mock-video.mp4",
@@ -220,10 +241,33 @@ test("mock_ready&from_archive previews the archive-sourced case, still a frame",
   ]);
 });
 
-test("mock_ready=snippet&from_archive previews both at once", async ({ page }) => {
+test("?test&mock_video&mock_ready&from_ember&snippet marks a real range of an archive-sourced video", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
-  await page.goto("/?test&mock_video&mock_ready=snippet&from_archive");
+  await page.goto("/?test&mock_video&mock_ready&from_ember&snippet");
   await expect(page.locator("#btnDownload")).toBeEnabled();
-  // Same reasoning as the snippet-only case above: the preview name, not a real extraction.
-  await expect(page.locator("#downloadPreviewName")).toHaveText(/^sub-01_ses-02_desc-snippet_bundle\.tar\.gz$/);
+
+  await expect(page.locator("#inVal")).toHaveValue(MOCK_RANGE.in);
+  await expect(page.locator("#outVal")).toHaveValue(MOCK_RANGE.out);
+  await expect(page.locator("#curVal")).toHaveValue(MOCK_RANGE.in);
+  await expect(page.locator("#downloadPreviewName")).toHaveText("sub-01_ses-02_desc-snippet_bundle.tar.gz");
+});
+
+test("&frame=<n> and &snippet=<lo>-<hi> pick their own indices, held to the video's own bounds", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
+  await page.goto("/?test&mock_video&mock_ready&from_local&frame=4");
+  await expect(page.locator("#curVal")).toHaveValue("4");
+
+  await page.goto("/?test&mock_video&mock_ready&from_local&snippet=3-9");
+  await expect(page.locator("#inVal")).toHaveValue("3");
+  await expect(page.locator("#outVal")).toHaveValue("9");
+
+  // Past the end of the mock video, so both ends land on its last frame rather than off it. That
+  // last index is read off the field's own max rather than assumed: MediaRecorder decides how many
+  // frames a `mock_video=<n>` capture really ends up holding, which is not always the n it was asked
+  // for (30 frames of capture decode as 29).
+  await page.goto("/?test&mock_video&mock_ready&from_local&snippet=900-999");
+  await expect(page.locator("#btnDownload")).toBeEnabled();
+  const last = (await page.locator("#inVal").getAttribute("max"))!;
+  await expect(page.locator("#inVal")).toHaveValue(last);
+  await expect(page.locator("#outVal")).toHaveValue(last);
 });

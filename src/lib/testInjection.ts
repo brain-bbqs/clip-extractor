@@ -51,29 +51,48 @@ export interface TestInjection {
   /** Makes the synthesized pose deliberately describe a different recording than the mock video, so
    * the SLEAP card's mismatch refusal can be previewed instead of a clean overlay. */
   mismatch: boolean;
-  /** Skips the manual steps a human would otherwise take before Save/Upload enable — selecting a
-   * frame (or, with `mock_ready=snippet`, a short range) and typing a description — so a pasted
-   * `?test&mock_video&mock_ready` link lands directly on a saveable state instead of the gated,
-   * "describe it first" one. Only meaningful alongside `mockVideoFrames`/`mockVideoLongSeconds`; that
-   * gated state is itself worth previewing plain, which is what `mock_video` without this produces. */
+  /** Skips the manual steps a human would otherwise take before Save/Upload enable — marking a real
+   * selection and typing a description — so a pasted `?test&mock_video&mock_ready` link lands
+   * directly on a saveable state instead of the gated, "describe it first" one. Only meaningful
+   * alongside `mockVideoFrames`/`mockVideoLongSeconds`; that gated state is itself worth previewing
+   * plain, which is what `mock_video` without this produces. */
   mockReady: boolean;
-  /** Which selection `mockReady` makes: a still frame (`mock_ready` bare, the default — needs no
-   * ffmpeg.wasm/CDN to extract) or a short snippet (`mock_ready=snippet`). Meaningless without
-   * `mockReady` itself set. */
-  mockReadySnippet: boolean;
+  /** Which selection `mockReady` marks: a still frame (`&frame`, the default — needs no ffmpeg.wasm,
+   * and so no CDN, to extract) or a short range (`&snippet`). Meaningless without `mockReady` itself
+   * set. `&frame` is the explicit spelling of the default rather than a separate case, so a link
+   * naming both reads as the snippet it asked for rather than being refused. */
+  mockReadyMode: "frame" | "snippet";
+  /** Which frame `&frame` parks the playhead on — deliberately mid-clip rather than the frame 0 every
+   * video already opens on, so a preview shows a selection somebody actually made. `&frame=<n>` picks
+   * another; anything past the end of the mock video is held to its last frame (see main.ts's
+   * `applyMockReady`), same as every other way a frame is set in this app. */
+  mockReadyFrame: number;
+  /** Which range `&snippet` marks, likewise a real sub-range rather than the whole recording.
+   * `&snippet=<lo>-<hi>` picks another, in either order; both ends are held to the video's own bounds
+   * the same way `mockReadyFrame` is. */
+  mockReadyRange: { lo: number; hi: number };
   /** Makes the mock video look, to `lib/bidsPath.ts`'s `behEntities`, as if it had been opened out of
-   * the archive at a fixed, BIDS-entity-shaped path (`sub-01/ses-01/…`, the same convention
-   * `fakeArchiveBrowse` names its own fake listing with) rather than dropped locally — so the more
-   * advanced metadata `SourceDatasets`/`GeneratedBy` carry for an archive-sourced delivery (a real
-   * `URL`, a known subject/session in the derivatives path) can be previewed too, combined with
-   * `mock_ready`'s own frame/snippet choice. `mock_video` alone (no `from_archive`) stays the
-   * "dropped locally" case, with no URL and the `sub-unknown` fallback. */
-  fromArchive: boolean;
+   * EMBER at a fixed, BIDS-entity-shaped path (`sub-01/ses-02/…`, dressed the same way
+   * `fakeArchiveBrowse` names its own fake listing) rather than dropped locally — so the more advanced
+   * metadata an archive-sourced delivery carries (a real `URL` in `SourceDatasets`, a known
+   * subject/session, and so a `date-`/`time-` directory rather than `recording-`) can be previewed
+   * too, crossed with `mockReadyMode`'s own frame/snippet choice. `&from_local` is the explicit
+   * spelling of the default this leaves alone: no URL, the `sub-unknown` fallback, and no
+   * `SourceDatasets` entry at all (see lib/provenance.ts's `buildSourceDatasetEntry`). */
+  fromEmber: boolean;
   /** Fakes the EMBER browse pane's dataset/video listing with this many video files spread across a
    * handful of fake datasets, bypassing `listManifestObjects`/`listOwnedEmbargoedDandisets`. Null
    * when `remote_listing` was not given. */
   remoteListing: number | null;
 }
+
+/** Where `&frame` parks the playhead, and which range `&snippet` marks, when neither names its own.
+ * Both are picked against `mock_video`'s own 30-frame default: mid-clip, and a real sub-range with
+ * recording on either side of it, so what a preview shows reads as a selection somebody made rather
+ * than the whole video or the frame it opened on. Both are held to the loaded video's own bounds
+ * (see main.ts's `applyMockReady`), so a shorter `mock_video=<n>` still lands somewhere real. */
+const MOCK_READY_FRAME = 12;
+const MOCK_READY_RANGE = { lo: 6, hi: 21 };
 
 /** Nothing to fake: every field is the value that leaves every real code path untouched. */
 const INERT: TestInjection = {
@@ -86,8 +105,10 @@ const INERT: TestInjection = {
   mockSlp: false,
   mismatch: false,
   mockReady: false,
-  mockReadySnippet: false,
-  fromArchive: false,
+  mockReadyMode: "frame",
+  mockReadyFrame: MOCK_READY_FRAME,
+  mockReadyRange: MOCK_READY_RANGE,
+  fromEmber: false,
   remoteListing: null,
 };
 
@@ -98,6 +119,16 @@ function intParam(params: URLSearchParams, key: string, fallback: number): numbe
   if (!raw) return fallback;
   const n = parseInt(raw, 10);
   return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+/** A `<lo>-<hi>` frame range out of a query param, or `fallback` for anything else — the bare flag
+ * (`&snippet`) included. Ends the wrong way round are put back in order rather than refused, the same
+ * way main.ts's `applyUrlMarks` treats a hand-written `?in=`/`?out=` pair. */
+function rangeParam(params: URLSearchParams, key: string, fallback: { lo: number; hi: number }): { lo: number; hi: number } {
+  const match = /^(\d+)-(\d+)$/.exec(params.get(key) ?? "");
+  if (!match) return fallback;
+  const [a, b] = [Number(match[1]), Number(match[2])];
+  return { lo: Math.min(a, b), hi: Math.max(a, b) };
 }
 
 /**
@@ -120,8 +151,13 @@ export function readTestInjection(search: string): TestInjection | null {
     mockSlp: params.has("mock_slp"),
     mismatch: params.has("mismatch"),
     mockReady: params.has("mock_ready"),
-    mockReadySnippet: params.get("mock_ready") === "snippet",
-    fromArchive: params.has("from_archive"),
+    mockReadyMode: params.has("snippet") ? "snippet" : "frame",
+    // `frame` is also lib/urlState.ts's own param for the playhead of a shared session. Reading the
+    // same name here is deliberate rather than a collision: it means the same thing, and urlState's
+    // side of it is inert without a `?url=` beside it, which no `?test&mock_video` link has.
+    mockReadyFrame: intParam(params, "frame", MOCK_READY_FRAME),
+    mockReadyRange: rangeParam(params, "snippet", MOCK_READY_RANGE),
+    fromEmber: params.has("from_ember"),
     remoteListing: params.has("remote_listing") ? intParam(params, "remote_listing", 8) : null,
   };
 }
@@ -161,25 +197,26 @@ function pad2(n: number): string {
 }
 
 /** A fixed `sub-01/ses-02` — a distinct subject *and* session, unlike `fakeArchiveBrowse`'s own first
- * fake video (`sub-01/ses-01`) — so `from_archive` previews the archive-sourced case with one fixed,
+ * fake video (`sub-01/ses-01`) — so `from_ember` previews the archive-sourced case with one fixed,
  * known-good path rather than a hand-typed subject/session, and with nothing to mistake for a bug
  * where the two entities happen to share a number. */
-const FROM_ARCHIVE_PATH_PREFIX = `sub-${pad2(1)}/ses-${pad2(2)}`;
+const FROM_EMBER_PATH_PREFIX = `sub-${pad2(1)}/ses-${pad2(2)}`;
 
 /** The fake archive-relative path {@link applyMockVideo} (in main.ts) hands to `loadVideo` so the mock
- * video reads, to `behEntities`, exactly as a real archive video at `sub-01/ses-02/…` would. Null
- * without `from_archive`, which leaves the mock video as the "dropped locally" case it always was. */
-export function fromArchiveSourcePath(injection: TestInjection, filename: string): string | null {
-  return injection.fromArchive ? `${FROM_ARCHIVE_PATH_PREFIX}/${filename}` : null;
+ * video reads, to `behEntities`, exactly as a real EMBER video at `sub-01/ses-02/…` would. Null
+ * without `from_ember` (equivalently, with `&from_local`), which leaves the mock video as the
+ * "dropped locally" case it always was. */
+export function fromEmberSourcePath(injection: TestInjection, filename: string): string | null {
+  return injection.fromEmber ? `${FROM_EMBER_PATH_PREFIX}/${filename}` : null;
 }
 
-/** A fake asset URL for the same case {@link fromArchiveSourcePath} names — resolving nowhere real,
+/** A fake asset URL for the same case {@link fromEmberSourcePath} names — resolving nowhere real,
  * like every other test-injection URL (see `fakeArchiveBrowse`), but non-null wherever
- * `fromArchiveSourcePath` is, so an archive-sourced mock video also previews what a real EMBER
- * selection carries into `SourceDatasets`: naming *how* it was opened, not just where it would sit in
- * the dandiset. */
-export function fromArchiveSourceUrl(injection: TestInjection, filename: string): string | null {
-  const path = fromArchiveSourcePath(injection, filename);
+ * `fromEmberSourcePath` is, so an EMBER-sourced mock video also previews what a real EMBER selection
+ * carries into `SourceDatasets`: naming *how* it was opened, not just where it would sit in the
+ * dandiset. */
+export function fromEmberSourceUrl(injection: TestInjection, filename: string): string | null {
+  const path = fromEmberSourcePath(injection, filename);
   return path ? `https://test-injection.invalid/${path}` : null;
 }
 

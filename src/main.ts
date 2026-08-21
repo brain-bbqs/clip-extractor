@@ -116,11 +116,12 @@ import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type U
 import {
   fakeArchiveBrowse,
   fakeIncomingDatasets,
-  fromArchiveSourcePath,
-  fromArchiveSourceUrl,
+  fromEmberSourcePath,
+  fromEmberSourceUrl,
   readTestInjection,
   synthesizeLongVideoFile,
   synthesizeVideoFile,
+  type TestInjection,
 } from "./lib/testInjection";
 import type { ArchiveConfig, OAuthTokenSet, PoseInstance, PoseModel, SelectorMode, SleapLabels, SleapVideoBackend } from "./lib/types";
 
@@ -3542,20 +3543,34 @@ async function initFromUrl(): Promise<void> {
 // The single highest-value injection: most of the others are only interesting once a video is on
 // screen, and this is the only one that puts one there without a local file or a real stream.
 
-/** `mock_ready`'s own step: picks a selection and types a description, the two things Save/Upload
+/** `mock_ready`'s own step: marks a selection and types a description, the two things Save/Upload
  * gate on (see updateDeliveryGate), so the mock video lands directly on a saveable state — the whole
  * point of the injection being to preview real Save/Upload *output* without doing that by hand each
- * time. `snippet` previews a short range instead of the default still frame — frame mode needs no
- * ffmpeg.wasm (and so no CDN) to extract, which is why it is the default, but a snippet is worth
- * previewing live too (`extracted`'s own `VideoCodec`/etc, an overlay if `mock_slp` is also given). */
-function applyMockReady(snippet: boolean): void {
-  if (snippet) {
-    state.inF = 0;
-    state.outF = Math.min(state.totalFrames - 1, 5);
+ * time. `&snippet` marks a real range instead of the default `&frame`'s still frame — frame mode
+ * needs no ffmpeg.wasm (and so no CDN) to extract, which is why it is the default, but a snippet is
+ * worth previewing live too (`extracted`'s own `VideoCodec`/etc, an overlay if `mock_slp` is given).
+ *
+ * Both land on real, deliberately mid-clip indices rather than the whole recording or the frame it
+ * opened on (see lib/testInjection.ts's `MOCK_READY_FRAME`/`MOCK_READY_RANGE`, and `&frame=<n>` /
+ * `&snippet=<lo>-<hi>` to name others). Held to this video's own bounds the same way `applyUrlMarks`
+ * holds a hand-written link's, so a short `mock_video=<n>` still lands somewhere real rather than
+ * past the end. The frame case has to move the playhead, not just the marks: frame mode extracts
+ * whatever `state.cur` points at (see `currentEntities`). */
+async function applyMockReady(injection: TestInjection): Promise<void> {
+  const last = Math.max(0, state.totalFrames - 1);
+  const held = (frame: number): number => Math.max(0, Math.min(last, frame));
+  if (injection.mockReadyMode === "snippet") {
+    state.inF = held(injection.mockReadyRange.lo);
+    state.outF = held(injection.mockReadyRange.hi);
     selectionChanged();
+    // Parked on the range's own start, so the picture on screen is inside what would be extracted
+    // rather than back at frame 0. Never extending the marks that were just set, whatever a key held
+    // during the load might otherwise have meant.
+    await seek(state.inF, true, false);
   } else {
     selectSeg(els.modeSeg, "frame");
     setMode("frame");
+    await seek(held(injection.mockReadyFrame), true, false);
   }
   els.selectionDescription.value = "Mock description, from a ?test&mock_ready live-test link.";
   updateDeliveryGate();
@@ -3564,23 +3579,23 @@ function applyMockReady(snippet: boolean): void {
 /** Loads a synthesized clip exactly as if it had been dropped onto the picker, so every real load
  * path (frame decode, timeline, delivery panes) runs against it unmodified. `mock_video_long` takes
  * the sparse, fast-to-build path instead (see `synthesizeLongVideoFile`) — the two are mutually
- * exclusive, since both stand in for the same drop. `from_archive` gives the mock video a fixed,
- * BIDS-entity-shaped source path/URL instead (see lib/testInjection.ts's `fromArchiveSourcePath`),
+ * exclusive, since both stand in for the same drop. `&from_ember` gives the mock video a fixed,
+ * BIDS-entity-shaped source path/URL instead (see lib/testInjection.ts's `fromEmberSourcePath`),
  * previewing the more advanced metadata an archive-sourced delivery carries — a real `URL` in
  * `SourceDatasets`, a known subject/session in the derivatives path — rather than the `sub-unknown`,
- * no-URL fallback `mock_video` alone (still the common, "dropped locally" case) previews. */
+ * no-URL fallback `&from_local` (the default, and still the common "dropped locally" case) previews. */
 async function applyMockVideo(): Promise<void> {
   if (testInjection?.mockVideoFrames != null) {
     const file = await synthesizeVideoFile(testInjection.mockVideoFrames);
     await loadVideo(
       file,
       file.name,
-      fromArchiveSourceUrl(testInjection, file.name),
+      fromEmberSourceUrl(testInjection, file.name),
       undefined,
-      fromArchiveSourcePath(testInjection, file.name),
+      fromEmberSourcePath(testInjection, file.name),
     );
     if (testInjection.mockSlp) applyMockSlp();
-    if (testInjection.mockReady) applyMockReady(testInjection.mockReadySnippet);
+    if (testInjection.mockReady) await applyMockReady(testInjection);
     return;
   }
   if (testInjection?.mockVideoLongSeconds != null) {
@@ -3588,11 +3603,11 @@ async function applyMockVideo(): Promise<void> {
     await loadVideo(
       file,
       file.name,
-      fromArchiveSourceUrl(testInjection, file.name),
+      fromEmberSourceUrl(testInjection, file.name),
       undefined,
-      fromArchiveSourcePath(testInjection, file.name),
+      fromEmberSourcePath(testInjection, file.name),
     );
-    if (testInjection.mockReady) applyMockReady(testInjection.mockReadySnippet);
+    if (testInjection.mockReady) await applyMockReady(testInjection);
   }
 }
 

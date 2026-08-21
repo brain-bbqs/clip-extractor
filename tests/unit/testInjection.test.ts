@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fakeArchiveBrowse, fromArchiveSourcePath, fromArchiveSourceUrl, readTestInjection } from "../../src/lib/testInjection";
+import { fakeArchiveBrowse, fromEmberSourcePath, fromEmberSourceUrl, readTestInjection } from "../../src/lib/testInjection";
 
 describe("readTestInjection", () => {
   it("returns null when the page was not asked to fake anything", () => {
@@ -8,37 +8,72 @@ describe("readTestInjection", () => {
   });
 
   it("defaults mock_ready to off — the gated, 'describe it first' state mock_video alone previews", () => {
-    expect(readTestInjection("?test&mock_video")).toMatchObject({ mockReady: false, mockReadySnippet: false });
+    expect(readTestInjection("?test&mock_video")).toMatchObject({ mockReady: false });
   });
 
-  it("reads the bare mock_ready flag as the frame case", () => {
-    expect(readTestInjection("?test&mock_video&mock_ready")).toMatchObject({ mockReady: true, mockReadySnippet: false });
-  });
-
-  it("reads mock_ready=snippet as the snippet case", () => {
-    expect(readTestInjection("?test&mock_video&mock_ready=snippet")).toMatchObject({ mockReady: true, mockReadySnippet: true });
-  });
-
-  it("defaults from_archive to off — the 'dropped locally' case mock_video alone previews", () => {
-    expect(readTestInjection("?test&mock_video")).toMatchObject({ fromArchive: false });
-  });
-
-  it("reads the bare from_archive flag", () => {
-    expect(readTestInjection("?test&mock_video&from_archive")).toMatchObject({ fromArchive: true });
+  it("reads the bare mock_ready flag", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready")).toMatchObject({ mockReady: true });
   });
 });
 
-describe("fromArchiveSourcePath / fromArchiveSourceUrl", () => {
-  it("names a fixed, BIDS-entity-shaped path when from_archive is given", () => {
-    const injection = readTestInjection("?test&mock_video&from_archive")!;
-    expect(fromArchiveSourcePath(injection, "clip.webm")).toBe("sub-01/ses-02/clip.webm");
-    expect(fromArchiveSourceUrl(injection, "clip.webm")).toBe("https://test-injection.invalid/sub-01/ses-02/clip.webm");
+describe("the selection mock_ready marks", () => {
+  it("defaults to the frame case, the one needing no ffmpeg.wasm to extract", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready")).toMatchObject({ mockReadyMode: "frame" });
   });
 
-  it("returns null without from_archive, leaving the mock video's source unnamed (sub-unknown)", () => {
-    const injection = readTestInjection("?test&mock_video")!;
-    expect(fromArchiveSourcePath(injection, "clip.webm")).toBeNull();
-    expect(fromArchiveSourceUrl(injection, "clip.webm")).toBeNull();
+  it("reads the bare &frame flag as that same default, spelled out", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready&frame")).toMatchObject({ mockReadyMode: "frame" });
+  });
+
+  it("reads the bare &snippet flag as the range case", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready&snippet")).toMatchObject({ mockReadyMode: "snippet" });
+  });
+
+  it("takes the snippet a link asked for when it names both, rather than refusing it", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready&frame&snippet")).toMatchObject({ mockReadyMode: "snippet" });
+  });
+
+  it("parks the playhead mid-clip by default, not on the frame every video opens at", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready&frame")).toMatchObject({ mockReadyFrame: 12 });
+  });
+
+  it("takes a frame index from &frame=<n>", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready&frame=7")).toMatchObject({ mockReadyFrame: 7 });
+  });
+
+  it("marks a real sub-range by default, not the whole recording", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready&snippet")).toMatchObject({ mockReadyRange: { lo: 6, hi: 21 } });
+  });
+
+  it("takes a range from &snippet=<lo>-<hi>", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready&snippet=3-9")).toMatchObject({ mockReadyRange: { lo: 3, hi: 9 } });
+  });
+
+  it("puts a range written the wrong way round back in order", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready&snippet=9-3")).toMatchObject({ mockReadyRange: { lo: 3, hi: 9 } });
+  });
+
+  it("falls back to the defaults for a range it cannot read", () => {
+    expect(readTestInjection("?test&mock_video&mock_ready&snippet=nonsense")).toMatchObject({ mockReadyRange: { lo: 6, hi: 21 } });
+  });
+});
+
+describe("fromEmberSourcePath / fromEmberSourceUrl", () => {
+  it("defaults from_ember to off — the 'dropped locally' case &from_local spells out", () => {
+    expect(readTestInjection("?test&mock_video&from_local")).toMatchObject({ fromEmber: false });
+  });
+
+  it("names a fixed, BIDS-entity-shaped path when from_ember is given", () => {
+    const injection = readTestInjection("?test&mock_video&from_ember")!;
+    expect(injection.fromEmber).toBe(true);
+    expect(fromEmberSourcePath(injection, "clip.mp4")).toBe("sub-01/ses-02/clip.mp4");
+    expect(fromEmberSourceUrl(injection, "clip.mp4")).toBe("https://test-injection.invalid/sub-01/ses-02/clip.mp4");
+  });
+
+  it("returns null without from_ember, leaving the mock video's source unnamed (sub-unknown)", () => {
+    const injection = readTestInjection("?test&mock_video&from_local")!;
+    expect(fromEmberSourcePath(injection, "clip.mp4")).toBeNull();
+    expect(fromEmberSourceUrl(injection, "clip.mp4")).toBeNull();
   });
 });
 
