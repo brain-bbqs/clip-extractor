@@ -36,14 +36,14 @@ test("a loaded .slp adds the annotations file and a rendered overlay (with its o
   // sits under `derivatives/` alongside the extract, its overlay, and all of their sidecars.
   const recording = registered[0].match(/recording-(\d+)/)![1];
   expect(registered).toEqual([
-    `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_image.png`,
+    `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-extracted+clip_image.png`,
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-overlay_image.png`,
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-overlay_image.json`,
     "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.webm",
     "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.json",
     `${DERIVATIVES_DIR}/mice_new.tracked.slp`,
     `${DERIVATIVES_DIR}/mice_new.tracked.json`,
-    `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_image.json`,
+    `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-extracted+clip_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
     "sourcedata/rawbids/dataset_description.json",
@@ -70,10 +70,10 @@ test("the overlay is uploaded even when the original content is excluded", async
   // No source video and no .slp, but the overlay and both sidecars are still there.
   const recording = registered[0].match(/recording-(\d+)/)![1];
   expect(registered).toEqual([
-    `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_image.png`,
+    `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-extracted+clip_image.png`,
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-overlay_image.png`,
     `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-overlay_image.json`,
-    `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_image.json`,
+    `${DERIVATIVES_DIR}/sub-unknown_recording-${recording}_desc-extracted+clip_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
     "sourcedata/rawbids/dataset_description.json",

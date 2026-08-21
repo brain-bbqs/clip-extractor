@@ -42,7 +42,9 @@ test("an upload registers the extract, the original and a matching sidecar", asy
     derivativesDescriptionPath,
     sourcedataDescriptionPath,
   ] = registered;
-  expect(imagePath).toMatch(new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_image\\.png$`));
+  expect(imagePath).toMatch(
+    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_desc-extracted\\+clip_image\\.png$`),
+  );
   expect(originalPath).toBe("sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.webm");
   expect(originalSidecarPath).toBe("sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.json");
   expect(sidecarPath).toBe(imagePath.replace(/\.png$/, ".json"));

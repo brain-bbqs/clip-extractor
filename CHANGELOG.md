@@ -12,6 +12,7 @@
 - The source video's own copy under `sourcedata/rawbids/` is now named per BEP047 (`sub-<label>[_ses-<label>]_video.<ext>`) instead of keeping its original filename, and a repeat delivery of the same subject/session now overwrites that copy instead of piling up duplicates ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - `?test&mock_video&mock_ready` gained a `=snippet` variant (extracting a real clip instead of a still frame) and can be crossed with a new `&from_archive` flag, which previews the case of a video opened out of the archive (a known `sub-01/ses-02`, with a real source URL) rather than dropped locally ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 - Removed the ad hoc `clip-extractor` provenance block nested in the sidecar JSON; a later PR will add a proper W3C PROV record in its place ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+- The plain extracted clip/frame is now named `desc-extracted+clip`, alongside its pose-overlay sibling's existing `desc-overlay`, instead of carrying no `desc` at all ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
 
 ## 1.0.0
 

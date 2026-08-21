@@ -29,14 +29,14 @@ export interface ExtractedMedia {
 export type ExtractProgress = (message: string, fraction?: number) => void;
 
 // Every file this app produces is named per BEP047 (see lib/bidsPath.ts):
-//   sub-<label>_recording-<label>_image.png
-//   sub-<label>_recording-<label>_image.json
-//   sub-<label>_recording-<label>_video.mp4
-//   sub-<label>_recording-<label>_video.json
+//   sub-<label>_recording-<label>_desc-extracted+clip_image.png
+//   sub-<label>_recording-<label>_desc-extracted+clip_image.json
+//   sub-<label>_recording-<label>_desc-extracted+clip_video.mp4
+//   sub-<label>_recording-<label>_desc-extracted+clip_video.json
 //   sub-<label>_recording-<label>_desc-overlay_video.mp4
 // Files describing or rendering the same selection share every entity with it and differ only in
-// `desc-`/the suffix, so they sit side by side in a listing. The original video is not renamed
-// beyond that same scheme — see deliverOriginalVideo in main.ts.
+// `desc-`, so they sit side by side in a listing. The original video is not renamed beyond that same
+// scheme — see deliverOriginalVideo in main.ts.
 
 /** The entities identifying one extraction, shared by every file it produces: which selection
  * (`sourceName`/`mode`/frame bounds, for the extraction logic itself) and which subject, session
@@ -50,17 +50,24 @@ export interface AssetEntities {
   beh: BehEntities;
 }
 
+/** `desc-` for the plain extract itself (as opposed to `overlay`, or the source video its sidecar
+ * carries no `desc` at all for): BIDS labels may concatenate multiple applicable ones with `+` (see
+ * https://bids-specification.readthedocs.io/en/stable/appendices/entities.html#desc), and this file
+ * is both — the thing this app *extracted*, and (frame or snippet alike) the *clip* the app is named
+ * for. */
+const EXTRACTED_CLIP_DESC = "extracted+clip";
+
 export function clipFileName(beh: BehEntities): string {
-  return behFilename(beh, { suffix: "video", ext: "mp4" });
+  return behFilename(beh, { desc: EXTRACTED_CLIP_DESC, suffix: "video", ext: "mp4" });
 }
 
 export function frameFileName(beh: BehEntities): string {
-  return behFilename(beh, { suffix: "image", ext: "png" });
+  return behFilename(beh, { desc: EXTRACTED_CLIP_DESC, suffix: "image", ext: "png" });
 }
 
 /** The sidecar shares every entity with the media file it describes, `.json` in place of the media
  * extension, so the pair sits side by side in a listing. */
-export function sidecarFileName(beh: BehEntities, mode: SelectionKind, desc?: string): string {
+export function sidecarFileName(beh: BehEntities, mode: SelectionKind, desc: string = EXTRACTED_CLIP_DESC): string {
   return behSidecarName(beh, { suffix: mode === "frame" ? "image" : "video", desc });
 }
 
@@ -72,8 +79,8 @@ export function bundleFileName(beh: BehEntities, mode: SelectionKind): string {
 }
 
 /** The same selection with the pose drawn into the pixels — `desc-overlay` in place of the plain
- * extract's bare entities, the derivatives entity BIDS already defines for "a different output of
- * the same recording". */
+ * extract's own `desc-extracted+clip`, the derivatives entity BIDS already defines for "a different
+ * output of the same recording". */
 export function overlayFileName(beh: BehEntities, mode: SelectionKind): string {
   return behFilename(beh, { desc: "overlay", suffix: mode === "frame" ? "image" : "video", ext: mode === "frame" ? "png" : "mp4" });
 }

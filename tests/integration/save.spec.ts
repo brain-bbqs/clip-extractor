@@ -73,10 +73,10 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   expect(derivativesDir).toBe("derivatives/clip-extractor/sub-unknown/beh");
   const recording = entries[0].path.match(/recording-(\d+)/)![1];
   expect(entries.map((e) => e.path)).toEqual([
-    `${derivativesDir}/sub-unknown_recording-${recording}_image.png`,
+    `${derivativesDir}/sub-unknown_recording-${recording}_desc-extracted+clip_image.png`,
     "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.webm",
     "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.json",
-    `${derivativesDir}/sub-unknown_recording-${recording}_image.json`,
+    `${derivativesDir}/sub-unknown_recording-${recording}_desc-extracted+clip_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",
     "sourcedata/rawbids/dataset_description.json",
@@ -143,10 +143,10 @@ test("leaving the original out saves the extract and its sidecar alone, plus all
     "sourcedata/rawbids/dataset_description.json",
   ]);
   expect(entries[0].path).toMatch(
-    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_image\\.png$`),
+    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_desc-extracted\\+clip_image\\.png$`),
   );
   expect(entries[1].path).toMatch(
-    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_image\\.json$`),
+    new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/sub-unknown_recording-${RECORDING}_desc-extracted\\+clip_image\\.json$`),
   );
 
   const sidecar = JSON.parse(entries[1].text) as Record<string, unknown>;
