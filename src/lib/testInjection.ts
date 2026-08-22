@@ -168,12 +168,13 @@ export function testInjectionOrInert(search: string): TestInjection {
   return readTestInjection(search) ?? INERT;
 }
 
-/** The first fake numeric identifier this module hands out. EMBER's real dandiset ids are assigned
- * sequentially from 1 and, as of this writing, are nowhere near seven digits — chosen well above any
- * plausible real id rather than negative, because {@link resolveConfig}'s `dandisetId` regex only
- * matches plain digits and a fake id has to survive the same parsing a real one does to drive a
- * truthful preview of the upload-destination UI. */
-const FAKE_DANDISET_ID_BASE = 9_900_001;
+/** The first fake numeric identifier this module hands out. Six digits, like a real dandiset id —
+ * `resolveConfig`'s own `dandisetId` regex only matches runs of six or more plain digits, and a fake
+ * id has to survive the same parsing a real one does to drive a truthful preview of the
+ * upload-destination UI (and, since a saved bundle is named after its dataset, of what Save writes).
+ * EMBER assigns its ids sequentially from 1 and is nowhere near this far up the range, so nothing
+ * here can collide with a real dataset. */
+const FAKE_DANDISET_ID_BASE = 214_000;
 
 /** Fakes the delivery destination's dataset list `applyDatasetList` would otherwise be handed by a
  * real `listIncomingDandisets` call. */
@@ -218,6 +219,15 @@ export function fromEmberSourcePath(injection: TestInjection, filename: string):
 export function fromEmberSourceUrl(injection: TestInjection, filename: string): string | null {
   const path = fromEmberSourcePath(injection, filename);
   return path ? `https://test-injection.invalid/${path}` : null;
+}
+
+/** The fake dandiset an EMBER-sourced mock video reads as having come out of — the same
+ * {@link FAKE_DANDISET_ID_BASE} the fake dataset list hands out, so a `?test&...&from_ember` link
+ * previews the real `SourceDatasets` entry a Browse EMBER selection produces (see lib/provenance.ts's
+ * `buildSourceDatasetEntry`), not just the subject/session half of it. Null without `from_ember`,
+ * whose "dropped locally" case belongs to no dataset at all. */
+export function fromEmberDandisetId(injection: TestInjection): string | null {
+  return injection.fromEmber ? String(FAKE_DANDISET_ID_BASE) : null;
 }
 
 /**

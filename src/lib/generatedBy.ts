@@ -45,18 +45,19 @@ export function buildGeneratedByEntry(): GeneratedByEntry {
  * derived data together under one dataset, which is exactly this app's own tree. */
 export type DatasetType = "raw" | "derivative" | "study";
 
-/** One entry of `SourceDatasets` — BIDS's own `URL`/`DOI`/`Version`, all themselves optional, plus
- * `Filename`/`Checksum` (not part of the vocabulary BIDS defines for this object, but nothing there
- * forbids naming a source more precisely alongside its `URL`). This app only ever builds one when a
- * video's own `URL` is known — see lib/provenance.ts's `buildSourceDatasetEntry` — since a locally
- * dropped file has no dereferencable address for `SourceDatasets` to add over what the sidecar's own
- * `Description`/`Checksum` already say. */
+/** One entry of `SourceDatasets` — BIDS's own `URL`/`DOI`/`Version`, all themselves optional, and
+ * nothing this app invented beside them. It names a *dataset*, which is what BIDS means by the
+ * field: this app builds one only when the source video came out of a dandiset, naming that
+ * dandiset's own URL (see lib/provenance.ts's `buildSourceDatasetEntry`), and none at all for a
+ * locally dropped file, which belongs to no dataset to name. */
 export interface SourceDatasetEntry {
   URL?: string;
   DOI?: string;
   Version?: string;
-  Filename?: string;
-  Checksum?: { algorithm: "dandi:dandi-etag"; value: string };
+  /** Where the source video sat inside that dataset, archive-relative. Not part of the vocabulary
+   * BIDS defines for this object — the entry it belongs to still names a dataset, as BIDS means it,
+   * and this only says which of its assets was actually read. */
+  Path?: string;
 }
 
 // No index signature here deliberately: combined with `Omit`, one turns every field's type into the
@@ -113,18 +114,17 @@ export function mergeGeneratedBy(
   return { ...base, GeneratedBy: already ? generatedBy : [...generatedBy, entry] };
 }
 
-/** Whichever of checksum, URL or filename actually identifies a `SourceDatasets` entry's video — the
- * first that is known, in that order of how well it actually distinguishes one video from another. */
+/** Whichever of URL or DOI actually identifies a `SourceDatasets` entry's dataset — the first that
+ * is known, in that order of how well it resolves to the dataset itself. */
 function sourceIdentity(s: SourceDatasetEntry): string {
-  return s.Checksum?.value ?? s.URL ?? s.Filename ?? "";
+  return s.URL ?? s.DOI ?? "";
 }
 
-/** Adds `source` to `doc.SourceDatasets`, unless a video with the same identity (see `sourceIdentity`)
- * is already listed — so a re-delivery of the same video does not duplicate its entry, but a second,
- * different video processed by the same pipeline gets its own, rather than being lost the way a fixed,
- * write-once `SourceDatasets` would lose it. `source: null` (nothing at all is known about this
- * delivery's video — never actually the case for a real delivery, but keeps this safe to call
- * unconditionally) leaves `doc` untouched. */
+/** Adds `source` to `doc.SourceDatasets`, unless a dataset with the same identity (see
+ * `sourceIdentity`) is already listed — so repeat deliveries out of one dandiset share its single
+ * entry, while a second dandiset processed by the same pipeline gets its own rather than being lost
+ * the way a fixed, write-once `SourceDatasets` would lose it. `source: null` (this delivery's video
+ * came from no dataset — a locally dropped file) leaves `doc` untouched. */
 export function mergeSourceDataset(doc: DatasetDescription, source: SourceDatasetEntry | null): DatasetDescription {
   if (!source || !Object.keys(source).length) return doc;
   const sources = doc.SourceDatasets ?? [];

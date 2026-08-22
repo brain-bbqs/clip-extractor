@@ -10,8 +10,8 @@ import { buildGeneratedByEntry, type SourceDatasetEntry } from "../../src/lib/ge
 import type { ArchiveConfig, Asset } from "../../src/lib/types";
 
 const sourceDataset: SourceDatasetEntry = {
-  Filename: "mice.mp4",
-  Checksum: { algorithm: "dandi:dandi-etag", value: `${"a".repeat(32)}-1` },
+  URL: "https://api-dandi.emberarchive.org/api/dandisets/000479",
+  Path: "sub-01/ses-02/beh/mice.mp4",
 };
 
 const cfg: ArchiveConfig = { api: "https://api.test/api", web: "https://web.test", accessToken: "tok", dandisetId: "000123" };
@@ -108,8 +108,8 @@ describe("mergedDatasetDescriptions", () => {
     const entry = buildGeneratedByEntry();
     const first = mergedDatasetDescriptions({ root: null, derivatives: null, sourcedata: null }, entry, sourceDataset, "snippet", null);
     const otherVideo: SourceDatasetEntry = {
-      Filename: "gerbil.mp4",
-      Checksum: { algorithm: "dandi:dandi-etag", value: `${"b".repeat(32)}-1` },
+      URL: "https://api-dandi.emberarchive.org/api/dandisets/000480",
+      Path: "sub-02/ses-01/beh/gerbil.mp4",
     };
     const second = mergedDatasetDescriptions(
       { root: first.root, derivatives: first.derivatives, sourcedata: first.sourcedata },

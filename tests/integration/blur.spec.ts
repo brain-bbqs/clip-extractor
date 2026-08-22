@@ -11,7 +11,7 @@ import { seekTo, stubArchive } from "./helpers";
 // behind it — so every test except the one that actually uploads (and so has to verify what really
 // landed on the stub archive) reaches its state through `?test&mock_video&num_datasets=1[&human_subjects]`
 // instead of a stubbed archive and a synthesized-in-Playwright video. The fake destination is
-// `FAKE_DANDISET_ID_BASE` from lib/testInjection.ts, "9900001".
+// `FAKE_DANDISET_ID_BASE` from lib/testInjection.ts, "214000".
 
 const banner = "#humanSubjectsBanner";
 const rings = "#blurLayer .blur-handle";
@@ -26,7 +26,7 @@ async function placeBlurArea(page: Page, fractionX: number, fractionY: number): 
 
 test("an unflagged dataset raises no warning and offers no blur tool", async ({ page }) => {
   await page.goto("/?test&mock_video&num_datasets=1");
-  await expect(page.locator("#dandisetSingleText")).toContainText("9900001");
+  await expect(page.locator("#dandisetSingleText")).toContainText("214000");
   await expect(page.locator("#view")).toBeVisible();
 
   await expect(page.locator(banner)).toBeHidden();
@@ -35,7 +35,7 @@ test("an unflagged dataset raises no warning and offers no blur tool", async ({ 
 
 test("a flagged dataset warns, holds the upload until it is confirmed, and offers the blur tool", async ({ page }) => {
   await page.goto("/?test&mock_video&num_datasets=1&human_subjects");
-  await expect(page.locator("#dandisetSingleText")).toContainText("9900001");
+  await expect(page.locator("#dandisetSingleText")).toContainText("214000");
   await expect(page.locator("#view")).toBeVisible();
   await page.locator('#modeSeg button[data-mode="frame"]').click();
   await seekTo(page, 5);
@@ -61,7 +61,7 @@ test("a flagged dataset warns, holds the upload until it is confirmed, and offer
 
 test("blur areas are placed, resized and removed on the picture", async ({ page }) => {
   await page.goto("/?test&mock_video&num_datasets=1&human_subjects");
-  await expect(page.locator("#dandisetSingleText")).toContainText("9900001");
+  await expect(page.locator("#dandisetSingleText")).toContainText("214000");
   await expect(page.locator("#view")).toBeVisible();
 
   // A tenth of the 320x240 recording's shorter side.

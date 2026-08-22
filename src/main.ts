@@ -116,6 +116,7 @@ import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type U
 import {
   fakeArchiveBrowse,
   fakeIncomingDatasets,
+  fromEmberDandisetId,
   fromEmberSourcePath,
   fromEmberSourceUrl,
   readTestInjection,
@@ -203,6 +204,11 @@ interface AppState {
    * (see lib/bidsPath.ts's behEntities); a delivery whose source names none falls back to
    * `sub-unknown`. */
   sourcePath: string | null;
+  /** The dandiset the video was opened out of, when it came from the archive — the one thing a
+   * delivery records about where its source came from, in the derivatives `SourceDatasets` (see
+   * lib/provenance.ts's `buildSourceDatasetEntry`). Null for a locally dropped file or a streamed
+   * URL that names no dataset, which leaves `SourceDatasets` out entirely. */
+  sourceDandisetId: string | null;
   cur: number;
   inF: number | null;
   outF: number | null;
@@ -249,6 +255,7 @@ const state: AppState = {
   sourceUrl: null,
   sourceFile: null,
   sourcePath: null,
+  sourceDandisetId: null,
   cur: 0,
   inF: null,
   outF: null,
@@ -517,6 +524,8 @@ async function loadVideo(
   report: LoadFailureReport = stageFailure,
   /** The video's own path within its dandiset, when known — see AppState.sourcePath. */
   sourcePath: string | null = null,
+  /** The dandiset it was opened out of, when known — see AppState.sourceDandisetId. */
+  sourceDandisetId: string | null = null,
 ): Promise<void> {
   stopPlay();
   clearLoadMessages();
@@ -548,6 +557,7 @@ async function loadVideo(
     state.sourceName = name;
     state.sourceUrl = url;
     state.sourcePath = sourcePath;
+    state.sourceDandisetId = sourceDandisetId;
     // loadVideo fully owns source state: this is either the dropped File, the one the stream
     // fallback materialized, or null for a live-streamed URL — never a previous load's leftover.
     state.sourceFile = file;
@@ -2229,7 +2239,7 @@ async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
   // content hash — and for an embargoed file, the only one that will still resolve tomorrow.
   // Reported in the pane, like the refusals above it: a video picked out of a list is answered for
   // where the list is, whether or not another one is already playing on the stage.
-  void loadVideo(streamUrl, name, video.assetUrl, browseFailure, video.path);
+  void loadVideo(streamUrl, name, video.assetUrl, browseFailure, video.path, video.dandisetId);
 }
 
 /**
@@ -3278,17 +3288,10 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   await deliver({ blob: media.blob, path: mediaPath, contentType: media.mime, label: `the ${kind}`, digest: mediaDigest });
 
   await deliverOverlay(deliver, directories.derivatives, mediaPath, entities, backend, blur, onProgress);
-  const { originalDigest, originalPath } = await deliverOriginalVideo(deliver, directories.sourcedata, beh, onProgress);
+  const { originalPath } = await deliverOriginalVideo(deliver, directories.sourcedata, beh, onProgress);
   await deliverAnnotationFile(deliver, directories.derivatives, originalPath, onProgress);
 
-  const provenanceInput: ProvenanceInput = {
-    description: els.selectionDescription.value,
-    source: {
-      filename: state.sourceName,
-      url: state.sourceUrl,
-      checksum: originalDigest?.etag ?? null,
-    },
-  };
+  const provenanceInput: ProvenanceInput = { description: els.selectionDescription.value };
 
   // The sidecar the extracted clip/frame itself carries: BEP047's own technical keys, a BEP028
   // `GeneratedBy` entry, and the description typed for this delivery — see lib/provenance.ts.
@@ -3318,7 +3321,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // hand, same as any other file a bundle might collide with.
   const existing = (await params.existingDescriptions?.()) ?? { root: null, derivatives: null, sourcedata: null };
   const generatedByEntry = buildGeneratedByEntry();
-  const sourceDataset = buildSourceDatasetEntry(provenanceInput);
+  const sourceDataset = buildSourceDatasetEntry(currentConfig().api, state.sourceDandisetId, state.sourcePath);
   // Read off the module-level identity rather than `provenanceInput.user` (which is only ever set on
   // the upload route, since that field also drives the sidecar's own `uploaded_by`): a visitor can be
   // signed in while using Save, and deserves the same credit there.
@@ -3592,6 +3595,7 @@ async function applyMockVideo(): Promise<void> {
       fromEmberSourceUrl(testInjection, file.name),
       undefined,
       fromEmberSourcePath(testInjection, file.name),
+      fromEmberDandisetId(testInjection),
     );
     if (testInjection.mockSlp) applyMockSlp();
     if (testInjection.mockReady) await applyMockReady(testInjection);
@@ -3605,6 +3609,7 @@ async function applyMockVideo(): Promise<void> {
       fromEmberSourceUrl(testInjection, file.name),
       undefined,
       fromEmberSourcePath(testInjection, file.name),
+      fromEmberDandisetId(testInjection),
     );
     if (testInjection.mockReady) await applyMockReady(testInjection);
   }

@@ -12,8 +12,8 @@ import {
 } from "../../src/lib/generatedBy";
 
 const video: SourceDatasetEntry = {
-  Filename: "mice.mp4",
-  Checksum: { algorithm: "dandi:dandi-etag", value: `${"a".repeat(32)}-1` },
+  URL: "https://api-dandi.emberarchive.org/api/dandisets/000479",
+  Path: "sub-01/ses-02/beh/mice.mp4",
 };
 
 describe("buildGeneratedByEntry", () => {
@@ -116,8 +116,8 @@ describe("mergeSourceDataset", () => {
 
   it("adds a second entry for a different video, rather than collapsing them", () => {
     const otherVideo: SourceDatasetEntry = {
-      Filename: "gerbil.mp4",
-      Checksum: { algorithm: "dandi:dandi-etag", value: `${"b".repeat(32)}-1` },
+      URL: "https://api-dandi.emberarchive.org/api/dandisets/000480",
+      Path: "sub-02/ses-01/beh/gerbil.mp4",
     };
     const withVideo = { ...doc, SourceDatasets: [video] };
     expect(mergeSourceDataset(withVideo, otherVideo)).toEqual({ ...doc, SourceDatasets: [video, otherVideo] });

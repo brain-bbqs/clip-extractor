@@ -9,58 +9,26 @@ import type { SourceDatasetEntry } from "./generatedBy";
 // that gets done — so this module is left with just what the sidecar's standards-facing keys
 // (`Description`, `Checksum`, `GeneratedBy`, `SourceDatasets`) actually need.
 
-/**
- * DANDI's own blob digest, recorded under the exact identifier the archive uses for it so a value
- * here can be compared against archive metadata (and the `digest` this app sends to
- * `/uploads/initialize/`) without translation.
- *
- * Deliberately *not* labelled `md5`: a dandi-etag is the S3 multipart ETag — MD5 of the
- * concatenated per-part MD5s, suffixed with the part count — so it does not equal `md5(file)` even
- * for a single-part file. The `-<n>` suffix is the giveaway. See lib/etag.ts.
- */
-export interface ProvenanceChecksum {
-  algorithm: "dandi:dandi-etag";
-  value: string;
-}
-
-/** What a sidecar's own builders need to know about this delivery — just the description typed for
- * it and the source video's own identity, now that no free-standing provenance record travels with
- * it (see this module's own header comment). */
+/** What a sidecar's own builders need to know about this delivery — only the description typed for
+ * it, now that no free-standing provenance record travels with it and the source video's own
+ * identity lives in its `Checksum` and in `SourceDatasets` instead (see this module's header). */
 export interface ProvenanceInput {
   /** Free text from the description field; trimmed here, and blank counts as none. */
   description: string | null;
-  source: {
-    /**
-     * Base name only, never a path: a browser exposes `File.name` and nothing else for a picked or
-     * dropped file (`input.value` is deliberately fabricated as `C:\fakepath\…`, and
-     * `webkitRelativePath` is populated only for directory pickers, which this app does not use). So
-     * the checksum below — not the name — is what identifies the source video again later.
-     */
-    filename: string;
-    /** The URL a streamed source came from, or null for a local file. */
-    url: string | null;
-    /** The original's dandi-etag, recorded whether or not the original itself was uploaded. */
-    checksum: string | null;
-  };
 }
 
-function checksum(value: string | null): ProvenanceChecksum | null {
-  return value ? { algorithm: "dandi:dandi-etag", value } : null;
-}
-
-/** The source video, in the shape `lib/generatedBy.ts`'s `SourceDatasets` entries take — or null for
- * a locally dropped file, which has no dereferencable `URL` and so nothing `SourceDatasets` names any
- * differently than the sidecar's own `Description`/`Checksum` already do; a bare `Filename`/`Checksum`
- * pair would not actually identify a *source dataset* the way BIDS means the field, just repeat what
- * is already on the file itself. Only a video opened from a real address (streamed from the archive,
- * say) gets an entry — that address is the one thing worth recording here that is not already known
- * from the delivery's own files. */
-export function buildSourceDatasetEntry(input: ProvenanceInput): SourceDatasetEntry | null {
-  if (!input.source.url) return null;
-  const entry: SourceDatasetEntry = { URL: input.source.url };
-  if (input.source.filename) entry.Filename = input.source.filename;
-  const c = checksum(input.source.checksum);
-  if (c) entry.Checksum = c;
+/** The *dataset* this delivery's source video came out of, in the shape `lib/generatedBy.ts`'s
+ * `SourceDatasets` entries take: the dandiset's own API `URL`, plus the archive-relative `Path` the
+ * video sat at inside it. `SourceDatasets` means datasets in BIDS, so the entry leads with the
+ * dataset and names the one asset within it as a detail, rather than the other way round.
+ *
+ * Null when the source names no dataset at all — a locally dropped file, or a streamed URL from
+ * somewhere that is not an archive — which leaves `SourceDatasets` out rather than inventing an
+ * entry for a dataset that does not exist. */
+export function buildSourceDatasetEntry(api: string, dandisetId: string | null, sourcePath: string | null): SourceDatasetEntry | null {
+  if (!dandisetId) return null;
+  const entry: SourceDatasetEntry = { URL: `${api}/dandisets/${dandisetId}` };
+  if (sourcePath) entry.Path = sourcePath;
   return entry;
 }
 

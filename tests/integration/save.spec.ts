@@ -114,8 +114,7 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   expect(derivativesDescription.DatasetType).toBe("derivative");
   // The same study name, with a suffix, so the three read as one related set.
   expect(derivativesDescription.Name).toBe(`${rootDescription.Name} (Extracted)`);
-  // No SourceDatasets entry for a locally dropped file: with no dereferencable URL, a bare
-  // Filename/Checksum pair would only repeat what the extract's own sidecar already says.
+  // No SourceDatasets entry for a locally dropped file: it belongs to no dataset to name.
   expect(derivativesDescription.SourceDatasets).toBeUndefined();
   // Names its own way back to sourcedata/rawbids/, the other half of the same pair.
   expect(derivativesDescription.DatasetLinks).toEqual({ raw: "../../sourcedata/rawbids" });
@@ -155,16 +154,16 @@ test("leaving the original out saves the extract and its sidecar alone, plus all
   const sidecar = JSON.parse(entries[1].text) as Record<string, unknown>;
   expect(sidecar.Description).toBe("A clean frame, kept as a reference.");
 
-  // Left out of the bundle, and no SourceDatasets entry either — a local file has no URL for
-  // SourceDatasets to name, so nothing here ties the frame back to it once the original is excluded.
+  // Left out of the bundle, and no SourceDatasets entry either — a local file belongs to no dataset,
+  // so nothing here ties the frame back to it once the original is excluded.
   const derivativesDescription = JSON.parse(entries[3].text) as Record<string, unknown>;
   expect(derivativesDescription.SourceDatasets).toBeUndefined();
 });
 
 // The four live-test links `?test&mock_video&mock_ready` crosses: where the video came from
-// (`&from_local`, dropped locally — sub-unknown, no URL, and so no SourceDatasets entry at all, see
-// lib/provenance.ts's buildSourceDatasetEntry; `&from_ember`, opened out of a fixed archive path —
-// SourceDatasets' own URL and a known subject/session, so a date-/time- directory rather than
+// (`&from_local`, dropped locally — sub-unknown, belonging to no dataset and so no SourceDatasets
+// entry at all, see lib/provenance.ts's buildSourceDatasetEntry; `&from_ember`, opened out of a fixed
+// dandiset and path — SourceDatasets' own URL and a known subject/session, so a date-/time-
 // recording-) against what is selected in it (`&frame`, a still frame; `&snippet`, a range). Each
 // lands on a saveable state with no manual selection or description, and each marks a real,
 // mid-clip selection rather than the whole recording or the frame it opened on — frame 12 and
@@ -193,8 +192,8 @@ test("?test&mock_video&mock_ready&from_local&frame saves a still frame of a loca
   expect(download.suggestedFilename()).toBe("clip-extractor.tar.gz");
 
   const entries = listTar(readFileSync((await download.path())!));
-  // Dropped locally: the sub-unknown fallback, a recording- directory, and no URL for SourceDatasets
-  // to name — unlike the from_ember cases below.
+  // Dropped locally: the sub-unknown fallback, a recording- directory, and no dataset for
+  // SourceDatasets to name — unlike the from_ember cases below.
   expect(entries[0].path).toMatch(
     new RegExp(`^derivatives/clip-extractor/sub-unknown/beh/recording-(${RECORDING})/sub-unknown_recording-\\1_image\\.png$`),
   );
@@ -238,13 +237,12 @@ test("?test&mock_video&mock_ready&from_ember&frame saves a still frame of an arc
   const derivativesDescription = JSON.parse(
     entries.find((e) => e.path.endsWith("derivatives/clip-extractor/dataset_description.json"))!.text,
   );
-  // A real URL, not just a filename and checksum: this reads as opened out of EMBER, not dropped
-  // locally — the "more advanced metadata" from_ember exists to preview.
+  // The dandiset it came out of, and the asset path within it — this reads as opened out of EMBER,
+  // not dropped locally, which is the "more advanced metadata" from_ember exists to preview.
   expect(derivativesDescription.SourceDatasets).toEqual([
     {
-      URL: "https://test-injection.invalid/sub-01/ses-02/test-injection-mock-video.mp4",
-      Filename: "test-injection-mock-video.mp4",
-      Checksum: { algorithm: "dandi:dandi-etag", value: expect.stringMatching(/^[0-9a-f]{32}-\d+$/) },
+      URL: "https://api-dandi.emberarchive.org/api/dandisets/214000",
+      Path: "sub-01/ses-02/test-injection-mock-video.mp4",
     },
   ]);
 });
@@ -267,14 +265,14 @@ test("the bundle is named after the dataset it is destined for, when one is pick
   // is what the bundle is named after — the one thing worth knowing about the container before
   // unpacking it. Without a dataset the other tests here fall back to `clip-extractor.tar.gz`.
   await page.goto("/?test&mock_video&mock_ready&from_ember&frame&num_datasets=1");
-  await expect(page.locator("#dandisetSingleText")).toContainText("9900001");
+  await expect(page.locator("#dandisetSingleText")).toContainText("214000");
   // With a dataset to upload to, that is the side the delivery card leads with — so Save has to be
   // asked for before its button is the one on screen.
   await page.locator('#deliverSeg button[data-deliver="download"]').click();
-  await expect(page.locator("#downloadPreviewName")).toHaveText("9900001.tar.gz");
+  await expect(page.locator("#downloadPreviewName")).toHaveText("214000.tar.gz");
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toBe("9900001.tar.gz");
+  expect(download.suggestedFilename()).toBe("214000.tar.gz");
 });
 
 test("&frame=<n> and &snippet=<lo>-<hi> pick their own indices, held to the video's own bounds", async ({ page }) => {

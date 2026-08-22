@@ -11,14 +11,7 @@ import {
 
 const digest: FileDigest = { md5: "1".repeat(32), dandiEtag: `${"a".repeat(32)}-1` };
 
-const base: ProvenanceInput = {
-  description: null,
-  source: {
-    filename: "mice.mp4",
-    url: null,
-    checksum: `${"a".repeat(32)}-1`,
-  },
-};
+const base: ProvenanceInput = { description: null };
 
 describe("videoTechnicalFields / imageTechnicalFields", () => {
   it("derives the recording's duration from fps and frame count", () => {
@@ -62,28 +55,22 @@ describe("videoTechnicalFields / imageTechnicalFields", () => {
 });
 
 describe("buildSourceDatasetEntry", () => {
-  it("names nothing for a local file, with no URL — SourceDatasets would only repeat the sidecar's own Filename/Checksum", () => {
-    expect(buildSourceDatasetEntry(base)).toBeNull();
-  });
+  const API = "https://api-dandi.emberarchive.org/api";
 
-  it("names the URL (and the file/checksum alongside it), when the source was streamed from one", () => {
-    const streamed: ProvenanceInput = { ...base, source: { ...base.source, url: "https://api.test/assets/1/download/" } };
-    expect(buildSourceDatasetEntry(streamed)).toEqual({
-      URL: "https://api.test/assets/1/download/",
-      Filename: "mice.mp4",
-      Checksum: { algorithm: "dandi:dandi-etag", value: `${"a".repeat(32)}-1` },
+  it("names the dandiset the source came out of, and the asset path within it", () => {
+    expect(buildSourceDatasetEntry(API, "000479", "sub-01/ses-02/beh/mice.mp4")).toEqual({
+      URL: `${API}/dandisets/000479`,
+      Path: "sub-01/ses-02/beh/mice.mp4",
     });
   });
 
-  it("omits Checksum when the source has none, but still needs a URL to name anything at all", () => {
-    const streamedNoChecksum: ProvenanceInput = {
-      ...base,
-      source: { ...base.source, url: "https://api.test/assets/1/download/", checksum: null },
-    };
-    expect(buildSourceDatasetEntry(streamedNoChecksum)).toEqual({
-      URL: "https://api.test/assets/1/download/",
-      Filename: "mice.mp4",
-    });
+  it("names the dandiset alone when the path within it is not known", () => {
+    expect(buildSourceDatasetEntry(API, "000479", null)).toEqual({ URL: `${API}/dandisets/000479` });
+  });
+
+  it("names nothing for a source that belongs to no dataset — a locally dropped file", () => {
+    expect(buildSourceDatasetEntry(API, null, null)).toBeNull();
+    expect(buildSourceDatasetEntry(API, null, "sub-01/ses-02/beh/mice.mp4")).toBeNull();
   });
 });
 
