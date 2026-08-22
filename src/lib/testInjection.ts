@@ -1,6 +1,6 @@
 import { BufferTarget, CanvasSource, Output, QUALITY_LOW, WebMOutputFormat } from "mediabunny";
 import type { IncomingDandiset } from "./dandisets";
-import type { ArchiveDandiset, ArchiveVideo } from "./archives";
+import type { ArchiveDandiset, ArchiveSource, ArchiveVideo } from "./archives";
 
 // Live smoketest URL params (`?test&...`), mirroring brain-bbqs/bbqs-uploader's own `?test` scheme
 // (see its docs/README.md "Live Testing" section) so a link pasted into the deployed app's address
@@ -203,31 +203,25 @@ function pad2(n: number): string {
  * where the two entities happen to share a number. */
 const FROM_EMBER_PATH_PREFIX = `sub-${pad2(1)}/ses-${pad2(2)}`;
 
-/** The fake archive-relative path {@link applyMockVideo} (in main.ts) hands to `loadVideo` so the mock
- * video reads, to `behEntities`, exactly as a real EMBER video at `sub-01/ses-02/…` would. Null
- * without `from_ember` (equivalently, with `&from_local`), which leaves the mock video as the
- * "dropped locally" case it always was. */
-export function fromEmberSourcePath(injection: TestInjection, filename: string): string | null {
-  return injection.fromEmber ? `${FROM_EMBER_PATH_PREFIX}/${filename}` : null;
+/** Where an EMBER-sourced mock video reads as having come from: the same
+ * {@link FAKE_DANDISET_ID_BASE} the fake dataset list hands out, at {@link FROM_EMBER_PATH_PREFIX},
+ * so `?test&...&from_ember` previews the whole `SourceDatasets` entry a real Browse EMBER selection
+ * produces (see lib/provenance.ts's `buildSourceDatasetEntry`) rather than only its subject/session
+ * half. No `blobId`: this video is synthesized in the page and was never stored as a blob, and a
+ * made-up id would be the one part of the preview that is not a truthful stand-in for the real
+ * thing. Null without `from_ember`, whose "dropped locally" case belongs to no dataset at all. */
+export function fromEmberArchiveSource(injection: TestInjection, filename: string): ArchiveSource | null {
+  if (!injection.fromEmber) return null;
+  return { dandisetId: String(FAKE_DANDISET_ID_BASE), path: `${FROM_EMBER_PATH_PREFIX}/${filename}`, blobId: null };
 }
 
-/** A fake asset URL for the same case {@link fromEmberSourcePath} names — resolving nowhere real,
- * like every other test-injection URL (see `fakeArchiveBrowse`), but non-null wherever
- * `fromEmberSourcePath` is, so an EMBER-sourced mock video also previews what a real EMBER selection
- * carries into `SourceDatasets`: naming *how* it was opened, not just where it would sit in the
- * dandiset. */
+/** A fake asset URL for the same video {@link fromEmberArchiveSource} places — resolving nowhere
+ * real, like every other test-injection URL (see `fakeArchiveBrowse`), but non-null wherever that
+ * source is, so an EMBER-sourced mock video also previews the address a real streamed selection
+ * carries rather than reading as a local drop. */
 export function fromEmberSourceUrl(injection: TestInjection, filename: string): string | null {
-  const path = fromEmberSourcePath(injection, filename);
-  return path ? `https://test-injection.invalid/${path}` : null;
-}
-
-/** The fake dandiset an EMBER-sourced mock video reads as having come out of — the same
- * {@link FAKE_DANDISET_ID_BASE} the fake dataset list hands out, so a `?test&...&from_ember` link
- * previews the real `SourceDatasets` entry a Browse EMBER selection produces (see lib/provenance.ts's
- * `buildSourceDatasetEntry`), not just the subject/session half of it. Null without `from_ember`,
- * whose "dropped locally" case belongs to no dataset at all. */
-export function fromEmberDandisetId(injection: TestInjection): string | null {
-  return injection.fromEmber ? String(FAKE_DANDISET_ID_BASE) : null;
+  const source = fromEmberArchiveSource(injection, filename);
+  return source ? `https://test-injection.invalid/${source.path}` : null;
 }
 
 /**

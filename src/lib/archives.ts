@@ -189,6 +189,33 @@ export async function fetchDandisetName(dandiset: ArchiveDandiset, signal?: Abor
 }
 
 /** A video file in the archive, ready to be streamed. */
+/** Where in the archive a video came from — enough to name it again later without re-reading a
+ * manifest. Built by {@link archiveSourceOf} from a listing entry, and recorded in a delivery's
+ * derivatives `SourceDatasets` (see lib/provenance.ts's `buildSourceDatasetEntry`). */
+export interface ArchiveSource {
+  dandisetId: string;
+  /** The asset's own path within that dandiset, e.g. `sub-1/mice.mp4`. */
+  path: string;
+  /** The id of the blob its bytes are stored as, read off the bucket URL those bytes stream from
+   * (`…/blobs/<x>/<y>/<blob id>`). Null when that URL is not shaped that way, or is not known at all
+   * — an embargoed asset's is signed on demand rather than listed (see lib/embargoed.ts) — since a
+   * blob id guessed off some other URL shape would be worse than none. */
+  blobId: string | null;
+}
+
+/** The blob id a DANDI bucket URL ends in, or null for a URL not shaped like one. Held to a UUID so
+ * a differently-shaped URL yields nothing rather than whatever its last segment happened to be. */
+export function blobIdFromBucketUrl(url: string | null): string | null {
+  if (!url) return null;
+  const last = url.split("?")[0].split("/").filter(Boolean).pop() ?? "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(last) ? last : null;
+}
+
+/** Where one listed video came from, in the shape a delivery records it. */
+export function archiveSourceOf(video: ArchiveVideo): ArchiveSource {
+  return { dandisetId: video.dandisetId, path: video.path, blobId: blobIdFromBucketUrl(video.streamUrl) };
+}
+
 export interface ArchiveVideo {
   dandisetId: string;
   /** Path within the dataset, e.g. `sub-1/mice.mp4`. */

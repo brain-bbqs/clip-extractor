@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fakeArchiveBrowse, fromEmberSourcePath, fromEmberSourceUrl, readTestInjection } from "../../src/lib/testInjection";
+import { fakeArchiveBrowse, fromEmberArchiveSource, fromEmberSourceUrl, readTestInjection } from "../../src/lib/testInjection";
 
 describe("readTestInjection", () => {
   it("returns null when the page was not asked to fake anything", () => {
@@ -58,21 +58,26 @@ describe("the selection mock_ready marks", () => {
   });
 });
 
-describe("fromEmberSourcePath / fromEmberSourceUrl", () => {
+describe("fromEmberArchiveSource / fromEmberSourceUrl", () => {
   it("defaults from_ember to off — the 'dropped locally' case &from_local spells out", () => {
     expect(readTestInjection("?test&mock_video&from_local")).toMatchObject({ fromEmber: false });
   });
 
-  it("names a fixed, BIDS-entity-shaped path when from_ember is given", () => {
+  it("names the fake dandiset and a BIDS-entity-shaped path within it when from_ember is given", () => {
     const injection = readTestInjection("?test&mock_video&from_ember")!;
     expect(injection.fromEmber).toBe(true);
-    expect(fromEmberSourcePath(injection, "clip.mp4")).toBe("sub-01/ses-02/clip.mp4");
+    // No blob: the mock video is synthesized in the page and was never stored as one.
+    expect(fromEmberArchiveSource(injection, "clip.mp4")).toEqual({
+      dandisetId: "214000",
+      path: "sub-01/ses-02/clip.mp4",
+      blobId: null,
+    });
     expect(fromEmberSourceUrl(injection, "clip.mp4")).toBe("https://test-injection.invalid/sub-01/ses-02/clip.mp4");
   });
 
-  it("returns null without from_ember, leaving the mock video's source unnamed (sub-unknown)", () => {
+  it("returns null without from_ember, leaving the mock video belonging to no dataset (sub-unknown)", () => {
     const injection = readTestInjection("?test&mock_video&from_local")!;
-    expect(fromEmberSourcePath(injection, "clip.mp4")).toBeNull();
+    expect(fromEmberArchiveSource(injection, "clip.mp4")).toBeNull();
     expect(fromEmberSourceUrl(injection, "clip.mp4")).toBeNull();
   });
 });

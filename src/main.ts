@@ -49,11 +49,13 @@ import {
   dandisetWebUrl,
   fetchDandisetVideos,
   hydrateDandisetNames,
+  archiveSourceOf,
   indexDandisets,
   listManifestObjects,
   mergeDandisets,
   sweepArchiveVideos,
   type ArchiveDandiset,
+  type ArchiveSource,
   type ArchiveVideo,
 } from "./lib/archives";
 import {
@@ -116,8 +118,7 @@ import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type U
 import {
   fakeArchiveBrowse,
   fakeIncomingDatasets,
-  fromEmberDandisetId,
-  fromEmberSourcePath,
+  fromEmberArchiveSource,
   fromEmberSourceUrl,
   readTestInjection,
   synthesizeLongVideoFile,
@@ -198,17 +199,13 @@ interface AppState {
   sourceName: string;
   sourceUrl: string | null;
   sourceFile: File | null;
-  /** The video's own path within its dandiset, when it was opened out of the browse pane — e.g.
-   * `sub-1/mice.mp4`. Null for a locally dropped file or an arbitrary streamed URL, neither of
-   * which the archive has a path for. This is where a delivery's `sub-`/`ses-` entities come from
-   * (see lib/bidsPath.ts's behEntities); a delivery whose source names none falls back to
-   * `sub-unknown`. */
-  sourcePath: string | null;
-  /** The dandiset the video was opened out of, when it came from the archive — the one thing a
-   * delivery records about where its source came from, in the derivatives `SourceDatasets` (see
-   * lib/provenance.ts's `buildSourceDatasetEntry`). Null for a locally dropped file or a streamed
-   * URL that names no dataset, which leaves `SourceDatasets` out entirely. */
-  sourceDandisetId: string | null;
+  /** Where in the archive this video came from, when it was opened out of the browse pane — the
+   * dandiset, its path within it, and the blob its bytes are stored as. Null for a locally dropped
+   * file or an arbitrary streamed URL, neither of which the archive has any of this for. The path is
+   * where a delivery's `sub-`/`ses-` entities come from (see lib/bidsPath.ts's behEntities; one that
+   * names none falls back to `sub-unknown`), and the whole of it is what the derivatives
+   * `SourceDatasets` records (see lib/provenance.ts's `buildSourceDatasetEntry`). */
+  sourceArchive: ArchiveSource | null;
   cur: number;
   inF: number | null;
   outF: number | null;
@@ -254,8 +251,7 @@ const state: AppState = {
   sourceName: "",
   sourceUrl: null,
   sourceFile: null,
-  sourcePath: null,
-  sourceDandisetId: null,
+  sourceArchive: null,
   cur: 0,
   inF: null,
   outF: null,
@@ -522,10 +518,8 @@ async function loadVideo(
   name: string,
   url: string | null = null,
   report: LoadFailureReport = stageFailure,
-  /** The video's own path within its dandiset, when known — see AppState.sourcePath. */
-  sourcePath: string | null = null,
-  /** The dandiset it was opened out of, when known — see AppState.sourceDandisetId. */
-  sourceDandisetId: string | null = null,
+  /** Where in the archive it was opened from, when it was — see AppState.sourceArchive. */
+  archive: ArchiveSource | null = null,
 ): Promise<void> {
   stopPlay();
   clearLoadMessages();
@@ -556,8 +550,7 @@ async function loadVideo(
     state.viewCenter = 0;
     state.sourceName = name;
     state.sourceUrl = url;
-    state.sourcePath = sourcePath;
-    state.sourceDandisetId = sourceDandisetId;
+    state.sourceArchive = archive;
     // loadVideo fully owns source state: this is either the dropped File, the one the stream
     // fallback materialized, or null for a live-streamed URL — never a previous load's leftover.
     state.sourceFile = file;
@@ -2239,7 +2232,7 @@ async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
   // content hash — and for an embargoed file, the only one that will still resolve tomorrow.
   // Reported in the pane, like the refusals above it: a video picked out of a list is answered for
   // where the list is, whether or not another one is already playing on the stage.
-  void loadVideo(streamUrl, name, video.assetUrl, browseFailure, video.path, video.dandisetId);
+  void loadVideo(streamUrl, name, video.assetUrl, browseFailure, archiveSourceOf(video));
 }
 
 /**
@@ -2920,7 +2913,7 @@ function updateDeliveryGate(): void {
 function currentEntities(now: Date): AssetEntities {
   const [lo, hi] = state.mode === "frame" ? [state.cur, state.cur] : selRange();
   const mode: SelectionKind = state.mode === "frame" ? "frame" : "snippet";
-  return { sourceName: state.sourceName, mode, inFrame: lo, outFrame: hi, beh: behEntities(now, state.sourcePath) };
+  return { sourceName: state.sourceName, mode, inFrame: lo, outFrame: hi, beh: behEntities(now, state.sourceArchive?.path ?? null) };
 }
 
 /** Names the file the Save button is about to produce — the name alone, since it already spells out
@@ -3321,7 +3314,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // hand, same as any other file a bundle might collide with.
   const existing = (await params.existingDescriptions?.()) ?? { root: null, derivatives: null, sourcedata: null };
   const generatedByEntry = buildGeneratedByEntry();
-  const sourceDataset = buildSourceDatasetEntry(currentConfig().api, state.sourceDandisetId, state.sourcePath);
+  const sourceDataset = buildSourceDatasetEntry(currentConfig().api, state.sourceArchive);
   // Read off the module-level identity rather than `provenanceInput.user` (which is only ever set on
   // the upload route, since that field also drives the sidecar's own `uploaded_by`): a visitor can be
   // signed in while using Save, and deserves the same credit there.
@@ -3594,8 +3587,7 @@ async function applyMockVideo(): Promise<void> {
       file.name,
       fromEmberSourceUrl(testInjection, file.name),
       undefined,
-      fromEmberSourcePath(testInjection, file.name),
-      fromEmberDandisetId(testInjection),
+      fromEmberArchiveSource(testInjection, file.name),
     );
     if (testInjection.mockSlp) applyMockSlp();
     if (testInjection.mockReady) await applyMockReady(testInjection);
@@ -3608,8 +3600,7 @@ async function applyMockVideo(): Promise<void> {
       file.name,
       fromEmberSourceUrl(testInjection, file.name),
       undefined,
-      fromEmberSourcePath(testInjection, file.name),
-      fromEmberDandisetId(testInjection),
+      fromEmberArchiveSource(testInjection, file.name),
     );
     if (testInjection.mockReady) await applyMockReady(testInjection);
   }

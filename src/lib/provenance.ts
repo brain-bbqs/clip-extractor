@@ -1,3 +1,4 @@
+import type { ArchiveSource } from "./archives";
 import type { SourceDatasetEntry } from "./generatedBy";
 
 // A small sidecar written beside every upload, so a clip found later in the archive can be traced
@@ -19,16 +20,17 @@ export interface ProvenanceInput {
 
 /** The *dataset* this delivery's source video came out of, in the shape `lib/generatedBy.ts`'s
  * `SourceDatasets` entries take: the dandiset's own API `URL`, plus the archive-relative `Path` the
- * video sat at inside it. `SourceDatasets` means datasets in BIDS, so the entry leads with the
+ * video sat at inside it and the `BlobID` its bytes are stored as, when that is known. `SourceDatasets` means datasets in BIDS, so the entry leads with the
  * dataset and names the one asset within it as a detail, rather than the other way round.
  *
  * Null when the source names no dataset at all — a locally dropped file, or a streamed URL from
  * somewhere that is not an archive — which leaves `SourceDatasets` out rather than inventing an
  * entry for a dataset that does not exist. */
-export function buildSourceDatasetEntry(api: string, dandisetId: string | null, sourcePath: string | null): SourceDatasetEntry | null {
-  if (!dandisetId) return null;
-  const entry: SourceDatasetEntry = { URL: `${api}/dandisets/${dandisetId}` };
-  if (sourcePath) entry.Path = sourcePath;
+export function buildSourceDatasetEntry(api: string, source: ArchiveSource | null): SourceDatasetEntry | null {
+  if (!source) return null;
+  const entry: SourceDatasetEntry = { URL: `${api}/dandisets/${source.dandisetId}` };
+  if (source.path) entry.Path = source.path;
+  if (source.blobId) entry.BlobID = source.blobId;
   return entry;
 }
 

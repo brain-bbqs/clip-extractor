@@ -56,21 +56,25 @@ describe("videoTechnicalFields / imageTechnicalFields", () => {
 
 describe("buildSourceDatasetEntry", () => {
   const API = "https://api-dandi.emberarchive.org/api";
+  const source = { dandisetId: "000479", path: "sub-01/ses-02/beh/mice.mp4", blobId: "ca563ad5-7f29-4c90-8df5-a23a5446ea13" };
 
-  it("names the dandiset the source came out of, and the asset path within it", () => {
-    expect(buildSourceDatasetEntry(API, "000479", "sub-01/ses-02/beh/mice.mp4")).toEqual({
+  it("names the dandiset the source came out of, the asset path within it, and its blob", () => {
+    expect(buildSourceDatasetEntry(API, source)).toEqual({
+      URL: `${API}/dandisets/000479`,
+      Path: "sub-01/ses-02/beh/mice.mp4",
+      BlobID: "ca563ad5-7f29-4c90-8df5-a23a5446ea13",
+    });
+  });
+
+  it("omits the blob when the archive never named one — an embargoed asset, say", () => {
+    expect(buildSourceDatasetEntry(API, { ...source, blobId: null })).toEqual({
       URL: `${API}/dandisets/000479`,
       Path: "sub-01/ses-02/beh/mice.mp4",
     });
   });
 
-  it("names the dandiset alone when the path within it is not known", () => {
-    expect(buildSourceDatasetEntry(API, "000479", null)).toEqual({ URL: `${API}/dandisets/000479` });
-  });
-
   it("names nothing for a source that belongs to no dataset — a locally dropped file", () => {
-    expect(buildSourceDatasetEntry(API, null, null)).toBeNull();
-    expect(buildSourceDatasetEntry(API, null, "sub-01/ses-02/beh/mice.mp4")).toBeNull();
+    expect(buildSourceDatasetEntry(API, null)).toBeNull();
   });
 });
 

@@ -54,10 +54,12 @@ export interface SourceDatasetEntry {
   URL?: string;
   DOI?: string;
   Version?: string;
-  /** Where the source video sat inside that dataset, archive-relative. Not part of the vocabulary
-   * BIDS defines for this object — the entry it belongs to still names a dataset, as BIDS means it,
-   * and this only says which of its assets was actually read. */
+  /** Where the source video sat inside that dataset, archive-relative, and the id of the blob its
+   * bytes are stored as. Neither is part of the vocabulary BIDS defines for this object — the entry
+   * they belong to still names a dataset, as BIDS means it, and these only say which of its assets
+   * was actually read, by path and by the archive's own content-addressed id for it. */
   Path?: string;
+  BlobID?: string;
 }
 
 // No index signature here deliberately: combined with `Omit`, one turns every field's type into the
