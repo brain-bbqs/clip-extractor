@@ -67,13 +67,13 @@ describe("overlayFileName", () => {
 describe("bundleFileName", () => {
   // No BIDS entities at all: the bundle is a download, not a file in the tree it holds, and stops
   // existing the moment it is unpacked (see this module's own header comment).
-  it("names the bundle after the dandiset it is destined for", () => {
+  it("names the bundle after the dandiset its source video came out of", () => {
     expect(bundleFileName("000123")).toBe("000123.tar.gz");
   });
 
-  it("falls back to the pipeline's own name when no dataset is picked — a signed-out Save", () => {
-    expect(bundleFileName("")).toBe("clip-extractor.tar.gz");
-    expect(bundleFileName("   ")).toBe("clip-extractor.tar.gz");
+  it("falls back to local-dataset for a video that came from no dataset — a locally dropped file", () => {
+    expect(bundleFileName(null)).toBe("local-dataset.tar.gz");
+    expect(bundleFileName("")).toBe("local-dataset.tar.gz");
   });
 });
 

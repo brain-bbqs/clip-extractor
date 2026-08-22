@@ -5,7 +5,7 @@ import { drawPose } from "./pose";
 import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
 import type { StreamingVideoBackend } from "./streaming";
 import type { SelectionKind } from "./delivery";
-import { behFilename, behSidecarName, DERIVATIVES_PIPELINE, type BehEntities } from "./bidsPath";
+import { behFilename, behSidecarName, type BehEntities } from "./bidsPath";
 import type { PoseModel, SleapVideoBackend, TrimMode } from "./types";
 
 // Turns the current selection into a single file, ready for either delivery route (download or
@@ -70,14 +70,13 @@ export function sidecarFileName(beh: BehEntities, mode: SelectionKind, desc?: st
 
 /** The saved bundle: every file an upload would have written, tarred and gzipped into one download.
  *
- * Named for the dandiset it is destined for, or `clip-extractor` when no dataset is picked (a
- * signed-out Save, say). Deliberately carries none of BEP047's entities — not the subject, not this
- * delivery's own stamp: it is a download, and the moment it is unpacked it stops existing, leaving
- * the entity-named tree inside it. A name built from a subject would also have claimed the bundle
- * holds only that subject, which is not something the container itself promises. Naming it after the
- * dandiset instead says the one thing about it worth knowing before unpacking: where it belongs. */
-export function bundleFileName(dandisetId: string): string {
-  return `${dandisetId.trim() || DERIVATIVES_PIPELINE}.tar.gz`;
+ * Named for the dandiset the source video came out of, or `local-dataset` for a video that came from
+ * no dataset at all — a locally dropped file. Deliberately carries none of BEP047's entities — not
+ * the subject, not this delivery's own stamp: it is a download, and the moment it is unpacked it
+ * stops existing, leaving the entity-named tree inside it. Naming it after the source dandiset says
+ * the one thing about it worth knowing before unpacking: which dataset's recording is inside. */
+export function bundleFileName(sourceDandisetId: string | null): string {
+  return `${sourceDandisetId?.trim() || "local-dataset"}.tar.gz`;
 }
 
 /** The same selection with the pose drawn into the pixels — `desc-overlay` where the plain extract

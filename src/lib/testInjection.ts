@@ -203,16 +203,23 @@ function pad2(n: number): string {
  * where the two entities happen to share a number. */
 const FROM_EMBER_PATH_PREFIX = `sub-${pad2(1)}/ses-${pad2(2)}`;
 
-/** Where an EMBER-sourced mock video reads as having come from: the same
- * {@link FAKE_DANDISET_ID_BASE} the fake dataset list hands out, at {@link FROM_EMBER_PATH_PREFIX},
- * so `?test&...&from_ember` previews the whole `SourceDatasets` entry a real Browse EMBER selection
- * produces (see lib/provenance.ts's `buildSourceDatasetEntry`) rather than only its subject/session
- * half. No `blobId`: this video is synthesized in the page and was never stored as a blob, and a
+/** The fake dandiset an EMBER-sourced mock video reads as having come out of — deliberately NOT one
+ * of the {@link FAKE_DANDISET_ID_BASE} destination datasets, so a preview keeps its source and its
+ * destination visibly distinct (a bundle named `200123.tar.gz` destined for a `214000` upload), the
+ * way a real extraction's usually are. Same reasoning as that base otherwise: six digits like a real
+ * id, far above EMBER's sequential range, so nothing can collide with it. */
+const FROM_EMBER_DANDISET_ID = "200123";
+
+/** Where an EMBER-sourced mock video reads as having come from: {@link FROM_EMBER_DANDISET_ID}, at
+ * {@link FROM_EMBER_PATH_PREFIX}, so `?test&...&from_ember` previews the whole `SourceDatasets`
+ * entry (and the source-named bundle) a real Browse EMBER selection produces (see lib/provenance.ts's
+ * `buildSourceDatasetEntry` and lib/extract.ts's `bundleFileName`) rather than only its
+ * subject/session half. No `blobId`: this video is synthesized in the page and was never stored as a blob, and a
  * made-up id would be the one part of the preview that is not a truthful stand-in for the real
  * thing. Null without `from_ember`, whose "dropped locally" case belongs to no dataset at all. */
 export function fromEmberArchiveSource(injection: TestInjection, filename: string): ArchiveSource | null {
   if (!injection.fromEmber) return null;
-  return { dandisetId: String(FAKE_DANDISET_ID_BASE), path: `${FROM_EMBER_PATH_PREFIX}/${filename}`, blobId: null };
+  return { dandisetId: FROM_EMBER_DANDISET_ID, path: `${FROM_EMBER_PATH_PREFIX}/${filename}`, blobId: null };
 }
 
 /** A fake asset URL for the same video {@link fromEmberArchiveSource} places — resolving nowhere

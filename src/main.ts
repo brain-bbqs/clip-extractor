@@ -2925,7 +2925,7 @@ function updateDeliveryPreview(): void {
   const show = state.backend !== null && hasSelection();
   els.downloadPreview.hidden = !show;
   if (!show) return;
-  els.downloadPreviewName.textContent = bundleFileName(currentConfig().dandisetId);
+  els.downloadPreviewName.textContent = bundleFileName(state.sourceArchive?.dandisetId ?? null);
 }
 
 function setDeliveryBusy(busy: boolean): void {
@@ -3357,7 +3357,7 @@ async function runDownload(): Promise<void> {
     });
     setStatus(els.downloadStatus, "Packing the bundle…");
     const bundle = await tarGzip(bundled, createdAt);
-    const filename = bundleFileName(currentConfig().dandisetId);
+    const filename = bundleFileName(state.sourceArchive?.dandisetId ?? null);
     saveBlob(bundle, filename);
     setDeliveryBusy(false);
     setStatusNaming(els.downloadStatus, "Saved ", filename, ` (${bundled.length} files, ${bytes(bundle.size)})`, "ok");

@@ -66,9 +66,11 @@ describe("fromEmberArchiveSource / fromEmberSourceUrl", () => {
   it("names the fake dandiset and a BIDS-entity-shaped path within it when from_ember is given", () => {
     const injection = readTestInjection("?test&mock_video&from_ember")!;
     expect(injection.fromEmber).toBe(true);
-    // No blob: the mock video is synthesized in the page and was never stored as one.
+    // No blob: the mock video is synthesized in the page and was never stored as one. The source
+    // dandiset is deliberately not one of the fake destination datasets (214000 and up), so a
+    // preview keeps its source and its destination visibly distinct.
     expect(fromEmberArchiveSource(injection, "clip.mp4")).toEqual({
-      dandisetId: "214000",
+      dandisetId: "200123",
       path: "sub-01/ses-02/clip.mp4",
       blobId: null,
     });

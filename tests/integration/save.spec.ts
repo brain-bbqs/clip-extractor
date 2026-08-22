@@ -57,12 +57,12 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   await page.locator("#selectionDescription").fill("The mouse leaves frame here — the tracker keeps a stale track.");
   await expect(page.locator("#btnDownload")).toBeEnabled();
 
-  // The button names the bundle before it is written. Signed out there is no dataset to name it
-  // after, so it falls back to the pipeline's own name; none of BEP047's entities appear on it.
-  await expect(page.locator("#downloadPreviewName")).toHaveText(/^clip-extractor\.tar\.gz$/);
+  // The button names the bundle before it is written. A locally dropped video came from no dataset,
+  // so the name falls back to local-dataset; none of BEP047's entities appear on it.
+  await expect(page.locator("#downloadPreviewName")).toHaveText(/^local-dataset\.tar\.gz$/);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toMatch(/^clip-extractor\.tar\.gz$/);
+  expect(download.suggestedFilename()).toMatch(/^local-dataset\.tar\.gz$/);
   await expect(page.locator("#downloadStatus")).toContainText("Saved");
 
   const entries = listTar(readFileSync((await download.path())!));
@@ -172,9 +172,9 @@ test("leaving the original out saves the extract and its sidecar alone, plus all
 // The two `&snippet` cases stop at the state Save would write from rather than pressing it: a real
 // snippet extraction needs ffmpeg.wasm off a CDN, which no spec in this suite depends on (see
 // blur.spec.ts's own header comment). What is skipped is the encode, not the thing under test — the
-// marked range and the selector mode below are the selection itself. The bundle name is checked too,
-// but proves less than it looks: with no dataset picked it is `clip-extractor.tar.gz` in every one
-// of these four cases, since the container carries none of BEP047's entities.
+// marked range and the selector mode below are the selection itself. The bundle name is the other
+// half of the source split: named after the source dandiset (`200123.tar.gz`) for the from_ember
+// cases, and `local-dataset.tar.gz` for the from_local ones, which came from no dataset at all.
 
 const MOCK_FRAME = "12";
 const MOCK_RANGE = { in: "6", out: "21" };
@@ -189,7 +189,7 @@ test("?test&mock_video&mock_ready&from_local&frame saves a still frame of a loca
   await expect(page.locator("#curVal")).toHaveValue(MOCK_FRAME);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toBe("clip-extractor.tar.gz");
+  expect(download.suggestedFilename()).toBe("local-dataset.tar.gz");
 
   const entries = listTar(readFileSync((await download.path())!));
   // Dropped locally: the sub-unknown fallback, a recording- directory, and no dataset for
@@ -215,7 +215,7 @@ test("?test&mock_video&mock_ready&from_local&snippet marks a real range of a loc
   await expect(page.locator("#inVal")).toHaveValue(MOCK_RANGE.in);
   await expect(page.locator("#outVal")).toHaveValue(MOCK_RANGE.out);
   await expect(page.locator("#curVal")).toHaveValue(MOCK_RANGE.in);
-  await expect(page.locator("#downloadPreviewName")).toHaveText("clip-extractor.tar.gz");
+  await expect(page.locator("#downloadPreviewName")).toHaveText("local-dataset.tar.gz");
 });
 
 test("?test&mock_video&mock_ready&from_ember&frame saves a still frame of an archive-sourced video", async ({ page }) => {
@@ -228,7 +228,7 @@ test("?test&mock_video&mock_ready&from_ember&frame saves a still frame of an arc
   await expect(page.locator("#curVal")).toHaveValue(MOCK_FRAME);
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toBe("clip-extractor.tar.gz");
+  expect(download.suggestedFilename()).toBe("200123.tar.gz");
 
   const entries = listTar(readFileSync((await download.path())!));
   expect(entries[0].path).toMatch(
@@ -241,7 +241,7 @@ test("?test&mock_video&mock_ready&from_ember&frame saves a still frame of an arc
   // not dropped locally, which is the "more advanced metadata" from_ember exists to preview.
   expect(derivativesDescription.SourceDatasets).toEqual([
     {
-      URL: "https://api-dandi.emberarchive.org/api/dandisets/214000",
+      URL: "https://api-dandi.emberarchive.org/api/dandisets/200123",
       Path: "sub-01/ses-02/test-injection-mock-video.mp4",
     },
   ]);
@@ -256,23 +256,24 @@ test("?test&mock_video&mock_ready&from_ember&snippet marks a real range of an ar
   await expect(page.locator("#inVal")).toHaveValue(MOCK_RANGE.in);
   await expect(page.locator("#outVal")).toHaveValue(MOCK_RANGE.out);
   await expect(page.locator("#curVal")).toHaveValue(MOCK_RANGE.in);
-  await expect(page.locator("#downloadPreviewName")).toHaveText("clip-extractor.tar.gz");
+  await expect(page.locator("#downloadPreviewName")).toHaveText("200123.tar.gz");
 });
 
-test("the bundle is named after the dataset it is destined for, when one is picked", async ({ page }) => {
+test("the bundle stays named after its source dandiset even with an upload destination picked", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
-  // `num_datasets=1` picks the fake dandiset FAKE_DANDISET_ID_BASE (see lib/testInjection.ts), which
-  // is what the bundle is named after — the one thing worth knowing about the container before
-  // unpacking it. Without a dataset the other tests here fall back to `clip-extractor.tar.gz`.
+  // `num_datasets=1` picks the fake destination dandiset 214000 (see lib/testInjection.ts's
+  // FAKE_DANDISET_ID_BASE), while from_ember's own source is 200123. The bundle names where the
+  // recording came FROM, not where it is going — the destination is the archive's business, and it
+  // is what would swallow the files were this an upload instead of a save.
   await page.goto("/?test&mock_video&mock_ready&from_ember&frame&num_datasets=1");
   await expect(page.locator("#dandisetSingleText")).toContainText("214000");
   // With a dataset to upload to, that is the side the delivery card leads with — so Save has to be
   // asked for before its button is the one on screen.
   await page.locator('#deliverSeg button[data-deliver="download"]').click();
-  await expect(page.locator("#downloadPreviewName")).toHaveText("214000.tar.gz");
+  await expect(page.locator("#downloadPreviewName")).toHaveText("200123.tar.gz");
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  expect(download.suggestedFilename()).toBe("214000.tar.gz");
+  expect(download.suggestedFilename()).toBe("200123.tar.gz");
 });
 
 test("&frame=<n> and &snippet=<lo>-<hi> pick their own indices, held to the video's own bounds", async ({ page }) => {
