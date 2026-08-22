@@ -9,7 +9,7 @@ import {
   type ProvenanceInput,
 } from "../../src/lib/provenance";
 
-const digest: FileDigest = { md5: "1".repeat(32), dandiEtag: `${"a".repeat(32)}-1` };
+const digest: FileDigest = { md5: "1".repeat(32), sha256: "2".repeat(64), dandiEtag: `${"a".repeat(32)}-1` };
 
 const base: ProvenanceInput = { description: null };
 
@@ -96,9 +96,10 @@ describe("buildBehSidecar", () => {
     expect(buildBehSidecar(base, technical, digest).Description).toBeNull();
   });
 
-  it("names this file's own MD5 and dandi-etag under Checksum, SPDX-shaped", () => {
+  it("names this file's own SHA-256, MD5 and dandi-etag under Checksum, SPDX-shaped", () => {
     const sidecar = buildBehSidecar(base, technical, digest);
     expect(sidecar.Checksum).toEqual([
+      { ChecksumAlgorithm: "spdx:checksumAlgorithm_sha256", ChecksumValue: digest.sha256 },
       { ChecksumAlgorithm: "spdx:checksumAlgorithm_md5", ChecksumValue: digest.md5 },
       { ChecksumAlgorithm: "dandi:dandi-etag", ChecksumValue: digest.dandiEtag },
     ]);
@@ -124,6 +125,7 @@ describe("buildCompanionSidecar", () => {
       Description: "The untouched original.",
       Sources: ["sourcedata/sub-1/beh/mice.mp4"],
       Checksum: [
+        { ChecksumAlgorithm: "spdx:checksumAlgorithm_sha256", ChecksumValue: digest.sha256 },
         { ChecksumAlgorithm: "spdx:checksumAlgorithm_md5", ChecksumValue: digest.md5 },
         { ChecksumAlgorithm: "dandi:dandi-etag", ChecksumValue: digest.dandiEtag },
       ],

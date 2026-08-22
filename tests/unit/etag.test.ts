@@ -3,7 +3,7 @@
 // run against node's own Blob instead of this suite's default DOM environment.
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { combineDigests, computeDandiEtag, planParts } from "../../src/lib/etag";
+import { combineDigests, computeDandiEtag, computeMd5, computeSha256, planParts } from "../../src/lib/etag";
 import type { FilePart } from "../../src/lib/types";
 
 const MB = 2 ** 20;
@@ -84,5 +84,34 @@ describe("computeDandiEtag", () => {
 describe("combineDigests", () => {
   it("suffixes the digest with the part count", () => {
     expect(combineDigests(new Uint8Array(32), 2).endsWith("-2")).toBe(true);
+  });
+});
+
+describe("computeMd5 / computeSha256", () => {
+  // Both stream the blob in 16MB reads rather than buffering it whole, so the multi-chunk cases
+  // below are the ones that actually exercise that loop rather than a single pass over one slice.
+  const reference = (algo: string, bytes: Uint8Array) => createHash(algo).update(bytes).digest("hex");
+
+  it("matches node's own digest for a blob smaller than one chunk", async () => {
+    const bytes = filled(2048);
+    expect(await computeMd5(new Blob([bytes]))).toBe(reference("md5", bytes));
+    expect(await computeSha256(new Blob([bytes]))).toBe(reference("sha256", bytes));
+  });
+
+  it("matches it across the chunk boundary too, where the streaming loop actually runs", async () => {
+    const bytes = filled(40 * MB);
+    expect(await computeMd5(new Blob([bytes]))).toBe(reference("md5", bytes));
+    expect(await computeSha256(new Blob([bytes]))).toBe(reference("sha256", bytes));
+  });
+
+  it("matches it for an empty blob, which the loop never enters for", async () => {
+    expect(await computeSha256(new Blob([]))).toBe(reference("sha256", new Uint8Array(0)));
+  });
+
+  it("reports progress that ends at 1", async () => {
+    const seen: number[] = [];
+    await computeSha256(new Blob([filled(40 * MB)]), (f) => seen.push(f));
+    expect(seen.at(-1)).toBe(1);
+    expect(seen).toEqual([...seen].sort((a, b) => a - b));
   });
 });

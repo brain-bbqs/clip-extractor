@@ -117,20 +117,22 @@ export function imageTechnicalFields(width: number, height: number, detail: Tech
 }
 
 /** A blob's own digests, in the shape a sidecar's `Checksum` field takes — see `checksumField`. Named
- * apart from `ProvenanceChecksum` (this app's own `{algorithm, value}` shape, used elsewhere in this
- * file) since a sidecar's `Checksum` names both a plain MD5 and the dandi-etag, not just one. */
+ * a sidecar's `Checksum` names all three of a file's digests, not just the one the archive uses. */
 export interface FileDigest {
   md5: string;
+  sha256: string;
   dandiEtag: string;
 }
 
 /** One entry of a sidecar's own `Checksum` list — two free-form keys, not a BEP047 or BEP028 field
  * (neither proposal defines one), following the SPDX checksum shape (`ChecksumAlgorithm`,
  * `ChecksumValue`) since that is a widely recognized way to write "this algorithm produced this
- * digest" without inventing a shape of this app's own. `spdx:checksumAlgorithm_md5` names a plain
- * whole-file MD5 (lib/etag.ts's `computeMd5`); `dandi:dandi-etag` is not itself an SPDX algorithm, but
- * is the identifier the archive addresses the blob by, so it travels here as its own entry rather than
- * being left out for not fitting SPDX's own enum. */
+ * digest" without inventing a shape of this app's own. `spdx:checksumAlgorithm_sha256` and
+ * `spdx:checksumAlgorithm_md5` name plain whole-file digests (lib/etag.ts's `computeSha256`/
+ * `computeMd5`), SHA-256 first as the one most tooling outside the archive reaches for;
+ * `dandi:dandi-etag` is not itself an SPDX algorithm, but is the identifier the archive addresses the
+ * blob by, so it travels here as its own entry rather than being left out for not fitting SPDX's own
+ * enum. */
 export interface SidecarChecksum {
   ChecksumAlgorithm: string;
   ChecksumValue: string;
@@ -138,6 +140,7 @@ export interface SidecarChecksum {
 
 function checksumField(digest: FileDigest): SidecarChecksum[] {
   return [
+    { ChecksumAlgorithm: "spdx:checksumAlgorithm_sha256", ChecksumValue: digest.sha256 },
     { ChecksumAlgorithm: "spdx:checksumAlgorithm_md5", ChecksumValue: digest.md5 },
     { ChecksumAlgorithm: "dandi:dandi-etag", ChecksumValue: digest.dandiEtag },
   ];

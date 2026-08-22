@@ -1,3 +1,4 @@
+import { createSHA256 } from "hash-wasm";
 import SparkMD5 from "spark-md5";
 import type { FilePart } from "./types";
 
@@ -115,4 +116,27 @@ export async function computeMd5(blob: Blob, onProgress: (fraction: number) => v
   }
   onProgress(1);
   return spark.end();
+}
+
+/** Plain whole-file SHA-256, streamed in the same HASH_CHUNK-sized reads as `computeMd5` above so a
+ * large source video never lands in memory whole. Web Crypto's own `crypto.subtle.digest` cannot do
+ * this — it has no incremental API, so it would need the entire file buffered at once — hence
+ * hash-wasm, whose hashers take the bytes a chunk at a time the way SparkMD5 does. A separate pass
+ * over the bytes, for the same reason `computeMd5` is one. */
+export async function computeSha256(blob: Blob, onProgress: (fraction: number) => void = () => {}): Promise<string> {
+  const hasher = await createSHA256();
+  hasher.init();
+  let read = 0;
+  while (read < blob.size) {
+    const n = Math.min(HASH_CHUNK, blob.size - read);
+    const buf = await blob.slice(read, read + n).arrayBuffer();
+    if (buf.byteLength !== n) {
+      throw new Error("The source file changed while hashing — please re-load it.");
+    }
+    hasher.update(new Uint8Array(buf));
+    read += n;
+    onProgress(blob.size ? read / blob.size : 1);
+  }
+  onProgress(1);
+  return hasher.digest("hex");
 }

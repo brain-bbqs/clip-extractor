@@ -7,8 +7,8 @@ import type { ArchiveConfig, Asset, FilePart } from "../../src/lib/types";
 
 vi.mock("../../src/lib/api");
 vi.mock("../../src/lib/s3");
-// jsdom has no Blob.arrayBuffer(), which the real checksum walks the blob with; both digests are
-// covered against reference implementations in etag.test.ts.
+// jsdom has no Blob.arrayBuffer(), which the real checksum walks the blob with; all three digests
+// are covered against reference implementations in etag.test.ts.
 vi.mock("../../src/lib/etag", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/lib/etag")>()),
   computeDandiEtag: vi.fn((_blob: Blob, _parts: unknown, onProgress?: (fraction: number) => void) => {
@@ -18,6 +18,10 @@ vi.mock("../../src/lib/etag", async (importOriginal) => ({
   computeMd5: vi.fn((_blob: Blob, onProgress?: (fraction: number) => void) => {
     onProgress?.(1);
     return Promise.resolve("1".repeat(32));
+  }),
+  computeSha256: vi.fn((_blob: Blob, onProgress?: (fraction: number) => void) => {
+    onProgress?.(1);
+    return Promise.resolve("2".repeat(64));
   }),
 }));
 
@@ -186,9 +190,14 @@ describe("uploadAsset", () => {
     });
 
     expect(asset).toEqual({ asset_id: "a1", path: "p" });
-    // Two full passes over the bytes — the dandi-etag, then the plain MD5 (see checksumBlob) —
-    // reported as one smooth 0..1 rather than a bar that fills and resets: 0.5, then 1.
-    expect(phases).toEqual(expect.arrayContaining(["checksum:0.5", "checksum:1"]));
+    // Three full passes over the bytes — the dandi-etag, the plain MD5, then the SHA-256 — reported
+    // as one smooth, ascending 0..1 rather than a bar that fills and resets twice: each pass ends a
+    // third further along, the last of them at 1.
+    const checksumFractions = phases.filter((p) => p.startsWith("checksum:")).map((p) => Number(p.split(":")[1]));
+    expect(checksumFractions).toHaveLength(3);
+    expect(checksumFractions[0]).toBeCloseTo(1 / 3);
+    expect(checksumFractions[1]).toBeCloseTo(2 / 3);
+    expect(checksumFractions[2]).toBe(1);
     expect(phases.at(-1)).toBe("register:1");
     const created = apiFetchMock.mock.calls.find(([, path]) => path === "/dandisets/000123/versions/draft/assets/")!;
     expect(created[2]).toEqual({

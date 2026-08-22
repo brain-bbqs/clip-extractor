@@ -1,7 +1,7 @@
 import type { ArchiveConfig, Asset, CompletedPart, FilePart, UploadInitResponse } from "./types";
 import { apiFetch } from "./api";
 import { ApiError } from "./errors";
-import { computeDandiEtag, computeMd5, planParts } from "./etag";
+import { computeDandiEtag, computeMd5, computeSha256, planParts } from "./etag";
 import { runQueue } from "./queue";
 import { uploadPartWithRetry } from "./s3";
 
@@ -142,16 +142,19 @@ export type UploadPhase = "checksum" | "upload" | "register";
 export interface BlobDigest {
   etag: string;
   md5: string;
+  sha256: string;
   parts: FilePart[];
 }
 
 export async function checksumBlob(blob: Blob, onProgress?: (fraction: number) => void): Promise<BlobDigest> {
   const parts = planParts(blob.size);
-  // Two full passes over the bytes — the dandi-etag and the plain MD5 are different digests (see
-  // lib/etag.ts's computeMd5) — reported as one smooth 0..1 rather than a bar that fills and resets.
-  const etag = await computeDandiEtag(blob, parts, (f) => onProgress?.(f * 0.5));
-  const md5 = await computeMd5(blob, (f) => onProgress?.(0.5 + f * 0.5));
-  return { etag, md5, parts };
+  // Three full passes over the bytes — the dandi-etag, the plain MD5 and the SHA-256 are all
+  // different digests (see lib/etag.ts's computeMd5) — reported as one smooth 0..1 rather than a bar
+  // that fills and resets twice.
+  const etag = await computeDandiEtag(blob, parts, (f) => onProgress?.(f / 3));
+  const md5 = await computeMd5(blob, (f) => onProgress?.((1 + f) / 3));
+  const sha256 = await computeSha256(blob, (f) => onProgress?.((2 + f) / 3));
+  return { etag, md5, sha256, parts };
 }
 
 export interface UploadAssetParams {

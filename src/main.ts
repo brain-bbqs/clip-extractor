@@ -3099,7 +3099,7 @@ async function deliverOverlay(
     description: "The selection with the pose overlay drawn into the pixels.",
     technical,
     sources: [mediaPath],
-    checksum: { md5: digest.md5, dandiEtag: digest.etag },
+    checksum: { md5: digest.md5, sha256: digest.sha256, dandiEtag: digest.etag },
   });
   const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
   const sidecarPath = uploadAssetPath(directory, sidecarFileName(entities.beh, entities.mode, "overlay"));
@@ -3168,7 +3168,7 @@ async function deliverOriginalVideo(
     description: "The source video this selection was clipped from.",
     technical: videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames, sourceDetail),
     sources: [],
-    checksum: { md5: originalDigest.md5, dandiEtag: originalDigest.etag },
+    checksum: { md5: originalDigest.md5, sha256: originalDigest.sha256, dandiEtag: originalDigest.etag },
   });
   return { original, originalDigest, originalPath };
 }
@@ -3292,7 +3292,11 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
     kind === "frame"
       ? imageTechnicalFields(state.width, state.height)
       : videoTechnicalFields(state.fps, state.width, state.height, hi - lo + 1, { codec: media.codec });
-  const sidecar = buildBehSidecar(provenanceInput, technical, { md5: mediaDigest.md5, dandiEtag: mediaDigest.etag });
+  const sidecar = buildBehSidecar(provenanceInput, technical, {
+    md5: mediaDigest.md5,
+    sha256: mediaDigest.sha256,
+    dandiEtag: mediaDigest.etag,
+  });
   const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
   const sidecarPath = uploadAssetPath(directories.derivatives, sidecarFileName(beh, kind));
   const sidecarLabel = "the sidecar record";
