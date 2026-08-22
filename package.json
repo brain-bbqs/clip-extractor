@@ -1,6 +1,6 @@
 {
   "name": "clip-extractor",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A single-page video player for selecting a frame range and extracting it as an upload-ready payload, built on sleap-io.js and ffmpeg.wasm.",
   "type": "module",
   "license": "MIT",
@@ -24,6 +24,7 @@
     "@ffmpeg/util": "^0.12.2",
     "@talmolab/sleap-io.js": "^0.5.9",
     "h5wasm": "^0.10.3",
+    "hash-wasm": "^4.12.0",
     "mediabunny": "^1.52.3",
     "spark-md5": "^3.0.2"
   },

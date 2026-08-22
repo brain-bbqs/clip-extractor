@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  archiveSourceOf,
+  blobIdFromBucketUrl,
   canSweep,
   dandisetWebUrl,
   fetchDandisetName,
@@ -343,5 +345,49 @@ describe("sweepArchiveVideos", () => {
 describe("dandisetWebUrl", () => {
   it("points at the dataset's own page in the archive", () => {
     expect(dandisetWebUrl(publicDandiset("000265"))).toBe("https://dandi.emberarchive.org/dandiset/000265/draft");
+  });
+});
+
+describe("blobIdFromBucketUrl / archiveSourceOf", () => {
+  const BLOB = "ca563ad5-7f29-4c90-8df5-a23a5446ea13";
+
+  it("reads the blob id off the end of a bucket URL", () => {
+    expect(blobIdFromBucketUrl(`https://bucket.example/blobs/ca5/63a/${BLOB}`)).toBe(BLOB);
+  });
+
+  it("ignores a query string on the way", () => {
+    expect(blobIdFromBucketUrl(`https://bucket.example/blobs/ca5/63a/${BLOB}?X-Amz-Signature=abc`)).toBe(BLOB);
+  });
+
+  it("names nothing for a URL whose last segment is not a blob id, rather than guessing", () => {
+    expect(blobIdFromBucketUrl("https://api.example/api/assets/asset-3/download/")).toBeNull();
+    expect(blobIdFromBucketUrl("https://bucket.example/blobs/a/b/3")).toBeNull();
+    expect(blobIdFromBucketUrl(null)).toBeNull();
+  });
+
+  it("carries the dandiset, the path and the blob a listed video came from", () => {
+    expect(
+      archiveSourceOf({
+        dandisetId: "000479",
+        path: "sub-01/mice.mp4",
+        size: 1,
+        assetUrl: "https://api.example/api/assets/asset-3/download/",
+        streamUrl: `https://bucket.example/blobs/ca5/63a/${BLOB}`,
+        embargoed: false,
+      }),
+    ).toEqual({ dandisetId: "000479", path: "sub-01/mice.mp4", blobId: BLOB });
+  });
+
+  it("leaves the blob unnamed for an embargoed asset, whose bucket URL is signed on demand", () => {
+    expect(
+      archiveSourceOf({
+        dandisetId: "000479",
+        path: "sub-01/mice.mp4",
+        size: 1,
+        assetUrl: "https://api.example/api/assets/asset-3/download/",
+        streamUrl: null,
+        embargoed: true,
+      }).blobId,
+    ).toBeNull();
   });
 });

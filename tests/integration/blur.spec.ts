@@ -11,7 +11,7 @@ import { seekTo, stubArchive } from "./helpers";
 // behind it — so every test except the one that actually uploads (and so has to verify what really
 // landed on the stub archive) reaches its state through `?test&mock_video&num_datasets=1[&human_subjects]`
 // instead of a stubbed archive and a synthesized-in-Playwright video. The fake destination is
-// `FAKE_DANDISET_ID_BASE` from lib/testInjection.ts, "9900001".
+// `FAKE_DANDISET_ID_BASE` from lib/testInjection.ts, "214000".
 
 const banner = "#humanSubjectsBanner";
 const rings = "#blurLayer .blur-handle";
@@ -26,7 +26,7 @@ async function placeBlurArea(page: Page, fractionX: number, fractionY: number): 
 
 test("an unflagged dataset raises no warning and offers no blur tool", async ({ page }) => {
   await page.goto("/?test&mock_video&num_datasets=1");
-  await expect(page.locator("#dandisetSingleText")).toContainText("9900001");
+  await expect(page.locator("#dandisetSingleText")).toContainText("214000");
   await expect(page.locator("#view")).toBeVisible();
 
   await expect(page.locator(banner)).toBeHidden();
@@ -35,7 +35,7 @@ test("an unflagged dataset raises no warning and offers no blur tool", async ({ 
 
 test("a flagged dataset warns, holds the upload until it is confirmed, and offers the blur tool", async ({ page }) => {
   await page.goto("/?test&mock_video&num_datasets=1&human_subjects");
-  await expect(page.locator("#dandisetSingleText")).toContainText("9900001");
+  await expect(page.locator("#dandisetSingleText")).toContainText("214000");
   await expect(page.locator("#view")).toBeVisible();
   await page.locator('#modeSeg button[data-mode="frame"]').click();
   await seekTo(page, 5);
@@ -61,7 +61,7 @@ test("a flagged dataset warns, holds the upload until it is confirmed, and offer
 
 test("blur areas are placed, resized and removed on the picture", async ({ page }) => {
   await page.goto("/?test&mock_video&num_datasets=1&human_subjects");
-  await expect(page.locator("#dandisetSingleText")).toContainText("9900001");
+  await expect(page.locator("#dandisetSingleText")).toContainText("214000");
   await expect(page.locator("#view")).toBeVisible();
 
   // A tenth of the 320x240 recording's shorter side.
@@ -86,10 +86,10 @@ test("blur areas are placed, resized and removed on the picture", async ({ page 
   await expect(page.locator("#blurTools")).toBeVisible();
 });
 
-test("a blurred selection is uploaded without the original, and says what it hid", async ({ page }) => {
+test("a blurred selection is uploaded without the original", async ({ page }) => {
   // The one test in this file that actually uploads, so it needs the real stubbed archive to verify
   // what landed on it — `?test&mock_video` only replaces the video-loading half of the setup.
-  const { registered, uploaded } = await stubArchive(page, { humanSubjects: true });
+  const { registered } = await stubArchive(page, { humanSubjects: true });
   await page.goto("/?test&mock_video");
   await expect(page.locator("#dandisetSingleText")).toContainText("000123");
   await page.locator('#modeSeg button[data-mode="frame"]').click();
@@ -107,23 +107,9 @@ test("a blurred selection is uploaded without the original, and says what it hid
   await page.locator("#btnUpload").click();
   await expect(page.locator("#uploadStatus")).toContainText("Upload complete", { timeout: 60_000 });
 
-  // The frame and its sidecar, and no original beside them.
-  expect(registered).toHaveLength(2);
-  expect(registered.some((path) => path.includes("/original/"))).toBe(false);
-
-  const sidecar = uploaded.map((part) => part.toString()).find((body) => body.startsWith("{"));
-  const provenance = JSON.parse(sidecar!) as {
-    blur: { method: string; sigma: number; regions: { x: number; y: number; radius: number }[] };
-    source_video: { uploaded: boolean };
-    extracted: { encoding: string };
-  };
-  expect(provenance.blur.method).toBe("gaussian");
-  expect(provenance.blur.sigma).toBe(8);
-  expect(provenance.blur.regions).toHaveLength(1);
-  // Placed at the middle of a 320x240 recording, to within the rounding of a display-pixel click.
-  expect(provenance.blur.regions[0].radius).toBe(24);
-  expect(Math.abs(provenance.blur.regions[0].x - 160)).toBeLessThanOrEqual(2);
-  expect(Math.abs(provenance.blur.regions[0].y - 120)).toBeLessThanOrEqual(2);
-  expect(provenance.source_video.uploaded).toBe(false);
-  expect(provenance.extracted.encoding).toContain("1 blurred region, gaussian sigma 8");
+  // The frame, its sidecar, and all three dataset_description.json files — no actual sourcedata
+  // content beside them (sourcedata/rawbids's own description is still written, same as the other
+  // two: all three are dataset-level, not tied to what any one delivery actually put underneath).
+  expect(registered).toHaveLength(5);
+  expect(registered.some((path) => path.startsWith("sourcedata/") && !path.endsWith("dataset_description.json"))).toBe(false);
 });

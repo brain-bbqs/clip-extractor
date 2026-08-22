@@ -1,7 +1,7 @@
 import type { ArchiveConfig, Asset, CompletedPart, FilePart, UploadInitResponse } from "./types";
 import { apiFetch } from "./api";
 import { ApiError } from "./errors";
-import { computeDandiEtag, planParts } from "./etag";
+import { computeDandiEtag, computeMd5, computeSha256, planParts } from "./etag";
 import { runQueue } from "./queue";
 import { uploadPartWithRetry } from "./s3";
 
@@ -136,17 +136,25 @@ export async function createOrReplaceAsset(
 
 export type UploadPhase = "checksum" | "upload" | "register";
 
-/** A blob's dandi-etag together with the part layout it was computed over. Worth keeping around:
- * the same digest identifies the blob to the archive and is what the provenance record reports, so
- * a file is never hashed twice. */
+/** A blob's dandi-etag and plain MD5, together with the part layout the etag was computed over.
+ * Worth keeping around: the same digests identify the blob to the archive and are what the
+ * provenance record and a sidecar's own `Checksum` field report, so a file is never hashed twice. */
 export interface BlobDigest {
   etag: string;
+  md5: string;
+  sha256: string;
   parts: FilePart[];
 }
 
 export async function checksumBlob(blob: Blob, onProgress?: (fraction: number) => void): Promise<BlobDigest> {
   const parts = planParts(blob.size);
-  return { etag: await computeDandiEtag(blob, parts, onProgress), parts };
+  // Three full passes over the bytes — the dandi-etag, the plain MD5 and the SHA-256 are all
+  // different digests (see lib/etag.ts's computeMd5) — reported as one smooth 0..1 rather than a bar
+  // that fills and resets twice.
+  const etag = await computeDandiEtag(blob, parts, (f) => onProgress?.(f / 3));
+  const md5 = await computeMd5(blob, (f) => onProgress?.((1 + f) / 3));
+  const sha256 = await computeSha256(blob, (f) => onProgress?.((2 + f) / 3));
+  return { etag, md5, sha256, parts };
 }
 
 export interface UploadAssetParams {

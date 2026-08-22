@@ -5,6 +5,7 @@ import { drawPose } from "./pose";
 import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
 import type { StreamingVideoBackend } from "./streaming";
 import type { SelectionKind } from "./delivery";
+import { behFilename, behSidecarName, type BehEntities } from "./bidsPath";
 import type { PoseModel, SleapVideoBackend, TrimMode } from "./types";
 
 // Turns the current selection into a single file, ready for either delivery route (download or
@@ -18,106 +19,71 @@ export interface ExtractedMedia {
   /** How this file was produced, recorded in the upload's provenance sidecar: the literal ffmpeg
    * command for a snippet, or the encoder used for a frame. */
   encoding: string;
+  /** The video stream's own codec (mediabunny's naming, e.g. `"h264"`, `"avc"`), for BEP047's
+   * `VideoCodec` sidecar field — undefined for a still image, and for a streamed cut this app
+   * re-encoded without pinning down what mediabunny chose to encode it as. */
+  codec?: string;
 }
 
 /** Reports what extraction is doing, plus 0..1 progress when the step can measure it. */
 export type ExtractProgress = (message: string, fraction?: number) => void;
 
-// Every file this app produces is named in BIDS entity style — `key-value` pairs joined by
-// underscores, then a suffix naming what the file holds:
-//   name-<source>_index-<frame>_type-frame_image.png
-//   name-<source>_index-<frame>_type-frame_provenance.json
-//   name-<source>_range-<in>+<out>_type-snippet_video.mp4
-//   name-<source>_range-<in>+<out>_type-snippet_provenance.json
-//   name-<source>_range-<in>+<out>_type-snippet_overlay.mp4
-//   name-<source>_range-<in>+<out>_type-snippet_bundle.tar.gz
+// Every file this app produces is named per BEP047 (see lib/bidsPath.ts), and every delivery's own
+// files land together in one directory of their own — `.../beh/<recording-<label>|date-..._time-...>/`
+// (see `derivativesDirectory`) — whose disambiguating entity each of them also carries, so a file
+// stays self-describing away from that directory:
+//   sub-<label>_recording-<label>_image.png
+//   sub-<label>_recording-<label>_image.json
+//   sub-<label>_recording-<label>_video.mp4
+//   sub-<label>_recording-<label>_video.json
+//   sub-<label>_recording-<label>_desc-overlay_video.mp4
 // Files describing or rendering the same selection share every entity with it and differ only in
-// that suffix, so they sit side by side in a listing. The original video is not renamed at all — it
-// keeps the name it arrived with (see runUpload in main.ts).
+// `desc-`, so they sit side by side in a listing. The original video is not renamed beyond that same
+// scheme — see deliverOriginalVideo in main.ts. The bundle those all pack into carries no entities
+// at all (see `bundleFileName`), being a download rather than a file in the tree.
 
-/** The source file name minus its extension, for naming derived files. */
-export function sourceBaseName(sourceName: string): string {
-  return sourceName.replace(/\.[^./]+$/, "") || "clip";
-}
-
-/** Reduces a source name to an entity label. Underscores separate entities and hyphens separate a
- * key from its value, so neither can survive inside a value without making the name ambiguous to
- * parse — but they are word separators in a file name, so they become `+` along with spaces and any
- * other punctuation, rather than closing the gap. Accents fold into their base letter instead of
- * reading as a separator. The unabridged original name is preserved in the upload's provenance
- * record, which is what ties the file back to its source. */
-export function bidsLabel(value: string): string {
-  return (
-    value
-      .normalize("NFKD")
-      // Drop combining marks first, so "café" folds to "cafe" rather than splitting at the accent.
-      .replace(/[̀-ͯ]/g, "")
-      .replace(/[^A-Za-z0-9]+/g, "+")
-      .replace(/^\++|\++$/g, "") || "clip"
-  );
-}
-
-/** The entities identifying one extraction, shared by every file it produces. */
+/** The entities identifying one extraction, shared by every file it produces: which selection
+ * (`sourceName`/`mode`/frame bounds, for the extraction logic itself) and which subject, session
+ * and delivery it belongs to (`beh`, for naming the files — see lib/bidsPath.ts). */
 export interface AssetEntities {
   sourceName: string;
   mode: SelectionKind;
   /** Inclusive source-frame bounds; equal to each other in frame mode. */
   inFrame: number;
   outFrame: number;
+  beh: BehEntities;
 }
 
-function nameEntity(sourceName: string): string {
-  return `name-${bidsLabel(sourceBaseName(sourceName))}`;
+export function clipFileName(beh: BehEntities): string {
+  return behFilename(beh, { suffix: "video", ext: "mp4" });
 }
 
-function selectionEntity(entities: AssetEntities): string {
-  return entities.mode === "frame" ? `index-${entities.inFrame}` : `range-${entities.inFrame}+${entities.outFrame}`;
+export function frameFileName(beh: BehEntities): string {
+  return behFilename(beh, { suffix: "image", ext: "png" });
 }
 
-/** One file of an extraction: `name-…_<selection>_type-<type>[_<suffix>].<extension>`. */
-export interface AssetNameParts {
-  type: string;
-  /** Names what the file holds: `video`, `image`, `overlay`, `provenance`. */
-  suffix?: string;
-  extension: string;
-}
-
-export function assetFileName(entities: AssetEntities, parts: AssetNameParts): string {
-  const suffix = parts.suffix ? `_${parts.suffix}` : "";
-  return `${nameEntity(entities.sourceName)}_${selectionEntity(entities)}_type-${parts.type}${suffix}.${parts.extension}`;
-}
-
-export function clipFileName(sourceName: string, lo: number, hi: number): string {
-  return assetFileName({ sourceName, mode: "snippet", inFrame: lo, outFrame: hi }, { type: "snippet", suffix: "video", extension: "mp4" });
-}
-
-export function frameFileName(sourceName: string, frame: number): string {
-  return assetFileName(
-    { sourceName, mode: "frame", inFrame: frame, outFrame: frame },
-    { type: "frame", suffix: "image", extension: "png" },
-  );
-}
-
-/** The sidecar shares every entity with the file it describes — including its `type-` — and differs
- * only in its suffix, so the pair sits side by side in a listing. */
-export function provenanceFileName(entities: AssetEntities): string {
-  return assetFileName(entities, { type: entities.mode, suffix: "provenance", extension: "json" });
+/** The sidecar shares every entity with the media file it describes, `.json` in place of the media
+ * extension, so the pair sits side by side in a listing. */
+export function sidecarFileName(beh: BehEntities, mode: SelectionKind, desc?: string): string {
+  return behSidecarName(beh, { suffix: mode === "frame" ? "image" : "video", desc });
 }
 
 /** The saved bundle: every file an upload would have written, tarred and gzipped into one download.
- * It shares its selection's entities like the rest, and `bundle` names what it holds. */
-export function bundleFileName(entities: AssetEntities): string {
-  return assetFileName(entities, { type: entities.mode, suffix: "bundle", extension: "tar.gz" });
+ *
+ * Named for the dandiset the source video came out of, or `local-dataset` for a video that came from
+ * no dataset at all — a locally dropped file. Deliberately carries none of BEP047's entities — not
+ * the subject, not this delivery's own stamp: it is a download, and the moment it is unpacked it
+ * stops existing, leaving the entity-named tree inside it. Naming it after the source dandiset says
+ * the one thing about it worth knowing before unpacking: which dataset's recording is inside. */
+export function bundleFileName(sourceDandisetId: string | null): string {
+  return `${sourceDandisetId?.trim() || "local-dataset"}.tar.gz`;
 }
 
-/** The same selection with the pose drawn into the pixels, so `overlay` in place of the plain
- * extract's `image`/`video` suffix. */
-export function overlayFileName(entities: AssetEntities): string {
-  return assetFileName(entities, {
-    type: entities.mode,
-    suffix: "overlay",
-    extension: entities.mode === "frame" ? "png" : "mp4",
-  });
+/** The same selection with the pose drawn into the pixels — `desc-overlay` where the plain extract
+ * carries no `desc-` at all, the derivatives entity BIDS already defines for "a different output of
+ * the same recording". */
+export function overlayFileName(beh: BehEntities, mode: SelectionKind): string {
+  return behFilename(beh, { desc: "overlay", suffix: mode === "frame" ? "image" : "video", ext: mode === "frame" ? "png" : "mp4" });
 }
 
 export interface ExtractClipParams {
@@ -129,6 +95,7 @@ export interface ExtractClipParams {
    * is cut out of, over the same range requests that play it. */
   backend?: StreamingVideoBackend | null;
   sourceName: string;
+  beh: BehEntities;
   /** Inclusive selected frame range. */
   lo: number;
   hi: number;
@@ -160,7 +127,7 @@ function blurProcessor(width: number, height: number, blur: BlurRegion[]): (samp
 
 /** Trims [lo, hi] straight out of a streamed source, reading only the bytes that range needs. */
 async function extractStreamedClip(params: ExtractClipParams & { backend: StreamingVideoBackend }): Promise<ExtractedMedia> {
-  const { backend, sourceName, lo, hi, trim = "precise", blur = [], onProgress } = params;
+  const { backend, beh, lo, hi, trim = "precise", blur = [], onProgress } = params;
   onProgress?.("Trimming the selection out of the stream…", 0);
   const { blob, transcoded, start, end } = await backend.extractRange(lo, hi, {
     precise: trim === "precise",
@@ -172,18 +139,21 @@ async function extractStreamedClip(params: ExtractClipParams & { backend: Stream
   const how = transcoded ? "frames re-encoded" : "frames copied over untouched";
   return {
     blob,
-    filename: clipFileName(sourceName, lo, hi),
+    filename: clipFileName(beh),
     mime: "video/mp4",
     encoding: `mediabunny trim ${start.toFixed(3)}s–${end.toFixed(3)}s out of the streamed source, ${how}, audio dropped${
       blurred ? `, ${blurred}` : ""
     }`,
+    // A straight copy keeps the source's own codec; a re-encode leaves it to mediabunny, which this
+    // app does not pin down, so nothing is claimed either way.
+    codec: transcoded ? undefined : (backend.codec ?? undefined),
   };
 }
 
 /** Trims [lo, hi] out of the source video and returns it as an MP4: straight out of the stream when
  * that is what is open, and through ffmpeg.wasm when the bytes are already in the browser. */
 export async function extractClip(params: ExtractClipParams): Promise<ExtractedMedia> {
-  const { sourceFile, sourceUrl, backend, sourceName, lo, hi, fps, trim = "precise", blur = [], onProgress } = params;
+  const { sourceFile, sourceUrl, backend, sourceName, beh, lo, hi, fps, trim = "precise", blur = [], onProgress } = params;
   // Checked before ffmpeg is even loaded: it works out of a virtual filesystem, so it would need
   // the whole container written into memory first, which for a streamed recording means downloading
   // all of it however few frames were selected.
@@ -236,7 +206,10 @@ export async function extractClip(params: ExtractClipParams): Promise<ExtractedM
     const data = await ff.readFile(outName);
     const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
     if (!blob.size) throw new Error("ffmpeg produced an empty clip — try a different selection");
-    return { blob, filename: clipFileName(sourceName, lo, hi), mime: "video/mp4", encoding: command };
+    // A stream copy (`-c copy`) keeps the source's own codec, which this local-file path never
+    // probed to begin with; an actual encode always names it, since the command itself picks it.
+    const codec = streamCopies(trim, blur) ? undefined : "h264";
+    return { blob, filename: clipFileName(beh), mime: "video/mp4", encoding: command, codec };
   } finally {
     try {
       await ff.deleteFile(inName);
@@ -254,13 +227,14 @@ export interface ExtractFrameParams {
   width: number;
   height: number;
   sourceName: string;
+  beh: BehEntities;
   /** Areas blurred into the image, in source pixels. */
   blur?: BlurRegion[];
 }
 
 /** Re-decodes one frame and encodes it as a PNG (no pose overlay burned in). */
 export async function extractFrame(params: ExtractFrameParams): Promise<ExtractedMedia> {
-  const { backend, frameOrder, frame, width, height, sourceName, blur = [] } = params;
+  const { backend, frameOrder, frame, width, height, beh, blur = [] } = params;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -275,7 +249,7 @@ export async function extractFrame(params: ExtractFrameParams): Promise<Extracte
   const blurred = blurSummary(blur);
   return {
     blob,
-    filename: frameFileName(sourceName, frame),
+    filename: frameFileName(beh),
     mime: "image/png",
     encoding: `canvas.toBlob(image/png), decoded frame without pose overlay${blurred ? `, ${blurred}` : ""}`,
   };
@@ -293,6 +267,7 @@ export interface ExtractOverlayParams {
   width: number;
   height: number;
   sourceName: string;
+  beh: BehEntities;
   /** Areas blurred into every frame, in source pixels. */
   blur?: BlurRegion[];
   onProgress?: ExtractProgress;
@@ -305,8 +280,7 @@ export interface ExtractOverlayParams {
  * neither depends on which codecs the browser itself can encode.
  */
 export async function extractOverlay(params: ExtractOverlayParams): Promise<ExtractedMedia> {
-  const { backend, frameOrder, pose, mode, inFrame, outFrame, fps, width, height, sourceName, blur = [], onProgress } = params;
-  const entities: AssetEntities = { sourceName, mode, inFrame, outFrame };
+  const { backend, frameOrder, pose, mode, inFrame, outFrame, fps, width, height, beh, blur = [], onProgress } = params;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -332,7 +306,7 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
     onProgress?.(`Drawing the overlay on frame ${inFrame}…`);
     return {
       blob: await renderOverlayFrame(inFrame),
-      filename: overlayFileName(entities),
+      filename: overlayFileName(beh, mode),
       mime: "image/png",
       encoding: `canvas.toBlob(image/png), decoded frame with the pose overlay drawn in${blurred ? `, ${blurred}` : ""}`,
     };
@@ -391,9 +365,10 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
     // encoding line is what the provenance record quotes as how the file was produced.
     return {
       blob,
-      filename: overlayFileName(entities),
+      filename: overlayFileName(beh, mode),
       mime: "video/mp4",
       encoding: blurred ? `${command} (frames drawn with ${blurred})` : command,
+      codec: "h264",
     };
   } finally {
     for (const name of [...written, outName]) {

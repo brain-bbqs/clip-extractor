@@ -40,16 +40,7 @@ import {
   type SlpSourceMeta,
 } from "./lib/match";
 import { alignDenseFrames, probeNwbSeriesLength } from "./lib/nwb";
-import {
-  blurSigma,
-  clampRegion,
-  defaultBlurRadius,
-  frameFit,
-  maxBlurRadius,
-  paintBlurRegions,
-  MIN_BLUR_RADIUS,
-  type BlurRegion,
-} from "./lib/blur";
+import { clampRegion, defaultBlurRadius, frameFit, maxBlurRadius, paintBlurRegions, MIN_BLUR_RADIUS, type BlurRegion } from "./lib/blur";
 import { containsHumanSubjects, fetchDraftMetadata } from "./lib/humanSubjects";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
@@ -58,11 +49,13 @@ import {
   dandisetWebUrl,
   fetchDandisetVideos,
   hydrateDandisetNames,
+  archiveSourceOf,
   indexDandisets,
   listManifestObjects,
   mergeDandisets,
   sweepArchiveVideos,
   type ArchiveDandiset,
+  type ArchiveSource,
   type ArchiveVideo,
 } from "./lib/archives";
 import {
@@ -76,20 +69,21 @@ import { loadCachedNames, saveCachedNames } from "./lib/archiveNames";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
 import {
   defaultDeliveryMode,
+  deliveryDirectories,
   fileBrowserUrl,
-  selectionDirectory,
   uploadAssetPath,
-  uploadDirectory,
-  uploadOriginalPath,
+  type DeliveryDirectories,
   type DeliveryMode,
   type SelectionKind,
 } from "./lib/delivery";
+import { behEntities, sourcedataOriginalFilename, type BehEntities } from "./lib/bidsPath";
+import { verbatimFilename } from "./lib/sanitize";
 import {
   bundleFileName,
   extractClip,
   extractFrame,
   extractOverlay,
-  provenanceFileName,
+  sidecarFileName,
   type AssetEntities,
   type ExtractedMedia,
   type ExtractProgress,
@@ -97,8 +91,24 @@ import {
 import { tarGzip, type BundleEntry } from "./lib/bundle";
 import { memoOne } from "./lib/memo";
 import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./lib/upload";
-import { buildProvenance, type ProvenanceAnnotationsInput } from "./lib/provenance";
-import { countLabeledFramesInRange } from "./lib/annotations";
+import {
+  buildBehSidecar,
+  buildCompanionSidecar,
+  buildSourceDatasetEntry,
+  imageTechnicalFields,
+  videoTechnicalFields,
+  type ProvenanceInput,
+  type TechnicalDetail,
+} from "./lib/provenance";
+import { buildGeneratedByEntry } from "./lib/generatedBy";
+import {
+  mergedDatasetDescriptions,
+  readExistingDatasetDescriptions,
+  DATASET_DESCRIPTION_PATH,
+  DERIVATIVES_DESCRIPTION_PATH,
+  SOURCEDATA_DESCRIPTION_PATH,
+  type ExistingDatasetDescriptions,
+} from "./lib/datasetDescription";
 import { fetchArchiveUser, type ArchiveUser } from "./lib/users";
 import { friendlyError } from "./lib/errors";
 import { renderIdentity } from "./ui/connection";
@@ -108,9 +118,12 @@ import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type U
 import {
   fakeArchiveBrowse,
   fakeIncomingDatasets,
+  fromEmberArchiveSource,
+  fromEmberSourceUrl,
   readTestInjection,
   synthesizeLongVideoFile,
   synthesizeVideoFile,
+  type TestInjection,
 } from "./lib/testInjection";
 import type { ArchiveConfig, OAuthTokenSet, PoseInstance, PoseModel, SelectorMode, SleapLabels, SleapVideoBackend } from "./lib/types";
 
@@ -186,6 +199,13 @@ interface AppState {
   sourceName: string;
   sourceUrl: string | null;
   sourceFile: File | null;
+  /** Where in the archive this video came from, when it was opened out of the browse pane — the
+   * dandiset, its path within it, and the blob its bytes are stored as. Null for a locally dropped
+   * file or an arbitrary streamed URL, neither of which the archive has any of this for. The path is
+   * where a delivery's `sub-`/`ses-` entities come from (see lib/bidsPath.ts's behEntities; one that
+   * names none falls back to `sub-unknown`), and the whole of it is what the derivatives
+   * `SourceDatasets` records (see lib/provenance.ts's `buildSourceDatasetEntry`). */
+  sourceArchive: ArchiveSource | null;
   cur: number;
   inF: number | null;
   outF: number | null;
@@ -231,6 +251,7 @@ const state: AppState = {
   sourceName: "",
   sourceUrl: null,
   sourceFile: null,
+  sourceArchive: null,
   cur: 0,
   inF: null,
   outF: null,
@@ -497,6 +518,8 @@ async function loadVideo(
   name: string,
   url: string | null = null,
   report: LoadFailureReport = stageFailure,
+  /** Where in the archive it was opened from, when it was — see AppState.sourceArchive. */
+  archive: ArchiveSource | null = null,
 ): Promise<void> {
   stopPlay();
   clearLoadMessages();
@@ -527,6 +550,7 @@ async function loadVideo(
     state.viewCenter = 0;
     state.sourceName = name;
     state.sourceUrl = url;
+    state.sourceArchive = archive;
     // loadVideo fully owns source state: this is either the dropped File, the one the stream
     // fallback materialized, or null for a live-streamed URL — never a previous load's leftover.
     state.sourceFile = file;
@@ -2208,7 +2232,7 @@ async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
   // content hash — and for an embargoed file, the only one that will still resolve tomorrow.
   // Reported in the pane, like the refusals above it: a video picked out of a list is answered for
   // where the list is, whether or not another one is already playing on the stage.
-  void loadVideo(streamUrl, name, video.assetUrl, browseFailure);
+  void loadVideo(streamUrl, name, video.assetUrl, browseFailure, archiveSourceOf(video));
 }
 
 /**
@@ -2883,20 +2907,25 @@ function updateDeliveryGate(): void {
 }
 
 /** The entities identifying whatever the selector currently points at, shared by every file the next
- * delivery writes (and by the bundle that holds them). */
-function currentEntities(): AssetEntities {
+ * delivery writes (and by the bundle that holds them) — `beh` (subject, session, and this delivery's
+ * own `recording-<label>` stamp, see lib/bidsPath.ts) is stamped fresh from `now`, since only the
+ * actual moment of delivery should end up in a file name, not whenever a preview happened to redraw. */
+function currentEntities(now: Date): AssetEntities {
   const [lo, hi] = state.mode === "frame" ? [state.cur, state.cur] : selRange();
-  return { sourceName: state.sourceName, mode: state.mode === "frame" ? "frame" : "snippet", inFrame: lo, outFrame: hi };
+  const mode: SelectionKind = state.mode === "frame" ? "frame" : "snippet";
+  return { sourceName: state.sourceName, mode, inFrame: lo, outFrame: hi, beh: behEntities(now, state.sourceArchive?.path ?? null) };
 }
 
 /** Names the file the Save button is about to produce — the name alone, since it already spells out
  * the frame or the frame range. Refreshed on every seek too, frame mode's output following the
- * current frame, hence the long-lived child element rather than rebuilt markup. */
+ * current frame, hence the long-lived child element rather than rebuilt markup. A preview only, so
+ * its own `recording-<label>` stamp is whatever moment it happened to redraw at — the actual
+ * delivery restamps it at the instant Save or Upload is pressed. */
 function updateDeliveryPreview(): void {
   const show = state.backend !== null && hasSelection();
   els.downloadPreview.hidden = !show;
   if (!show) return;
-  els.downloadPreviewName.textContent = bundleFileName(currentEntities());
+  els.downloadPreviewName.textContent = bundleFileName(state.sourceArchive?.dandisetId ?? null);
 }
 
 function setDeliveryBusy(busy: boolean): void {
@@ -2926,6 +2955,7 @@ async function extractSelection(
       width: state.width,
       height: state.height,
       sourceName: entities.sourceName,
+      beh: entities.beh,
       blur,
     });
   }
@@ -2936,6 +2966,7 @@ async function extractSelection(
     // sleap-io.js fallbacks hold no such thing, and fall through to ffmpeg as before.
     backend: backend instanceof StreamingVideoBackend ? backend : null,
     sourceName: entities.sourceName,
+    beh: entities.beh,
     lo: entities.inFrame,
     hi: entities.outFrame,
     fps: state.fps,
@@ -3003,21 +3034,6 @@ async function uploadOne(cfg: ArchiveConfig, file: DeliverableFile): Promise<voi
   log(`Uploaded ${file.path}`, "ok");
 }
 
-/** What was loaded from a `.slp`, restricted to the selection, or null when there is none. */
-function annotationsSummary(lo: number, hi: number, slp: DeliveredSlp | null): ProvenanceAnnotationsInput | null {
-  const pose = els.slpToggle.checked ? state.pose : null;
-  if (!pose) return null;
-  return {
-    filename: state.slpFile?.name ?? null,
-    checksum: slp?.digest.etag ?? null,
-    uploaded: slp?.path != null,
-    assetPath: slp?.path ?? null,
-    skeletonNodeCount: pose.skeleton.nodes.length,
-    trackCount: pose.tracks.length,
-    labeledFramesInSelection: countLabeledFramesInRange(pose, lo, hi),
-  };
-}
-
 /** A loaded `.slp` that was checksummed, and delivered too when `path` is set. */
 interface DeliveredSlp {
   digest: BlobDigest;
@@ -3040,6 +3056,7 @@ interface DeliveredOverlay {
 async function deliverOverlay(
   deliver: DeliverFile,
   directory: string,
+  mediaPath: string,
   entities: AssetEntities,
   backend: SleapVideoBackend,
   blur: BlurRegion[],
@@ -3062,6 +3079,7 @@ async function deliverOverlay(
       width: state.width,
       height: state.height,
       sourceName: entities.sourceName,
+      beh: entities.beh,
       blur,
       onProgress,
     });
@@ -3069,6 +3087,30 @@ async function deliverOverlay(
   });
   const path = uploadAssetPath(directory, media.filename);
   await deliver({ blob: media.blob, path, contentType: media.mime, label, digest });
+
+  // Its own light BEP047 sidecar (see lib/provenance.ts's buildCompanionSidecar) rather than the
+  // plain clip's full record: it is a rendering of that clip, not a second source of truth about it,
+  // so `Sources` is enough to tie the two together.
+  const technical =
+    entities.mode === "frame"
+      ? imageTechnicalFields(state.width, state.height)
+      : videoTechnicalFields(state.fps, state.width, state.height, entities.outFrame - entities.inFrame + 1, { codec: media.codec });
+  const sidecar = buildCompanionSidecar({
+    description: "The selection with the pose overlay drawn into the pixels.",
+    technical,
+    sources: [mediaPath],
+    checksum: { md5: digest.md5, sha256: digest.sha256, dandiEtag: digest.etag },
+  });
+  const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
+  const sidecarPath = uploadAssetPath(directory, sidecarFileName(entities.beh, entities.mode, "overlay"));
+  const sidecarLabel = "the pose overlay's sidecar";
+  await deliver({
+    blob: sidecarBlob,
+    path: sidecarPath,
+    contentType: "application/json",
+    label: sidecarLabel,
+    digest: await checksumFor(sidecarBlob, sidecarLabel, onProgress),
+  });
   return { media, path, digest };
 }
 
@@ -3078,6 +3120,7 @@ async function deliverOverlay(
 async function deliverOriginalVideo(
   deliver: DeliverFile,
   directory: string,
+  beh: BehEntities,
   onProgress: ExtractProgress,
 ): Promise<{ original: File | null; originalDigest: BlobDigest | null; originalPath: string | null }> {
   const original = state.sourceFile;
@@ -3087,9 +3130,12 @@ async function deliverOriginalVideo(
   // many selections are cut out of them, and this is the hash that can take minutes.
   const originalDigest = await sourceDigestOnce(`source-${sourceGeneration}`, () => checksumFor(original, label, onProgress));
   if (!els.uploadOriginal.checked) return { original, originalDigest, originalPath: null };
-  // Carried under the name it arrived with, not a derived one: it is the untouched source, and its
-  // verbatim name is what the provenance record reports.
-  const originalPath = uploadOriginalPath(directory, original.name);
+  // BEP047 entity-shaped, like everything else this app writes — not the name it arrived with — but
+  // with no disambiguator at all (see lib/bidsPath.ts's own header comment and
+  // `sourcedataOriginalFilename`): re-delivering the same source is expected to overwrite this copy,
+  // not duplicate it.
+  const originalName = sourcedataOriginalFilename(beh, original.name);
+  const originalPath = uploadAssetPath(directory, originalName);
   await deliver({
     blob: original,
     path: originalPath,
@@ -3097,20 +3143,83 @@ async function deliverOriginalVideo(
     label,
     digest: originalDigest,
   });
+
+  // The technical properties of the source itself — already read off its own container when it was
+  // loaded (see loadVideo), not re-derived here — so the raw file sitting in `sourcedata` carries the
+  // same kind of sidecar a BEP047 media file does, without needing a probing library of its own.
+  // Codec, its RFC 6381 string, pixel format and bit depth are only known when the streaming backend
+  // itself named them; the sleap-io.js fallback backends never expose any of this to this app, so
+  // nothing is claimed rather than guessed. A `?test&mock_video` preview is the one exception: its
+  // synthesized clip is really VP8 (see lib/testInjection.ts's synthesizeVideoFile), an implementation
+  // detail of the mock rather than anything worth previewing — the values below are h264's own typical
+  // ones instead, which is what a real delivery's own source almost always reports.
+  const isMockVideo = testInjection?.mockVideoFrames != null || testInjection?.mockVideoLongSeconds != null;
+  const sourceDetail: TechnicalDetail = isMockVideo
+    ? { codec: "h264", codecRFC6381: "avc1.42E01E", pixelFormat: "yuv420p", bitDepth: 8 }
+    : state.backend instanceof StreamingVideoBackend
+      ? {
+          codec: state.backend.codec ?? undefined,
+          codecRFC6381: state.backend.codecRFC6381 ?? undefined,
+          pixelFormat: state.backend.imagePixelFormat ?? undefined,
+          bitDepth: state.backend.imageBitDepth ?? undefined,
+        }
+      : {};
+  await deliverSidecar(deliver, directory, originalName, onProgress, {
+    description: "The source video this selection was clipped from.",
+    technical: videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames, sourceDetail),
+    sources: [],
+    checksum: { md5: originalDigest.md5, sha256: originalDigest.sha256, dandiEtag: originalDigest.etag },
+  });
   return { original, originalDigest, originalPath };
 }
 
-/** Same for a loaded `.slp`: it is original content too, so it rides along on the same toggle, and is
- * checksummed either way. */
-async function deliverAnnotationFile(deliver: DeliverFile, directory: string, onProgress: ExtractProgress): Promise<DeliveredSlp | null> {
+/** Same for a loaded `.slp`: it rides along on the same toggle and is checksummed either way. Placed
+ * in `derivatives/` alongside the extract, not `sourcedata/`: it is itself the output of a pose
+ * estimation pipeline run over the source video, not the raw recording. */
+async function deliverAnnotationFile(
+  deliver: DeliverFile,
+  directory: string,
+  sourcePath: string | null,
+  onProgress: ExtractProgress,
+): Promise<DeliveredSlp | null> {
   const slpFile = state.slpFile;
   if (!slpFile) return null;
   const label = "the annotations";
   const digest = await annotationDigestOnce(`pose-${poseGeneration}`, () => checksumFor(slpFile, label, onProgress));
   if (!els.uploadOriginal.checked) return { digest, path: null };
-  const path = uploadOriginalPath(directory, slpFile.name);
+  const path = uploadAssetPath(directory, verbatimFilename(slpFile.name));
   await deliver({ blob: slpFile, path, contentType: slpFile.type || "application/octet-stream", label, digest });
+  await deliverSidecar(deliver, directory, slpFile.name, onProgress, {
+    description: "SLEAP pose annotations loaded alongside the source video, covering (at least) this delivery's selection.",
+    sources: sourcePath ? [sourcePath] : [],
+    // Not a video/image asset BEP047 gives a `Checksum`-worthy identity to — see buildCompanionSidecar.
+    checksum: null,
+  });
   return { digest, path };
+}
+
+/** Writes a companion sidecar beside an already-delivered file: same base name, `.json` in place of
+ * its extension. Shared by the source video and the `.slp`, neither of which is itself a BEP047
+ * media file this app produced — see lib/provenance.ts's buildCompanionSidecar. */
+async function deliverSidecar(
+  deliver: DeliverFile,
+  directory: string,
+  filename: string,
+  onProgress: ExtractProgress,
+  input: Parameters<typeof buildCompanionSidecar>[0],
+): Promise<void> {
+  const sidecar = buildCompanionSidecar(input);
+  const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
+  const sidecarName = `${verbatimFilename(filename).replace(/\.[^./]+$/, "")}.json`;
+  const sidecarPath = uploadAssetPath(directory, sidecarName);
+  const label = `${filename}'s sidecar`;
+  await deliver({
+    blob: sidecarBlob,
+    path: sidecarPath,
+    contentType: "application/json",
+    label,
+    digest: await checksumFor(sidecarBlob, label, onProgress),
+  });
 }
 
 /** Hashes one file for delivery, reporting progress on whichever route's status line is listening. */
@@ -3125,29 +3234,35 @@ interface AssembleParams {
   /** Runs once after extraction, before the first file is handed over — where the upload route
    * refreshes its token, so a long encode cannot age it out mid-transfer. */
   onReady?: () => Promise<void>;
-  /** The archive the files are bound for, read after `onReady`; null for a bundle saved locally,
-   * which is not bound for one. */
-  destination: () => { api: string; dandisetId: string; user: ArchiveUser | null } | null;
+  /** Reads whichever of the two `dataset_description.json` files (see lib/datasetDescription.ts)
+   * already exist at the destination, so this delivery's `GeneratedBy` entry folds into them rather
+   * than replacing whatever another pipeline already recorded there. Omitted for a saved bundle,
+   * which has no archive to read one from — its two files are always written fresh. */
+  existingDescriptions?: () => Promise<ExistingDatasetDescriptions>;
   deliver: DeliverFile;
   onProgress: ExtractProgress;
 }
 
 interface AssembledSelection {
   entities: AssetEntities;
-  directory: string;
+  directories: DeliveryDirectories;
   createdAt: Date;
 }
 
 /**
  * Extracts the current selection and hands every file it produces to `deliver`, in the order they
- * are meant to land: the selection itself, its pose overlay, the original content, then the
- * provenance record naming them all. Both routes come through here, which is what makes a saved
- * bundle hold exactly what an upload would have written.
+ * are meant to land: the selection itself, its pose overlay and their sidecars, the original
+ * content, then both `dataset_description.json` files this delivery's `GeneratedBy` entry belongs
+ * in. Both routes come through here, which is what makes a saved bundle hold exactly what an upload
+ * would have written.
  */
 async function assembleSelection(params: AssembleParams): Promise<AssembledSelection> {
   const { backend, deliver, onProgress } = params;
-  const entities = currentEntities();
-  const { mode: kind, inFrame: lo, outFrame: hi } = entities;
+  // One instant for the whole delivery, so the `recording-<label>` entity every file shares and the
+  // sidecar's own `created_at` name the same moment.
+  const createdAt = new Date();
+  const entities = currentEntities(createdAt);
+  const { mode: kind, inFrame: lo, outFrame: hi, beh } = entities;
   // Copied, not referenced: every file this delivery writes has to be blurred the same way, and the
   // areas on screen are editable until the moment the controls are disabled.
   const blur = state.blurRegions.map((region) => ({ ...region }));
@@ -3158,80 +3273,66 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
     return { media, digest: await checksumFor(media.blob, `the ${kind}`, onProgress) };
   });
   await params.onReady?.();
-  const destination = params.destination();
-  // One instant for the whole delivery, so the directory's date/time entities and the provenance
-  // record's `created_at` name the same moment. Under the archive's upload root for an upload; the
-  // bare directory for a bundle, which is a folder on someone's computer, not a dandiset.
-  const createdAt = new Date();
-  const directory = destination ? uploadDirectory(createdAt, kind) : selectionDirectory(createdAt, kind);
+  const directories = deliveryDirectories(beh);
 
   // The extracted selection goes first: it is the point of the delivery, and the original — which
   // can be orders of magnitude larger — is a recommended companion, not a prerequisite for it.
-  const mediaPath = uploadAssetPath(directory, media.filename);
+  const mediaPath = uploadAssetPath(directories.derivatives, media.filename);
   await deliver({ blob: media.blob, path: mediaPath, contentType: media.mime, label: `the ${kind}`, digest: mediaDigest });
 
-  const overlay = await deliverOverlay(deliver, directory, entities, backend, blur, onProgress);
-  const { original, originalDigest, originalPath } = await deliverOriginalVideo(deliver, directory, onProgress);
-  const slp = await deliverAnnotationFile(deliver, directory, onProgress);
+  await deliverOverlay(deliver, directories.derivatives, mediaPath, entities, backend, blur, onProgress);
+  const { originalPath } = await deliverOriginalVideo(deliver, directories.sourcedata, beh, onProgress);
+  await deliverAnnotationFile(deliver, directories.derivatives, originalPath, onProgress);
 
-  const provenance = buildProvenance({
-    createdAt,
-    pageUrl: location.href.split("?")[0],
-    description: els.selectionDescription.value,
-    user: destination?.user ?? null,
-    api: destination?.api ?? null,
-    dandisetId: destination?.dandisetId ?? null,
-    directory,
-    mode: kind,
-    fps: state.fps,
-    width: state.width,
-    height: state.height,
-    totalFrames: state.totalFrames,
-    inFrame: lo,
-    outFrame: hi,
-    blur,
-    blurSigma: blurSigma(blur),
-    source: {
-      filename: state.sourceName,
-      url: state.sourceUrl,
-      sizeBytes: original?.size ?? null,
-      checksum: originalDigest?.etag ?? null,
-      checksumUnavailable: original ? null : "The source video was streamed from a URL, so its bytes were never held locally to hash.",
-      uploaded: originalPath !== null,
-      assetPath: originalPath,
-    },
-    extracted: {
-      filename: media.filename,
-      assetPath: mediaPath,
-      mediaType: media.mime,
-      sizeBytes: media.blob.size,
-      checksum: mediaDigest.etag,
-      encoding: media.encoding,
-    },
-    overlay: overlay && {
-      filename: overlay.media.filename,
-      assetPath: overlay.path,
-      mediaType: overlay.media.mime,
-      sizeBytes: overlay.media.blob.size,
-      checksum: overlay.digest.etag,
-      encoding: overlay.media.encoding,
-    },
-    annotations: annotationsSummary(lo, hi, slp),
+  const provenanceInput: ProvenanceInput = { description: els.selectionDescription.value };
+
+  // The sidecar the extracted clip/frame itself carries: BEP047's own technical keys, a BEP028
+  // `GeneratedBy` entry, and the description typed for this delivery — see lib/provenance.ts.
+  const technical =
+    kind === "frame"
+      ? imageTechnicalFields(state.width, state.height)
+      : videoTechnicalFields(state.fps, state.width, state.height, hi - lo + 1, { codec: media.codec });
+  const sidecar = buildBehSidecar(provenanceInput, technical, {
+    md5: mediaDigest.md5,
+    sha256: mediaDigest.sha256,
+    dandiEtag: mediaDigest.etag,
   });
-  const provenanceBlob = new Blob([JSON.stringify(provenance, null, 2)], { type: "application/json" });
-  const provenancePath = uploadAssetPath(directory, provenanceFileName(entities));
-  const label = "the provenance record";
-  // The one file that is never re-used: it names this delivery's own directory and instant, so it
-  // differs even when everything it describes was carried over from the last one.
+  const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
+  const sidecarPath = uploadAssetPath(directories.derivatives, sidecarFileName(beh, kind));
+  const sidecarLabel = "the sidecar record";
+  // The one file that is never re-used: it names this delivery's own instant, so it differs even
+  // when everything it describes was carried over from the last one.
   await deliver({
-    blob: provenanceBlob,
-    path: provenancePath,
+    blob: sidecarBlob,
+    path: sidecarPath,
     contentType: "application/json",
-    label,
-    digest: await checksumFor(provenanceBlob, label, onProgress),
+    label: sidecarLabel,
+    digest: await checksumFor(sidecarBlob, sidecarLabel, onProgress),
   });
 
-  return { entities, directory, createdAt };
+  // Every `dataset_description.json` this delivery's tool identity belongs in — the dataset root's
+  // own, the derivatives pipeline's, and sourcedata/rawbids's own (so that subtree validates as a
+  // complete raw BIDS dataset by itself) — folded in rather than overwritten (see
+  // lib/datasetDescription.ts). A bundle has no archive to read existing ones from, so it always
+  // writes them fresh; unpacked into a dataset that already has its own, a person reconciles them by
+  // hand, same as any other file a bundle might collide with.
+  const existing = (await params.existingDescriptions?.()) ?? { root: null, derivatives: null, sourcedata: null };
+  const generatedByEntry = buildGeneratedByEntry();
+  const sourceDataset = buildSourceDatasetEntry(currentConfig().api, state.sourceArchive);
+  // Read off the module-level identity rather than `provenanceInput.user` (which is only ever set on
+  // the upload route, since that field also drives the sidecar's own `uploaded_by`): a visitor can be
+  // signed in while using Save, and deserves the same credit there.
+  const descriptions = mergedDatasetDescriptions(existing, generatedByEntry, sourceDataset, kind, currentUser?.username ?? null);
+  for (const [path, doc] of [
+    [DATASET_DESCRIPTION_PATH, descriptions.root],
+    [DERIVATIVES_DESCRIPTION_PATH, descriptions.derivatives],
+    [SOURCEDATA_DESCRIPTION_PATH, descriptions.sourcedata],
+  ] as const) {
+    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+    await deliver({ blob, path, contentType: "application/json", label: path, digest: await checksumFor(blob, path, onProgress) });
+  }
+
+  return { entities, directories, createdAt };
 }
 
 /** Saves the selection as a `.tar.gz` holding the same files, at the same paths, an upload would
@@ -3243,13 +3344,12 @@ async function runDownload(): Promise<void> {
   setDeliveryBusy(true);
   try {
     const bundled: BundleEntry[] = [];
-    const { entities, createdAt } = await assembleSelection({
+    const { createdAt } = await assembleSelection({
       backend,
-      destination: () => null,
       onProgress: (message) => setStatus(els.downloadStatus, message),
-      // Every file is hashed on its way in even though nothing is being uploaded: the provenance
-      // record inside the bundle quotes the same digests an upload would have registered, so a
-      // selection saved now and uploaded later is identifiable as the same bytes.
+      // Every file is hashed on its way in even though nothing is being uploaded: the sidecar
+      // inside the bundle quotes the same digests an upload would have registered, so a selection
+      // saved now and uploaded later is identifiable as the same bytes.
       deliver: (file) => {
         bundled.push({ path: file.path, blob: file.blob });
         return Promise.resolve();
@@ -3257,7 +3357,7 @@ async function runDownload(): Promise<void> {
     });
     setStatus(els.downloadStatus, "Packing the bundle…");
     const bundle = await tarGzip(bundled, createdAt);
-    const filename = bundleFileName(entities);
+    const filename = bundleFileName(state.sourceArchive?.dandisetId ?? null);
     saveBlob(bundle, filename);
     setDeliveryBusy(false);
     setStatusNaming(els.downloadStatus, "Saved ", filename, ` (${bundled.length} files, ${bytes(bundle.size)})`, "ok");
@@ -3280,7 +3380,7 @@ async function runUpload(): Promise<void> {
   updateDeliveryGate();
   setUploadProgress(0);
   try {
-    const { directory } = await assembleSelection({
+    const { directories } = await assembleSelection({
       backend,
       onReady: async () => {
         // Refresh the token before the first request rather than mid-transfer, where an expiry would
@@ -3288,14 +3388,11 @@ async function runUpload(): Promise<void> {
         await ensureFreshOAuth();
         const cfg = currentConfig();
         if (!cfg.dandisetId) throw new Error("Pick an upload destination first.");
-        // The provenance record names the uploader, so resolve the account here if the header's own
-        // lookup has not landed (or was never made) yet.
+        // The sidecar names the uploader, so resolve the account here if the header's own lookup has
+        // not landed (or was never made) yet.
         currentUser ??= await fetchArchiveUser(cfg).catch(() => null);
       },
-      destination: () => {
-        const cfg = currentConfig();
-        return { api: cfg.api, dandisetId: cfg.dandisetId, user: currentUser };
-      },
+      existingDescriptions: () => readExistingDatasetDescriptions(currentConfig()),
       onProgress: (message, fraction) => {
         setStatus(els.uploadStatus, message);
         setUploadProgress(fraction ?? 0);
@@ -3307,15 +3404,15 @@ async function runUpload(): Promise<void> {
     setDeliveryBusy(false);
     setUploadProgress(1, true);
     // Deliberately terse: uploadOne() has already logged every asset path to the console, and the
-    // link goes straight to this upload's own directory in the archive's file browser.
+    // link goes straight to this upload's own derivatives directory in the archive's file browser.
     setStatusLink(
       els.uploadStatus,
       "Upload complete - ",
-      fileBrowserUrl(cfg.web, cfg.dandisetId, directory),
+      fileBrowserUrl(cfg.web, cfg.dandisetId, directories.derivatives),
       "click here to view and share",
       "ok",
     );
-    log(`Upload complete: ${directory}/`, "ok");
+    log(`Upload complete: ${directories.derivatives}/`, "ok");
   } catch (e) {
     // Back on offer: a failed upload is one worth pressing again.
     uploadSubmitted = false;
@@ -3445,20 +3542,71 @@ async function initFromUrl(): Promise<void> {
 // The single highest-value injection: most of the others are only interesting once a video is on
 // screen, and this is the only one that puts one there without a local file or a real stream.
 
+/** `mock_ready`'s own step: marks a selection and types a description, the two things Save/Upload
+ * gate on (see updateDeliveryGate), so the mock video lands directly on a saveable state — the whole
+ * point of the injection being to preview real Save/Upload *output* without doing that by hand each
+ * time. `&snippet` marks a real range instead of the default `&frame`'s still frame — frame mode
+ * needs no ffmpeg.wasm (and so no CDN) to extract, which is why it is the default, but a snippet is
+ * worth previewing live too (`extracted`'s own `VideoCodec`/etc, an overlay if `mock_slp` is given).
+ *
+ * Both land on real, deliberately mid-clip indices rather than the whole recording or the frame it
+ * opened on (see lib/testInjection.ts's `MOCK_READY_FRAME`/`MOCK_READY_RANGE`, and `&frame=<n>` /
+ * `&snippet=<lo>-<hi>` to name others). Held to this video's own bounds the same way `applyUrlMarks`
+ * holds a hand-written link's, so a short `mock_video=<n>` still lands somewhere real rather than
+ * past the end. The frame case has to move the playhead, not just the marks: frame mode extracts
+ * whatever `state.cur` points at (see `currentEntities`). */
+async function applyMockReady(injection: TestInjection): Promise<void> {
+  const last = Math.max(0, state.totalFrames - 1);
+  const held = (frame: number): number => Math.max(0, Math.min(last, frame));
+  if (injection.mockReadyMode === "snippet") {
+    state.inF = held(injection.mockReadyRange.lo);
+    state.outF = held(injection.mockReadyRange.hi);
+    selectionChanged();
+    // Parked on the range's own start, so the picture on screen is inside what would be extracted
+    // rather than back at frame 0. Never extending the marks that were just set, whatever a key held
+    // during the load might otherwise have meant.
+    await seek(state.inF, true, false);
+  } else {
+    selectSeg(els.modeSeg, "frame");
+    setMode("frame");
+    await seek(held(injection.mockReadyFrame), true, false);
+  }
+  els.selectionDescription.value = "Mock description, from a ?test&mock_ready live-test link.";
+  updateDeliveryGate();
+}
+
 /** Loads a synthesized clip exactly as if it had been dropped onto the picker, so every real load
  * path (frame decode, timeline, delivery panes) runs against it unmodified. `mock_video_long` takes
  * the sparse, fast-to-build path instead (see `synthesizeLongVideoFile`) — the two are mutually
- * exclusive, since both stand in for the same drop. */
+ * exclusive, since both stand in for the same drop. `&from_ember` gives the mock video a fixed,
+ * BIDS-entity-shaped source path/URL instead (see lib/testInjection.ts's `fromEmberSourcePath`),
+ * previewing the more advanced metadata an archive-sourced delivery carries — a real `URL` in
+ * `SourceDatasets`, a known subject/session in the derivatives path — rather than the `sub-unknown`,
+ * no-URL fallback `&from_local` (the default, and still the common "dropped locally" case) previews. */
 async function applyMockVideo(): Promise<void> {
   if (testInjection?.mockVideoFrames != null) {
     const file = await synthesizeVideoFile(testInjection.mockVideoFrames);
-    await loadVideo(file, file.name);
+    await loadVideo(
+      file,
+      file.name,
+      fromEmberSourceUrl(testInjection, file.name),
+      undefined,
+      fromEmberArchiveSource(testInjection, file.name),
+    );
     if (testInjection.mockSlp) applyMockSlp();
+    if (testInjection.mockReady) await applyMockReady(testInjection);
     return;
   }
   if (testInjection?.mockVideoLongSeconds != null) {
     const file = await synthesizeLongVideoFile(testInjection.mockVideoLongSeconds);
-    await loadVideo(file, file.name);
+    await loadVideo(
+      file,
+      file.name,
+      fromEmberSourceUrl(testInjection, file.name),
+      undefined,
+      fromEmberArchiveSource(testInjection, file.name),
+    );
+    if (testInjection.mockReady) await applyMockReady(testInjection);
   }
 }
 

@@ -1,6 +1,6 @@
 import { BufferTarget, CanvasSource, Output, QUALITY_LOW, WebMOutputFormat } from "mediabunny";
 import type { IncomingDandiset } from "./dandisets";
-import type { ArchiveDandiset, ArchiveVideo } from "./archives";
+import type { ArchiveDandiset, ArchiveSource, ArchiveVideo } from "./archives";
 
 // Live smoketest URL params (`?test&...`), mirroring brain-bbqs/bbqs-uploader's own `?test` scheme
 // (see its docs/README.md "Live Testing" section) so a link pasted into the deployed app's address
@@ -51,11 +51,48 @@ export interface TestInjection {
   /** Makes the synthesized pose deliberately describe a different recording than the mock video, so
    * the SLEAP card's mismatch refusal can be previewed instead of a clean overlay. */
   mismatch: boolean;
+  /** Skips the manual steps a human would otherwise take before Save/Upload enable — marking a real
+   * selection and typing a description — so a pasted `?test&mock_video&mock_ready` link lands
+   * directly on a saveable state instead of the gated, "describe it first" one. Only meaningful
+   * alongside `mockVideoFrames`/`mockVideoLongSeconds`; that gated state is itself worth previewing
+   * plain, which is what `mock_video` without this produces. */
+  mockReady: boolean;
+  /** Which selection `mockReady` marks: a still frame (`&frame`, the default — needs no ffmpeg.wasm,
+   * and so no CDN, to extract) or a short range (`&snippet`). Meaningless without `mockReady` itself
+   * set. `&frame` is the explicit spelling of the default rather than a separate case, so a link
+   * naming both reads as the snippet it asked for rather than being refused. */
+  mockReadyMode: "frame" | "snippet";
+  /** Which frame `&frame` parks the playhead on — deliberately mid-clip rather than the frame 0 every
+   * video already opens on, so a preview shows a selection somebody actually made. `&frame=<n>` picks
+   * another; anything past the end of the mock video is held to its last frame (see main.ts's
+   * `applyMockReady`), same as every other way a frame is set in this app. */
+  mockReadyFrame: number;
+  /** Which range `&snippet` marks, likewise a real sub-range rather than the whole recording.
+   * `&snippet=<lo>-<hi>` picks another, in either order; both ends are held to the video's own bounds
+   * the same way `mockReadyFrame` is. */
+  mockReadyRange: { lo: number; hi: number };
+  /** Makes the mock video look, to `lib/bidsPath.ts`'s `behEntities`, as if it had been opened out of
+   * EMBER at a fixed, BIDS-entity-shaped path (`sub-01/ses-02/…`, dressed the same way
+   * `fakeArchiveBrowse` names its own fake listing) rather than dropped locally — so the more advanced
+   * metadata an archive-sourced delivery carries (a real `URL` in `SourceDatasets`, a known
+   * subject/session, and so a `date-`/`time-` directory rather than `recording-`) can be previewed
+   * too, crossed with `mockReadyMode`'s own frame/snippet choice. `&from_local` is the explicit
+   * spelling of the default this leaves alone: no URL, the `sub-unknown` fallback, and no
+   * `SourceDatasets` entry at all (see lib/provenance.ts's `buildSourceDatasetEntry`). */
+  fromEmber: boolean;
   /** Fakes the EMBER browse pane's dataset/video listing with this many video files spread across a
    * handful of fake datasets, bypassing `listManifestObjects`/`listOwnedEmbargoedDandisets`. Null
    * when `remote_listing` was not given. */
   remoteListing: number | null;
 }
+
+/** Where `&frame` parks the playhead, and which range `&snippet` marks, when neither names its own.
+ * Both are picked against `mock_video`'s own 30-frame default: mid-clip, and a real sub-range with
+ * recording on either side of it, so what a preview shows reads as a selection somebody made rather
+ * than the whole video or the frame it opened on. Both are held to the loaded video's own bounds
+ * (see main.ts's `applyMockReady`), so a shorter `mock_video=<n>` still lands somewhere real. */
+const MOCK_READY_FRAME = 12;
+const MOCK_READY_RANGE = { lo: 6, hi: 21 };
 
 /** Nothing to fake: every field is the value that leaves every real code path untouched. */
 const INERT: TestInjection = {
@@ -67,6 +104,11 @@ const INERT: TestInjection = {
   mockVideoLongSeconds: null,
   mockSlp: false,
   mismatch: false,
+  mockReady: false,
+  mockReadyMode: "frame",
+  mockReadyFrame: MOCK_READY_FRAME,
+  mockReadyRange: MOCK_READY_RANGE,
+  fromEmber: false,
   remoteListing: null,
 };
 
@@ -77,6 +119,16 @@ function intParam(params: URLSearchParams, key: string, fallback: number): numbe
   if (!raw) return fallback;
   const n = parseInt(raw, 10);
   return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+/** A `<lo>-<hi>` frame range out of a query param, or `fallback` for anything else — the bare flag
+ * (`&snippet`) included. Ends the wrong way round are put back in order rather than refused, the same
+ * way main.ts's `applyUrlMarks` treats a hand-written `?in=`/`?out=` pair. */
+function rangeParam(params: URLSearchParams, key: string, fallback: { lo: number; hi: number }): { lo: number; hi: number } {
+  const match = /^(\d+)-(\d+)$/.exec(params.get(key) ?? "");
+  if (!match) return fallback;
+  const [a, b] = [Number(match[1]), Number(match[2])];
+  return { lo: Math.min(a, b), hi: Math.max(a, b) };
 }
 
 /**
@@ -98,6 +150,14 @@ export function readTestInjection(search: string): TestInjection | null {
     mockVideoLongSeconds: mockVideoLongRaw !== null && mockVideoLongRaw > 0 ? mockVideoLongRaw : mockVideoLongRaw !== null ? 14400 : null,
     mockSlp: params.has("mock_slp"),
     mismatch: params.has("mismatch"),
+    mockReady: params.has("mock_ready"),
+    mockReadyMode: params.has("snippet") ? "snippet" : "frame",
+    // `frame` is also lib/urlState.ts's own param for the playhead of a shared session. Reading the
+    // same name here is deliberate rather than a collision: it means the same thing, and urlState's
+    // side of it is inert without a `?url=` beside it, which no `?test&mock_video` link has.
+    mockReadyFrame: intParam(params, "frame", MOCK_READY_FRAME),
+    mockReadyRange: rangeParam(params, "snippet", MOCK_READY_RANGE),
+    fromEmber: params.has("from_ember"),
     remoteListing: params.has("remote_listing") ? intParam(params, "remote_listing", 8) : null,
   };
 }
@@ -108,12 +168,13 @@ export function testInjectionOrInert(search: string): TestInjection {
   return readTestInjection(search) ?? INERT;
 }
 
-/** The first fake numeric identifier this module hands out. EMBER's real dandiset ids are assigned
- * sequentially from 1 and, as of this writing, are nowhere near seven digits — chosen well above any
- * plausible real id rather than negative, because {@link resolveConfig}'s `dandisetId` regex only
- * matches plain digits and a fake id has to survive the same parsing a real one does to drive a
- * truthful preview of the upload-destination UI. */
-const FAKE_DANDISET_ID_BASE = 9_900_001;
+/** The first fake numeric identifier this module hands out. Six digits, like a real dandiset id —
+ * `resolveConfig`'s own `dandisetId` regex only matches runs of six or more plain digits, and a fake
+ * id has to survive the same parsing a real one does to drive a truthful preview of the
+ * upload-destination UI (and, since a saved bundle is named after its dataset, of what Save writes).
+ * EMBER assigns its ids sequentially from 1 and is nowhere near this far up the range, so nothing
+ * here can collide with a real dataset. */
+const FAKE_DANDISET_ID_BASE = 214_000;
 
 /** Fakes the delivery destination's dataset list `applyDatasetList` would otherwise be handed by a
  * real `listIncomingDandisets` call. */
@@ -129,11 +190,55 @@ export function fakeIncomingDatasets(count: number, embargoed: boolean, humanSub
  * `remote_listing=N` still lands in one dataset, the common case worth eyeballing first. */
 const FAKE_VIDEOS_PER_DATASET = 4;
 
+/** Zero-padded two digits, matching the `sub-01`/`ses-01` style BIDS entities are conventionally
+ * written with — `lib/bidsPath.ts` itself does not require padding (`sub-1` is equally valid), but a
+ * fake listing reads as more true-to-life dressed the way a real one almost always is. */
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** A fixed `sub-01/ses-02` — a distinct subject *and* session, unlike `fakeArchiveBrowse`'s own first
+ * fake video (`sub-01/ses-01`) — so `from_ember` previews the archive-sourced case with one fixed,
+ * known-good path rather than a hand-typed subject/session, and with nothing to mistake for a bug
+ * where the two entities happen to share a number. */
+const FROM_EMBER_PATH_PREFIX = `sub-${pad2(1)}/ses-${pad2(2)}`;
+
+/** The fake dandiset an EMBER-sourced mock video reads as having come out of — deliberately NOT one
+ * of the {@link FAKE_DANDISET_ID_BASE} destination datasets, so a preview keeps its source and its
+ * destination visibly distinct (a bundle named `200123.tar.gz` destined for a `214000` upload), the
+ * way a real extraction's usually are. Same reasoning as that base otherwise: six digits like a real
+ * id, far above EMBER's sequential range, so nothing can collide with it. */
+const FROM_EMBER_DANDISET_ID = "200123";
+
+/** Where an EMBER-sourced mock video reads as having come from: {@link FROM_EMBER_DANDISET_ID}, at
+ * {@link FROM_EMBER_PATH_PREFIX}, so `?test&...&from_ember` previews the whole `SourceDatasets`
+ * entry (and the source-named bundle) a real Browse EMBER selection produces (see lib/provenance.ts's
+ * `buildSourceDatasetEntry` and lib/extract.ts's `bundleFileName`) rather than only its
+ * subject/session half. No `blobId`: this video is synthesized in the page and was never stored as a blob, and a
+ * made-up id would be the one part of the preview that is not a truthful stand-in for the real
+ * thing. Null without `from_ember`, whose "dropped locally" case belongs to no dataset at all. */
+export function fromEmberArchiveSource(injection: TestInjection, filename: string): ArchiveSource | null {
+  if (!injection.fromEmber) return null;
+  return { dandisetId: FROM_EMBER_DANDISET_ID, path: `${FROM_EMBER_PATH_PREFIX}/${filename}`, blobId: null };
+}
+
+/** A fake asset URL for the same video {@link fromEmberArchiveSource} places — resolving nowhere
+ * real, like every other test-injection URL (see `fakeArchiveBrowse`), but non-null wherever that
+ * source is, so an EMBER-sourced mock video also previews the address a real streamed selection
+ * carries rather than reading as a local drop. */
+export function fromEmberSourceUrl(injection: TestInjection, filename: string): string | null {
+  const source = fromEmberArchiveSource(injection, filename);
+  return source ? `https://test-injection.invalid/${source.path}` : null;
+}
+
 /**
  * Fakes the EMBER browse pane's listing: `n` video files, spread across as many fake datasets as it
  * takes to hold `FAKE_VIDEOS_PER_DATASET` each, bypassing the real bucket listing and manifest reads.
- * The video URLs resolve nowhere real — clicking one shows the ordinary "cannot be opened" refusal,
- * which is a truthful answer for a source this module invented, not a dead button.
+ * Each video's own path is BIDS-entity-shaped (`sub-01/ses-01/...`), the same structure a real
+ * dandiset's own asset paths carry — so a listing built this way previews `lib/bidsPath.ts`'s
+ * `behEntities` parsing the same way a real Browse EMBER selection would. The video URLs resolve
+ * nowhere real — clicking one shows the ordinary "cannot be opened" refusal, which is a truthful
+ * answer for a source this module invented, not a dead button.
  */
 export function fakeArchiveBrowse(n: number): { datasets: ArchiveDandiset[]; videos: Map<string, ArchiveVideo[]> } {
   const datasetCount = Math.max(1, Math.ceil(n / FAKE_VIDEOS_PER_DATASET));
@@ -148,7 +253,7 @@ export function fakeArchiveBrowse(n: number): { datasets: ArchiveDandiset[]; vid
       const url = `https://test-injection.invalid/${id}/video-${i + 1}.mp4`;
       return {
         dandisetId: id,
-        path: `sub-${d + 1}/session-${i + 1}.mp4`,
+        path: `sub-${pad2(d + 1)}/ses-${pad2(i + 1)}/video-${i + 1}.mp4`,
         size: 12_000_000 + i * 3_000_000,
         assetUrl: url,
         streamUrl: url,
@@ -173,7 +278,7 @@ const MOCK_VIDEO_HEIGHT = 240;
  * uses from outside the page, run here from inside it so a pasted `?test&mock_video` URL needs no
  * local file and no Playwright driving it.
  */
-export async function synthesizeVideoFile(frames: number, filename = "test-injection-mock-video.webm"): Promise<File> {
+export async function synthesizeVideoFile(frames: number, filename = "test-injection-mock-video.mp4"): Promise<File> {
   const canvas = document.createElement("canvas");
   canvas.width = MOCK_VIDEO_WIDTH;
   canvas.height = MOCK_VIDEO_HEIGHT;
@@ -196,7 +301,11 @@ export async function synthesizeVideoFile(frames: number, filename = "test-injec
     recorder.onstop = () => resolve();
     recorder.stop();
   });
-  return new File(chunks, filename, { type: "video/webm" });
+  // The bytes are real VP8/WebM (MediaRecorder has no other option here), but the mock stands in for
+  // what the app would actually see out of an archive-sourced recording — an mp4 container, h264
+  // inside — so the name and MIME type are deliberately mislabeled to match, same as the forced
+  // `VideoCodec: "h264"` override applies to this same mock elsewhere.
+  return new File(chunks, filename, { type: "video/mp4" });
 }
 
 /** How densely a synthesized long recording is sampled, in seconds per real frame. `showsWindow`
@@ -221,7 +330,7 @@ const LONG_MOCK_SECONDS_PER_FRAME = 10;
  * whatever explicit timestamp they are given, decoupled from wall-clock time entirely, so the same
  * span of container duration comes from frames encoded in a fraction of a second.
  */
-export async function synthesizeLongVideoFile(durationSeconds: number, filename = "test-injection-mock-long-video.webm"): Promise<File> {
+export async function synthesizeLongVideoFile(durationSeconds: number, filename = "test-injection-mock-long-video.mp4"): Promise<File> {
   const canvas = document.createElement("canvas");
   canvas.width = MOCK_VIDEO_WIDTH;
   canvas.height = MOCK_VIDEO_HEIGHT;
@@ -244,5 +353,7 @@ export async function synthesizeLongVideoFile(durationSeconds: number, filename 
     await source.add(timestamp, step);
   }
   await output.finalize();
-  return new File([target.buffer!], filename, { type: "video/webm" });
+  // Same deliberate mislabeling as `synthesizeVideoFile` above — real WebM bytes, named and typed as
+  // the mp4/h264 this mock stands in for.
+  return new File([target.buffer!], filename, { type: "video/mp4" });
 }
