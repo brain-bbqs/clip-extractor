@@ -11,6 +11,15 @@ async function lastFrame(page: Page): Promise<number> {
   return Number(await page.locator("#curVal").getAttribute("max"));
 }
 
+/** The range a freshly loaded video opens with: a fifth of the trim track in from each of its ends
+ * (see lib/timeline.ts's defaultSelection). Derived from the video's own length rather than written
+ * out, since MediaRecorder decides how many frames a `mock_video` capture really holds. On a clip
+ * short enough to sit on the track whole, which every one here is, the track is the recording. */
+async function defaultRange(page: Page): Promise<[number, number]> {
+  const last = await lastFrame(page);
+  return [Math.round(last * 0.2), Math.round(last * 0.8)];
+}
+
 /** Page x of a frame on the trim track — the same mapping the app reads a pointer through. The
  * track sits below the fold on a default viewport, and `page.mouse` works in viewport coordinates,
  * so every measurement is taken with it scrolled into view. */
@@ -40,23 +49,40 @@ test("the trim handles bound the snippet, and the readouts follow them", async (
   await page.goto("/?test&mock_video");
   await expect(page.locator("#view")).toBeVisible();
   const last = await lastFrame(page);
+  const [defaultIn, defaultOut] = await defaultRange(page);
 
-  // Nothing marked yet: both ends sit at the video's own bounds, shown as unset.
-  await expect(page.locator("#inHandle")).toHaveClass(/unset/);
-  await expect(page.locator("#outHandle")).toHaveClass(/unset/);
-  await expect(page.locator("#inVal")).toHaveValue("");
-  await expect(page.locator("#outVal")).toHaveValue("");
-
-  await dragHandle(page, "#inHandle", 5);
-  // Dragging either handle commits both ends, so the band never has a "—" at one side of it.
+  // A fresh video opens with a snippet already marked out on it, a fifth of the track in from each
+  // end, rather than with both handles flat against the video's own bounds.
   await expect(page.locator("#inHandle")).not.toHaveClass(/unset/);
   await expect(page.locator("#outHandle")).not.toHaveClass(/unset/);
+  await expect(page.locator("#inVal")).toHaveValue(String(defaultIn));
+  await expect(page.locator("#outVal")).toHaveValue(String(defaultOut));
+
+  await dragHandle(page, "#inHandle", 5);
+  // Moving one end leaves the other where it was.
   await expect(page.locator("#inVal")).toHaveValue("5");
-  await expect(page.locator("#outVal")).toHaveValue(String(last));
+  await expect(page.locator("#outVal")).toHaveValue(String(defaultOut));
 
   await dragHandle(page, "#outHandle", last - 5);
   await expect(page.locator("#inVal")).toHaveValue("5");
   await expect(page.locator("#outVal")).toHaveValue(String(last - 5));
+});
+
+test("Reset range puts the snippet back where the video opened it", async ({ page }) => {
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
+  const [defaultIn, defaultOut] = await defaultRange(page);
+
+  await dragHandle(page, "#inHandle", 2);
+  await dragHandle(page, "#outHandle", 4);
+  await expect(page.locator("#inVal")).toHaveValue("2");
+
+  // Back to the opening range rather than to nothing marked: a snippet always has two real ends, so
+  // Save is never handed the whole recording under the name of a clip.
+  await page.locator("#btnClearSel").click();
+  await expect(page.locator("#inVal")).toHaveValue(String(defaultIn));
+  await expect(page.locator("#outVal")).toHaveValue(String(defaultOut));
+  await expect(page.locator("#selfill")).toBeVisible();
 });
 
 test("a handle dragged past its partner stops there instead of crossing it", async ({ page }) => {
@@ -76,10 +102,14 @@ test("a trim marker stays grabbable with the playhead parked on it", async ({ pa
   await page.goto("/?test&mock_video");
   await expect(page.locator("#view")).toBeVisible();
 
-  // Everything starts at frame 0, so the playhead's line runs straight down through the In marker.
-  // The line is a readout rather than a target, so the press has to reach the marker underneath it
-  // — otherwise the first thing anyone tries to trim on a freshly loaded video cannot be grabbed.
+  // The playhead starts at frame 0, and the In mark is pulled onto it, so its line then runs
+  // straight down through the marker. The line is a readout rather than a target, so the press has
+  // to reach the marker underneath it — otherwise a mark cannot be moved off the frame being
+  // looked at.
   await expect(page.locator("#curVal")).toHaveValue("0");
+  await dragHandle(page, "#inHandle", 0);
+  await expect(page.locator("#inVal")).toHaveValue("0");
+
   await dragHandle(page, "#inHandle", 8);
   await expect(page.locator("#inVal")).toHaveValue("8");
   // ...and the playhead did not come along for the ride.
@@ -113,14 +143,16 @@ test("the playhead is a marker on the same track, dragged and pressed for", asyn
   await expect(page.locator("#curVal")).toHaveValue("12");
   await expect(page.locator("#overlayInfo")).toContainText("frame 12 /");
 
-  // Pressing bare track moves the playhead, not a trim end — the one gesture whose meaning does not
-  // change with the selector mode.
+  // Pressing the track moves the playhead, not a trim end — the one gesture whose meaning does not
+  // change with the selector mode. Frame 20 is inside the band the video opened with, so this also
+  // covers the case the band would otherwise swallow: a press on it that never became a drag.
   const target = await xOfFrame(page, 20);
   await page.mouse.click(target.x, target.y);
   await expect(page.locator("#curVal")).toHaveValue("20");
-  // The trim ends stayed where they were.
-  await expect(page.locator("#inVal")).toHaveValue("");
-  await expect(page.locator("#outVal")).toHaveValue("");
+  // The trim ends stayed where the load put them.
+  const [defaultIn, defaultOut] = await defaultRange(page);
+  await expect(page.locator("#inVal")).toHaveValue(String(defaultIn));
+  await expect(page.locator("#outVal")).toHaveValue(String(defaultOut));
 
   // It survives into frame mode, where it is the whole selection.
   await page.locator('#modeSeg button[data-mode="frame"]').click();

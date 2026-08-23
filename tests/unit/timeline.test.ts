@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  defaultSelection,
   frameAt,
   fractionOf,
   hourMarks,
@@ -165,6 +166,42 @@ describe("frameAt", () => {
   it("never reads past the last frame of the video", () => {
     const at0 = windowFor(DAY, 0, HALF);
     expect(frameAt(at0, 1, 60)).toBe(59);
+  });
+});
+
+describe("defaultSelection", () => {
+  it("marks a fifth of the track in from each of its ends", () => {
+    const at = windowFor(600, 0, HALF);
+    expect(defaultSelection(at, 600)).toEqual([frameAt(at, 0.2, 600), frameAt(at, 0.8, 600)]);
+  });
+
+  it("leaves most of a short recording inside the range, and both ends clear of it", () => {
+    const at = windowFor(30, 0, HALF);
+    const [lo, hi] = defaultSelection(at, 30)!;
+    expect(lo).toBe(6);
+    expect(hi).toBe(23);
+  });
+
+  it("measures across the window rather than across the recording", () => {
+    // A day-long file: the range has to land on the stretch of track that is on screen, not a fifth
+    // of the way into the recording, which the track over the fourteenth hour does not reach.
+    const at = windowFor(DAY, 14 * HOUR, HALF);
+    const [lo, hi] = defaultSelection(at, DAY)!;
+    expect(lo).toBeGreaterThan(at.start);
+    expect(hi).toBeLessThan(at.start + at.len - 1);
+    expect(hi - lo).toBe(Math.round(0.6 * (at.len - 1)));
+  });
+
+  it("never reaches past either end of the recording", () => {
+    const at = windowFor(600, 0, HALF);
+    const [lo, hi] = defaultSelection(at, 600)!;
+    expect(lo).toBeGreaterThanOrEqual(0);
+    expect(hi).toBeLessThanOrEqual(599);
+  });
+
+  it("marks nothing on a recording too short to hold a snippet", () => {
+    expect(defaultSelection(windowFor(1, 0, HALF), 1)).toBe(null);
+    expect(defaultSelection(windowFor(0, 0, HALF), 0)).toBe(null);
   });
 });
 

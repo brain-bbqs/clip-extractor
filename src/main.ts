@@ -3,6 +3,7 @@ import * as sio from "@talmolab/sleap-io.js";
 import { getElements } from "./ui/elements";
 import { bytes, fmtTime, rulerLabel } from "./lib/format";
 import {
+  defaultSelection,
   frameAt,
   fractionOf,
   hourMarks,
@@ -561,8 +562,9 @@ async function loadVideo(
     sourceGeneration++;
     clearDeliveryOutcomes();
     state.cur = 0;
-    state.inF = null;
-    state.outF = null;
+    // A recording opens with a snippet already marked out on it rather than with bare handles and a
+    // range that silently means all of it — see resetSelection.
+    resetSelection();
     // Blur areas are placed in the pixels of the video that was on screen when they were drawn.
     // Another recording puts something else under them, so they are dropped rather than carried
     // over onto a frame nobody has looked at.
@@ -1223,6 +1225,17 @@ function selRange(): [number, number] {
   return [Math.min(a, b), Math.max(a, b)];
 }
 
+/** Puts the snippet's ends back where a freshly opened recording starts them: a fifth of the trim
+ * track in from each of its ends (see lib/timeline.ts's defaultSelection). Both the opening range
+ * and what "Reset range" goes back to, so the two are the same range and the player is never left in
+ * a state no load produces. Silent about the UI, since a load is still assembling one when it calls
+ * this; the button below funnels through selectionChanged as every other move of the marks does. */
+function resetSelection(): void {
+  const range = defaultSelection(view(), state.totalFrames);
+  state.inF = range?.[0] ?? null;
+  state.outF = range?.[1] ?? null;
+}
+
 // ============================================================
 // The stretch of the recording the trim track covers
 // ============================================================
@@ -1668,13 +1681,13 @@ els.selbar.addEventListener("pointerdown", (e) => {
 
 // Dragging the band between the handles slides the whole range, keeping its length — the usual way
 // to move a clip of the right duration onto the right moment.
-let bandDrag: { grabbedAt: number; lo: number; hi: number } | null = null;
+let bandDrag: { grabbedAt: number; lo: number; hi: number; moved: boolean } | null = null;
 els.selfill.addEventListener("pointerdown", (e) => {
   if (!state.backend) return;
   e.preventDefault();
   els.selfill.setPointerCapture(e.pointerId);
   const [lo, hi] = selRange();
-  bandDrag = { grabbedAt: frameAtClientX(e.clientX), lo, hi };
+  bandDrag = { grabbedAt: frameAtClientX(e.clientX), lo, hi, moved: false };
   stopPlay();
 });
 els.selfill.addEventListener("pointermove", (e) => {
@@ -1683,10 +1696,15 @@ els.selfill.addEventListener("pointermove", (e) => {
   // Clamp the shift rather than either end, so sliding into a boundary stops the band there instead
   // of squashing it against the edge.
   const shift = Math.max(-bandDrag.lo, Math.min(last - bandDrag.hi, frameAtClientX(e.clientX) - bandDrag.grabbedAt));
+  if (shift !== 0) bandDrag.moved = true;
   setSelection(bandDrag.lo + shift, bandDrag.hi + shift);
 });
 const releaseBand = (e: PointerEvent): void => {
   if (els.selfill.hasPointerCapture(e.pointerId)) els.selfill.releasePointerCapture(e.pointerId);
+  // A press that never became a drag is a press on the track, and a press on the track means the
+  // playhead. The band covers the middle of the track from the moment a video opens (see
+  // resetSelection), so without this most of a seek control would quietly stop answering clicks.
+  if (e.type === "pointerup" && bandDrag && !bandDrag.moved) void seek(bandDrag.grabbedAt);
   bandDrag = null;
 };
 els.selfill.addEventListener("pointerup", releaseBand);
@@ -1845,6 +1863,10 @@ interface BrowseState {
   /** True once every dataset's file list has been read, which is what "with video only" needs. */
   swept: boolean;
   selected: string | null;
+  /** The asset URL of the video last picked out of the list, so its row can be marked the way the
+   * open dataset's is. Held by asset URL rather than by path, which only identifies a file within
+   * its own dataset. */
+  selectedVideo: string | null;
   /** Cancels this pass's outstanding reads when the pane is rebuilt (a sign-in, say). */
   abort: AbortController;
 }
@@ -1861,6 +1883,9 @@ let browseFilterTimer: ReturnType<typeof setTimeout> | undefined;
  * count arriving mid-sweep updates one row instead of rebuilding the list. */
 const browseRowLabels = new Map<string, HTMLElement>();
 const browseRowMeta = new Map<string, HTMLElement>();
+/** The row buttons of the videos currently listed, by asset URL, so picking one can mark it where
+ * it sits instead of rebuilding the list around it. */
+const browseVideoRows = new Map<string, HTMLElement>();
 
 /** The archive config the browse pane's API calls run under. Unlike currentConfig(), it is not
  * tied to the upload destination picker: which dataset is being read is passed per call. */
@@ -1884,6 +1909,12 @@ function browseEmpty(list: HTMLUListElement, message: string): void {
   list.append(li);
 }
 
+/** Empties the video list and says why, dropping the rows the selection mark tracks along with it. */
+function browseVideosEmpty(message: string): void {
+  browseVideoRows.clear();
+  browseEmpty(els.browseVideos, message);
+}
+
 /** The title to show for a dataset, wherever it came from. */
 function browseName(current: BrowseState, dandiset: ArchiveDandiset): string {
   return dandiset.name || current.names.get(dandiset.id) || "";
@@ -1893,6 +1924,9 @@ function browseName(current: BrowseState, dandiset: ArchiveDandiset): string {
  * or out changes which datasets there are to see. */
 async function refreshBrowse(): Promise<void> {
   const reopen = browse?.selected ?? null;
+  // A rebuild changes what the pane can see, not what is on the stage, so the video picked out of it
+  // stays picked and its row is marked again as soon as the list holding it is drawn.
+  const picked = browse?.selectedVideo ?? null;
   browse?.abort.abort();
   browseSignedIn = isSignedIn();
   const generation = ++browseGeneration;
@@ -1902,13 +1936,14 @@ async function refreshBrowse(): Promise<void> {
     videos: new Map(),
     swept: false,
     selected: null,
+    selectedVideo: picked,
     abort: new AbortController(),
   };
   browse = current;
   const signal = current.abort.signal;
   els.browseDandisetLink.hidden = true;
   els.browseVideoHeading.textContent = "Videos";
-  browseEmpty(els.browseVideos, "Choose a dataset to see the videos in it.");
+  browseVideosEmpty("Choose a dataset to see the videos in it.");
   els.browseDandisets.replaceChildren();
 
   // `?test&remote_listing=N` fakes the whole pane — the bucket listing, the manifests, and the
@@ -2168,7 +2203,7 @@ async function selectDandiset(dandiset: ArchiveDandiset): Promise<void> {
     return;
   }
   const cost = dandiset.embargoed ? "" : ` (${bytes(dandiset.manifestBytes)})`;
-  browseEmpty(els.browseVideos, `Reading the file list for ${dandiset.id}${cost}…`);
+  browseVideosEmpty(`Reading the file list for ${dandiset.id}${cost}…`);
   try {
     const videos = await readDandisetVideos(dandiset, current.abort.signal);
     if (generation !== browseGeneration || browse?.selected !== dandiset.id) return;
@@ -2179,15 +2214,26 @@ async function selectDandiset(dandiset: ArchiveDandiset): Promise<void> {
   } catch (e) {
     if (current.abort.signal.aborted || generation !== browseGeneration) return;
     log(`Could not read the file list for ${dandiset.id}: ${(e as Error).message}`, "err");
-    browseEmpty(els.browseVideos, `The file list for ${dandiset.id} could not be read: ${friendlyError(e)}`);
+    browseVideosEmpty(`The file list for ${dandiset.id} could not be read: ${friendlyError(e)}`);
+  }
+}
+
+/** Marks the row of the video the pane last picked, the same way the open dataset's row is marked.
+ * Rows in another dataset's list never match, since the mark is held by asset URL: opening a second
+ * dataset leaves nothing highlighted, which is the truth about that list. */
+function markSelectedVideo(): void {
+  for (const [assetUrl, button] of browseVideoRows) {
+    if (assetUrl === browse?.selectedVideo) button.setAttribute("aria-current", "true");
+    else button.removeAttribute("aria-current");
   }
 }
 
 function renderVideoList(videos: readonly ArchiveVideo[]): void {
   if (!videos.length) {
-    browseEmpty(els.browseVideos, "This dataset holds no video files.");
+    browseVideosEmpty("This dataset holds no video files.");
     return;
   }
+  browseVideoRows.clear();
   els.browseVideos.replaceChildren();
   for (const video of videos) {
     // The manifest reports every asset's size, so a file the player would refuse is marked as one
@@ -2196,16 +2242,24 @@ function renderVideoList(videos: readonly ArchiveVideo[]): void {
     const refusal = unstreamableRefusal(video.path, video.size);
     const meta = refusal ? `${bytes(video.size)} · no streaming` : bytes(video.size);
     const { li } = browseRow("", video.path, meta, () => void streamArchiveVideo(video));
+    const button = li.firstElementChild as HTMLElement | null;
     if (refusal) {
-      li.firstElementChild?.classList.add("blocked");
-      li.firstElementChild?.setAttribute("title", refusal);
+      button?.classList.add("blocked");
+      button?.setAttribute("title", refusal);
     }
+    if (button) browseVideoRows.set(video.assetUrl, button);
     els.browseVideos.append(li);
   }
+  markSelectedVideo();
 }
 
 async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
   const name = video.path.split("/").pop() || video.path;
+  // Marked before anything is attempted, a refusal included: the highlight says which row was
+  // picked, the way the dataset list's does, and a file that will not open is one whose row most
+  // needs pairing with the reason written out below it.
+  if (browse) browse.selectedVideo = video.assetUrl;
+  markSelectedVideo();
   // Settled against the size the archive reports, so an embargoed file is refused without a signed
   // link being asked for on its behalf.
   const refusal = unstreamableRefusal(video.path, video.size);
@@ -2283,8 +2337,7 @@ wireSeg(els.speedSeg, (v) => {
   state.speed = parseFloat(v);
 });
 els.btnClearSel.addEventListener("click", () => {
-  state.inF = null;
-  state.outF = null;
+  resetSelection();
   selectionChanged();
 });
 els.showPose.addEventListener("change", () => {
@@ -2841,7 +2894,8 @@ function setUploadProgress(fraction: number | null, done = false): void {
 
 /** In frame mode the current frame is always a valid selection; a snippet needs at least one of the
  * in/out points marked, since with neither the range silently means "the entire video" — which is
- * not something to hand off under the name of a clip. */
+ * not something to hand off under the name of a clip. A load marks both (see resetSelection), so
+ * this now only refuses a recording too short to bound a snippet in at all. */
 function hasSelection(): boolean {
   return state.mode === "frame" || state.inF !== null || state.outF !== null;
 }
@@ -3474,10 +3528,15 @@ async function applyUrlMarks(link: UrlState): Promise<void> {
   const held = (frame: number | null): number | null => (frame === null ? null : Math.max(0, Math.min(last, frame)));
   const lo = held(link.inF);
   const hi = held(link.outF);
-  // Ends the wrong way round are put back in order rather than refused: which is In and which is
-  // Out is what the two numbers say, not which of them a hand-written link put first.
-  state.inF = lo !== null && hi !== null ? Math.min(lo, hi) : lo;
-  state.outF = lo !== null && hi !== null ? Math.max(lo, hi) : hi;
+  // A link naming no marks at all is a link to the video and nothing more — the older `?url=`
+  // spelling is exactly that — so it keeps the range the load already marked out rather than
+  // stripping it back off again.
+  if (lo !== null || hi !== null) {
+    // Ends the wrong way round are put back in order rather than refused: which is In and which is
+    // Out is what the two numbers say, not which of them a hand-written link put first.
+    state.inF = lo !== null && hi !== null ? Math.min(lo, hi) : lo;
+    state.outF = lo !== null && hi !== null ? Math.max(lo, hi) : hi;
+  }
   if (link.mode === "frame") {
     selectSeg(els.modeSeg, "frame");
     setMode("frame");

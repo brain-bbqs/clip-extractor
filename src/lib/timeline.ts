@@ -73,6 +73,31 @@ export function frameAt(view: TimelineView, fraction: number, totalFrames: numbe
   return clamp(frame, 0, Math.max(0, totalFrames - 1));
 }
 
+/** How far in from each end of the trim track a fresh snippet's ends sit, as a fraction of the
+ * stretch the track covers. A fifth: far enough in that both handles clear the edges and the band
+ * between them is plainly a band, near enough the ends that most of the window is still in it. */
+export const DEFAULT_SELECTION_INSET = 0.2;
+
+/**
+ * The range a snippet starts out with over `view`.
+ *
+ * A snippet has to begin somewhere, and beginning nowhere means opening the trim track with both
+ * handles flat against its edges and the range standing, silently, for the whole recording. Starting
+ * a fifth in from each end puts a real band on the track: something to drag rather than something to
+ * find, with both ends already clear of the edges they would otherwise be pinned to.
+ *
+ * Measured across the window rather than across the recording, so a day-long file starts with a
+ * range on the part of the track that is actually on screen instead of one nothing there can reach.
+ *
+ * Null when there is nothing to bound: a single frame is a frame, not a snippet.
+ */
+export function defaultSelection(view: TimelineView, totalFrames: number): [number, number] | null {
+  if (totalFrames < 2 || view.len < 2) return null;
+  const lo = frameAt(view, DEFAULT_SELECTION_INSET, totalFrames);
+  const hi = frameAt(view, 1 - DEFAULT_SELECTION_INSET, totalFrames);
+  return lo < hi ? [lo, hi] : null;
+}
+
 /** One gradation on the trim track's ruler. */
 export interface RulerMark {
   frame: number;
