@@ -154,12 +154,13 @@ describe("buildCompanionSidecar", () => {
     expect(sidecar).not.toHaveProperty("Sources");
   });
 
-  it("omits Checksum entirely for a file BEP047 gives no checksum-worthy identity to, like a .slp", () => {
+  it("writes the technical keys last, after what the file is and where it came from", () => {
     const sidecar = buildCompanionSidecar({
-      description: "SLEAP pose annotations.",
-      sources: [],
-      checksum: null,
+      description: "The pose overlay.",
+      technical: imageTechnicalFields(640, 480),
+      sources: ["derivatives/clip-extractor/sub-1/beh/sub-1_recording-1_image.png"],
+      checksum: digest,
     });
-    expect(sidecar).not.toHaveProperty("Checksum");
+    expect(Object.keys(sidecar)).toEqual(["Description", "Sources", "Checksum", "ImageWidth", "ImageHeight"]);
   });
 });

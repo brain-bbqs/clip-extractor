@@ -4,8 +4,9 @@ import { loadRecordedVideo, seekTo, stubArchive, stubH5Wasm, SLP_CLIP_FRAMES } f
 
 // A .slp loaded alongside the video adds two more assets to an upload: the annotations file itself
 // (with the "include the original content" toggle) and a rendered overlay version of the selection,
-// with its own sidecar (regardless of that toggle). Frame mode is used so no ffmpeg.wasm — and so no
-// CDN — is needed.
+// with its own sidecar (regardless of that toggle). The .slp travels alone, with no sidecar of its
+// own — it is self-describing, carrying its skeleton and frame indices inside the file (see
+// main.ts's deliverAnnotationFile). Frame mode is used so no ffmpeg.wasm — and so no CDN — is needed.
 const SLP_FIXTURE = fileURLToPath(new URL("../fixtures/mice_new.tracked.slp", import.meta.url));
 
 // No archive path names a locally dropped video, so its subject entity falls back to `sub-unknown`
@@ -13,7 +14,7 @@ const SLP_FIXTURE = fileURLToPath(new URL("../fixtures/mice_new.tracked.slp", im
 // instant — it names this delivery's own directory under derivatives/ and every filename inside it
 // (see lib/bidsPath.ts's derivativesDirectory), read back from the first registered path here.
 
-test("a loaded .slp adds the annotations file and a rendered overlay (with its own sidecar) to the upload", async ({ page }) => {
+test("a loaded .slp adds the annotations file (no sidecar of its own) and a rendered overlay to the upload", async ({ page }) => {
   const { registered } = await stubArchive(page);
   await stubH5Wasm(page);
 
@@ -45,8 +46,8 @@ test("a loaded .slp adds the annotations file and a rendered overlay (with its o
     `${derivativesDir}/sub-unknown_recording-${recording}_desc-overlay_image.json`,
     "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.webm",
     "sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.json",
+    // The .slp itself, and no `mice_new.tracked.json` beside it: the format describes itself.
     `${derivativesDir}/mice_new.tracked.slp`,
-    `${derivativesDir}/mice_new.tracked.json`,
     `${derivativesDir}/sub-unknown_recording-${recording}_image.json`,
     "dataset_description.json",
     "derivatives/clip-extractor/dataset_description.json",

@@ -167,22 +167,23 @@ export function buildBehSidecar(
   };
 }
 
-/** A lighter sidecar for a companion file — the pose overlay, the original source copied alongside
- * its derivative, or a loaded `.slp` — that only needs to name what it is and point back at whatever
- * it came from, rather than repeat the primary sidecar's whole record a second time. No `GeneratedBy`
- * here either, for the same reason `buildBehSidecar` above has none. */
+/** A lighter sidecar for a companion file — the pose overlay, or the original source copied alongside
+ * its derivative — that only needs to name what it is and point back at whatever it came from, rather
+ * than repeat the primary sidecar's whole record a second time. No `GeneratedBy` here either, for the
+ * same reason `buildBehSidecar` above has none.
+ *
+ * Only BEP047 media companions get one at all. A loaded pose file (`.slp`, `.nwb`) travels beside the
+ * extract with no sidecar: both formats describe themselves from the inside, so a companion `.json`
+ * would restate what opening the file already says (see main.ts's deliverAnnotationFile). */
 export interface CompanionSidecarInput {
   description: string;
-  /** Omitted for a file BEP047 has no technical vocabulary for at all — a `.slp`, say — rather than
-   * for anything with real dimensions or a frame rate to report. */
-  technical?: VideoTechnicalFields | ImageTechnicalFields;
+  technical: VideoTechnicalFields | ImageTechnicalFields;
   /** The asset path(s) this file was derived or copied from, relative to the dataset root; empty for
    * the untouched source video itself, which has no upstream to name. */
   sources: string[];
-  /** This file's own digest, or null for one BEP047 gives no `Checksum`-worthy identity to — a `.slp`,
-   * which is not itself a video/image asset (see `checksumField`). Video/image companions (the pose
-   * overlay, the copied-along original) always pass their own real digest. */
-  checksum: FileDigest | null;
+  /** This file's own digest — always real, since every companion written is a video or image asset
+   * `checksumField` gives an identity to. */
+  checksum: FileDigest;
 }
 
 export function buildCompanionSidecar(input: CompanionSidecarInput): Record<string, unknown> {
@@ -190,7 +191,7 @@ export function buildCompanionSidecar(input: CompanionSidecarInput): Record<stri
   // Omitted rather than written empty: an untouched source video has no upstream to name, and an
   // absent `Sources` says that more plainly than one that names nothing.
   if (input.sources.length) sidecar.Sources = input.sources;
-  if (input.checksum) sidecar.Checksum = checksumField(input.checksum);
+  sidecar.Checksum = checksumField(input.checksum);
   // BEP047's own technical keys, grouped together last — see buildBehSidecar's own comment on why.
   Object.assign(sidecar, input.technical);
   return sidecar;

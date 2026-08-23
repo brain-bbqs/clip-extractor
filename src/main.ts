@@ -3120,20 +3120,16 @@ async function deliverOverlay(
 
 /** Checksums the source video, and hands it over when the toggle asks for it. The checksum is taken
  * either way: recording which video a clip came from is only useful if that video can be identified
- * again later. */
-async function deliverOriginalVideo(
-  deliver: DeliverFile,
-  directory: string,
-  beh: BehEntities,
-  onProgress: ExtractProgress,
-): Promise<{ original: File | null; originalDigest: BlobDigest | null; originalPath: string | null }> {
+ * again later — and `sourceDigestOnce` holds it for whatever asks next, so nothing is handed back
+ * from here. */
+async function deliverOriginalVideo(deliver: DeliverFile, directory: string, beh: BehEntities, onProgress: ExtractProgress): Promise<void> {
   const original = state.sourceFile;
-  if (!original) return { original: null, originalDigest: null, originalPath: null };
+  if (!original) return;
   const label = "the original video";
   // Keyed to the load rather than the selection: the same bytes hash to the same digest however
   // many selections are cut out of them, and this is the hash that can take minutes.
   const originalDigest = await sourceDigestOnce(`source-${sourceGeneration}`, () => checksumFor(original, label, onProgress));
-  if (!els.uploadOriginal.checked) return { original, originalDigest, originalPath: null };
+  if (!els.uploadOriginal.checked) return;
   // BEP047 entity-shaped, like everything else this app writes — not the name it arrived with — but
   // with no disambiguator at all (see lib/bidsPath.ts's own header comment and
   // `sourcedataOriginalFilename`): re-delivering the same source is expected to overwrite this copy,
@@ -3174,18 +3170,18 @@ async function deliverOriginalVideo(
     sources: [],
     checksum: { md5: originalDigest.md5, sha256: originalDigest.sha256, dandiEtag: originalDigest.etag },
   });
-  return { original, originalDigest, originalPath };
 }
 
-/** Same for a loaded `.slp`: it rides along on the same toggle and is checksummed either way. Placed
- * in `derivatives/` alongside the extract, not `sourcedata/`: it is itself the output of a pose
- * estimation pipeline run over the source video, not the raw recording. */
-async function deliverAnnotationFile(
-  deliver: DeliverFile,
-  directory: string,
-  sourcePath: string | null,
-  onProgress: ExtractProgress,
-): Promise<DeliveredSlp | null> {
+/** Same for a loaded pose file (`.slp` or `.nwb`): it rides along on the same toggle and is
+ * checksummed either way. Placed in `derivatives/` alongside the extract, not `sourcedata/`: it is
+ * itself the output of a pose estimation pipeline run over the source video, not the raw recording.
+ *
+ * It travels without a sidecar of its own. Both formats are self-describing — a `.slp` and an `.nwb`
+ * each carry their own skeleton, their own frame indices and their own provenance inside the file —
+ * so a companion `.json` naming the format and pointing back at the video would only restate what
+ * opening the file says better. The video and image assets this app produces still get theirs: those
+ * are BEP047 media files, where the sidecar is where the technical keys are defined to live. */
+async function deliverAnnotationFile(deliver: DeliverFile, directory: string, onProgress: ExtractProgress): Promise<DeliveredSlp | null> {
   const slpFile = state.slpFile;
   if (!slpFile) return null;
   const label = "the annotations";
@@ -3193,12 +3189,6 @@ async function deliverAnnotationFile(
   if (!els.uploadOriginal.checked) return { digest, path: null };
   const path = uploadAssetPath(directory, verbatimFilename(slpFile.name));
   await deliver({ blob: slpFile, path, contentType: slpFile.type || "application/octet-stream", label, digest });
-  await deliverSidecar(deliver, directory, slpFile.name, onProgress, {
-    description: "SLEAP pose annotations loaded alongside the source video, covering (at least) this delivery's selection.",
-    sources: sourcePath ? [sourcePath] : [],
-    // Not a video/image asset BEP047 gives a `Checksum`-worthy identity to — see buildCompanionSidecar.
-    checksum: null,
-  });
   return { digest, path };
 }
 
@@ -3285,8 +3275,8 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   await deliver({ blob: media.blob, path: mediaPath, contentType: media.mime, label: `the ${kind}`, digest: mediaDigest });
 
   await deliverOverlay(deliver, directories.derivatives, mediaPath, entities, backend, blur, onProgress);
-  const { originalPath } = await deliverOriginalVideo(deliver, directories.sourcedata, beh, onProgress);
-  await deliverAnnotationFile(deliver, directories.derivatives, originalPath, onProgress);
+  await deliverOriginalVideo(deliver, directories.sourcedata, beh, onProgress);
+  await deliverAnnotationFile(deliver, directories.derivatives, onProgress);
 
   const provenanceInput: ProvenanceInput = { description: els.selectionDescription.value };
 
