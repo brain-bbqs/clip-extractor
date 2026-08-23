@@ -90,6 +90,10 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
   expect(sidecar.Description).toBe("The mouse leaves frame here — the tracker keeps a stale track.");
   // No nested, app-specific record alongside the standard BEP047/BEP028 keys.
   expect(sidecar).not.toHaveProperty("clip-extractor");
+  // The frame's stored pixel layout, read off the PNG the browser actually encoded (not assumed):
+  // 8-bit, RGB with or without alpha depending on the encoder's choice.
+  expect(sidecar.ImageBitDepth).toBe(8);
+  expect(sidecar.ImagePixelFormat).toMatch(/^(rgba|rgb24)$/);
 
   // The original's own sidecar carries its real technical properties, not a copy of the extract's.
   const originalSidecar = JSON.parse(entries[2].text) as Record<string, unknown>;

@@ -6,6 +6,7 @@ import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
 import type { StreamingVideoBackend } from "./streaming";
 import type { SelectionKind } from "./delivery";
 import { behFilename, behSidecarName, type BehEntities } from "./bidsPath";
+import { pngFormatInfo } from "./pngFormat";
 import type { PoseModel, SleapVideoBackend, TrimMode } from "./types";
 
 // Turns the current selection into a single file, ready for either delivery route (download or
@@ -23,6 +24,12 @@ export interface ExtractedMedia {
    * `VideoCodec` sidecar field — undefined for a still image, and for a streamed cut this app
    * re-encoded without pinning down what mediabunny chose to encode it as. */
   codec?: string;
+  /** A still image's stored pixel layout, read off the PNG the browser actually wrote (see
+   * lib/pngFormat.ts) — BEP047's `ImagePixelFormat`/`ImageBitDepth`. Undefined for a video, whose
+   * sidecar takes these from the source's own probe instead, and for a PNG whose layout FFmpeg's
+   * vocabulary has no name for. */
+  pixelFormat?: string;
+  bitDepth?: number;
 }
 
 /** Reports what extraction is doing, plus 0..1 progress when the step can measure it. */
@@ -252,6 +259,7 @@ export async function extractFrame(params: ExtractFrameParams): Promise<Extracte
     filename: frameFileName(beh),
     mime: "image/png",
     encoding: `canvas.toBlob(image/png), decoded frame without pose overlay${blurred ? `, ${blurred}` : ""}`,
+    ...((await pngFormatInfo(blob)) ?? {}),
   };
 }
 
@@ -304,11 +312,13 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
   const blurred = blurSummary(blur);
   if (mode === "frame") {
     onProgress?.(`Drawing the overlay on frame ${inFrame}…`);
+    const blob = await renderOverlayFrame(inFrame);
     return {
-      blob: await renderOverlayFrame(inFrame),
+      blob,
       filename: overlayFileName(beh, mode),
       mime: "image/png",
       encoding: `canvas.toBlob(image/png), decoded frame with the pose overlay drawn in${blurred ? `, ${blurred}` : ""}`,
+      ...((await pngFormatInfo(blob)) ?? {}),
     };
   }
 

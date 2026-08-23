@@ -304,6 +304,10 @@ function urlState(): UrlState {
  * not a trail of pages to press Back through. Defaults to the one on screen; the restore below
  * passes the link it was opening when that link did not open. */
 function writeUrl(next: UrlState = urlState()): void {
+  // A test-injection link belongs to its own harness, flags and all — several of them (`frame`,
+  // `mode`) collide with this module's params, and re-serializing would strip those and turn every
+  // bare `&flag` into `&flag=`. A mock session is not one anybody links back into anyway.
+  if (testInjection) return;
   const search = writeUrlState(location.search, next);
   if (search === location.search) return;
   history.replaceState(history.state, "", `${location.pathname}${search}${location.hash}`);
@@ -3093,7 +3097,7 @@ async function deliverOverlay(
   // so `Sources` is enough to tie the two together.
   const technical =
     entities.mode === "frame"
-      ? imageTechnicalFields(state.width, state.height)
+      ? imageTechnicalFields(state.width, state.height, { pixelFormat: media.pixelFormat, bitDepth: media.bitDepth })
       : videoTechnicalFields(state.fps, state.width, state.height, entities.outFrame - entities.inFrame + 1, { codec: media.codec });
   const sidecar = buildCompanionSidecar({
     description: "The selection with the pose overlay drawn into the pixels.",
@@ -3290,7 +3294,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // `GeneratedBy` entry, and the description typed for this delivery — see lib/provenance.ts.
   const technical =
     kind === "frame"
-      ? imageTechnicalFields(state.width, state.height)
+      ? imageTechnicalFields(state.width, state.height, { pixelFormat: media.pixelFormat, bitDepth: media.bitDepth })
       : videoTechnicalFields(state.fps, state.width, state.height, hi - lo + 1, { codec: media.codec });
   const sidecar = buildBehSidecar(provenanceInput, technical, {
     md5: mediaDigest.md5,

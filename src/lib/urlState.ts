@@ -107,7 +107,10 @@ export function writeUrlState(search: string, state: UrlState): string {
     if (!state.overlay) params.set("overlay", "0");
     if (state.description) params.set("description", state.description);
   }
-  const query = params.toString();
+  // URLSearchParams serializes a bare flag (`&debug`) as `&debug=`. This module never writes an
+  // empty value of its own, so every `=` before a separator is a carried-through flag getting its
+  // spelling changed for nothing — put it back.
+  const query = params.toString().replace(/=(?=&|$)/g, "");
   return query ? `?${query}` : "";
 }
 
