@@ -28,10 +28,7 @@ describe("pngFormatInfo", () => {
 
   it("reads a real encoder's output, not just headers built by hand", async () => {
     // A 1x1 transparent PNG, as encoders actually write one: 8-bit RGBA.
-    const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
-      "base64",
-    );
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
     expect(await pngFormatInfo(new Blob([png]))).toEqual({ pixelFormat: "rgba", bitDepth: 8 });
   });
 
