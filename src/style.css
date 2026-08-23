@@ -734,6 +734,8 @@ input[type="url"] {
 .browse-item:hover:not(:disabled) {
   background: var(--accent-soft);
 }
+/* What has been picked out of a list: the open dataset on the left, and the video taken from it on
+   the right. One rule for both, so a file reads as chosen the same way its dataset does. */
 .browse-item[aria-current="true"] {
   background: var(--accent-soft);
   font-weight: 600;

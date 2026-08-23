@@ -38,13 +38,16 @@ function listingXml(datasets: StubDataset[]): string {
   return `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>b</Name><IsTruncated>false</IsTruncated>${contents}</ListBucketResult>`;
 }
 
-function assetsJson(paths: string[]): string {
+/** One dataset's manifest. Asset ids carry the dataset id, as the archive's own do: an asset URL
+ * identifies a file across the whole archive, and index-only ids would leave every dataset's first
+ * asset answering to the same one. */
+function assetsJson(dandisetId: string, paths: string[]): string {
   return JSON.stringify(
     paths.map((path, i) => ({
       path,
       contentSize: 1024 * (i + 1),
       encodingFormat: path.endsWith(".mp4") ? "video/mp4" : "application/x-nwb",
-      contentUrl: [`${API}/assets/asset-${i}/download/`, path.endsWith(".mp4") ? CLIP_URL : `${BUCKET}/blobs/a/b/${i}`],
+      contentUrl: [`${API}/assets/asset-${dandisetId}-${i}/download/`, path.endsWith(".mp4") ? CLIP_URL : `${BUCKET}/blobs/a/b/${i}`],
     })),
   );
 }
@@ -66,7 +69,7 @@ async function stubBucket(page: Page): Promise<void> {
     if (dataset.id === OWNED_DATASET.id) return route.fulfill({ status: 403, contentType: "application/xml", body: "<Error/>" });
     const json = (body: string) => route.fulfill({ status: 200, contentType: "application/json", body });
     if (url.pathname.endsWith("/dandiset.jsonld")) return json(JSON.stringify({ name: dataset.name }));
-    if (url.pathname.endsWith("/assets.jsonld")) return json(assetsJson(dataset.paths));
+    if (url.pathname.endsWith("/assets.jsonld")) return json(assetsJson(dataset.id, dataset.paths));
     return route.continue();
   });
   await stubPublicDandisetList(
@@ -197,6 +200,63 @@ test("choosing a dataset lists only its videos, and choosing one streams it onto
   await expect(page.locator("#btnPlay")).toBeEnabled();
 });
 
+test("the video picked out of the list is marked in it, the way its dataset is", async ({ page }) => {
+  const dataset: StubDataset = { id: "000410", name: "Two takes", paths: ["sub-1/first.mp4", "sub-1/second.mp4"] };
+  await page.route(`${BUCKET}/**`, (route) => {
+    const url = new URL(route.request().url());
+    const json = (body: string) => route.fulfill({ status: 200, contentType: "application/json", body });
+    if (url.searchParams.get("list-type") === "2") {
+      return route.fulfill({ status: 200, contentType: "application/xml", body: listingXml([dataset]) });
+    }
+    if (url.pathname.endsWith("/dandiset.jsonld")) return json(JSON.stringify({ name: dataset.name }));
+    if (url.pathname.endsWith("/assets.jsonld")) return json(assetsJson(dataset.id, dataset.paths));
+    return route.continue();
+  });
+  await stubPublicDandisetList(page, [dataset.id]);
+  await page.goto("/");
+  const clip = await recordClipBytes(page);
+  await page.route(CLIP_URL, (route) => route.fulfill({ status: 200, contentType: "video/webm", body: clip }));
+
+  await page.locator('#srcSeg button[data-src="browse"]').click();
+  await page.locator("#browseDandisets .browse-item").first().click();
+  const videos = page.locator("#browseVideos .browse-item");
+  await expect(videos).toHaveCount(2);
+  // Nothing has been picked out of the list yet, so nothing in it is marked.
+  await expect(page.locator('#browseVideos .browse-item[aria-current="true"]')).toHaveCount(0);
+
+  await videos.first().click();
+  await expect(page.locator("#view")).toBeVisible();
+  await expect(videos.first()).toHaveAttribute("aria-current", "true");
+  await expect(videos.nth(1)).not.toHaveAttribute("aria-current", "true");
+
+  // A second pick moves the mark rather than adding to it.
+  await videos.nth(1).click();
+  await expect(videos.nth(1)).toHaveAttribute("aria-current", "true");
+  await expect(videos.first()).not.toHaveAttribute("aria-current", "true");
+});
+
+test("the mark stays with the video that was picked, not with the row it sat in", async ({ page }) => {
+  await stubBucket(page);
+  await page.goto("/");
+  const clip = await recordClipBytes(page);
+  await page.route(CLIP_URL, (route) => route.fulfill({ status: 200, contentType: "video/webm", body: clip }));
+
+  await page.locator('#srcSeg button[data-src="browse"]').click();
+  await page.locator('#browseDandisets .browse-item:has-text("000265")').click();
+  await page.locator("#browseVideos .browse-item").first().click();
+  await expect(page.locator("#view")).toBeVisible();
+  await expect(page.locator('#browseVideos .browse-item[aria-current="true"]')).toHaveCount(1);
+
+  // Another dataset's list holds nothing that was picked, so nothing in it is marked...
+  await page.locator('#browseDandisets .browse-item:has-text("000299")').click();
+  await expect(page.locator("#browseVideos .browse-item")).toHaveCount(1);
+  await expect(page.locator('#browseVideos .browse-item[aria-current="true"]')).toHaveCount(0);
+
+  // ...and reopening the one it came from finds the mark still on it.
+  await page.locator('#browseDandisets .browse-item:has-text("000265")').click();
+  await expect(page.locator('#browseVideos .browse-item[aria-current="true"]')).toHaveCount(1);
+});
+
 test("an archive too large to scan wholesale lists everything and reads a file list on demand", async ({ page }) => {
   // Manifests well past the sweep budget, so no dataset is scanned up front. Nothing is then known
   // about which hold video, so every one is listed — and a video-less one answers for itself.
@@ -214,7 +274,7 @@ test("an archive too large to scan wholesale lists everything and reads a file l
     if (!dataset) return route.continue();
     const json = (body: string) => route.fulfill({ status: 200, contentType: "application/json", body });
     if (url.pathname.endsWith("/dandiset.jsonld")) return json(JSON.stringify({ name: dataset.name }));
-    if (url.pathname.endsWith("/assets.jsonld")) return json(assetsJson(dataset.paths));
+    if (url.pathname.endsWith("/assets.jsonld")) return json(assetsJson(dataset.id, dataset.paths));
     return route.continue();
   });
   await stubPublicDandisetList(
