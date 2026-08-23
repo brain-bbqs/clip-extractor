@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 import { expect, type Page } from "@playwright/test";
 
 // Shared scaffolding for the upload specs: a stubbed archive (so nothing leaves the browser) and a
@@ -8,6 +9,33 @@ import { expect, type Page } from "@playwright/test";
 /** Frames to draw for a clip that will be paired with the `.slp` fixture: it labels frames 0-29, so
  * the recording has to still cover them after the recorder drops one or two. */
 export const SLP_CLIP_FRAMES = 40;
+
+const TAR_BLOCK = 512;
+
+/** Walks the 512-byte headers of a gzipped tar, the way `tar tf` lists it — how the save specs read
+ * back what a Save actually wrote. */
+export function listTar(gzipped: Buffer): { path: string; size: number; text: string }[] {
+  const tar = gunzipSync(gzipped);
+  const read = (offset: number, start: number, length: number) => {
+    const raw = tar.subarray(offset + start, offset + start + length);
+    const end = raw.findIndex((b) => b === 0 || b === 0x20);
+    return raw.subarray(0, end === -1 ? raw.length : end).toString();
+  };
+  const entries: { path: string; size: number; text: string }[] = [];
+  for (let offset = 0; offset + TAR_BLOCK <= tar.length && tar[offset] !== 0;) {
+    const prefix = read(offset, 345, 155);
+    const name = read(offset, 0, 100);
+    const size = parseInt(read(offset, 124, 12), 8);
+    offset += TAR_BLOCK;
+    entries.push({
+      path: prefix ? `${prefix}/${name}` : name,
+      size,
+      text: tar.subarray(offset, offset + size).toString(),
+    });
+    offset += Math.ceil(size / TAR_BLOCK) * TAR_BLOCK;
+  }
+  return entries;
+}
 
 const API = "**/api-dandi.emberarchive.org/api/**";
 const ADMIN_CHECK = "**/uploader-codycbakerphd.pythonanywhere.com/**";

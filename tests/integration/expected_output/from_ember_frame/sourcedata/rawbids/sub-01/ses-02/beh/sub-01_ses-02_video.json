@@ -1,0 +1,26 @@
+{
+  "Description": "The source video this selection was clipped from.",
+  "Checksum": [
+    {
+      "ChecksumAlgorithm": "spdx:checksumAlgorithm_sha256",
+      "ChecksumValue": "SHA256-CHECKSUM"
+    },
+    {
+      "ChecksumAlgorithm": "spdx:checksumAlgorithm_md5",
+      "ChecksumValue": "MD5-CHECKSUM"
+    },
+    {
+      "ChecksumAlgorithm": "dandi:dandi-etag",
+      "ChecksumValue": "DANDI-ETAG-CHECKSUM"
+    }
+  ],
+  "RecordingDuration": "MEDIARECORDER-DEPENDENT",
+  "VideoFrameRate": "MEDIARECORDER-DEPENDENT",
+  "VideoFrameCount": "MEDIARECORDER-DEPENDENT",
+  "ImageWidth": 320,
+  "ImageHeight": 240,
+  "ImagePixelFormat": "yuv420p",
+  "ImageBitDepth": 8,
+  "VideoCodec": "h264",
+  "VideoCodecRFC6381": "avc1.42E01E"
+}

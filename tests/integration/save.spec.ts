@@ -1,13 +1,10 @@
-import { gunzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
-import { loadRecordedVideo, seekTo } from "./helpers";
+import { listTar, loadRecordedVideo, seekTo } from "./helpers";
 
 // Save writes the same files an upload would have registered, packed into one gzipped tar — so this
 // drives a real save and unpacks what lands on disk. A single frame is used as the selection because
 // that path needs no ffmpeg.wasm (and so no CDN) to produce a real file.
-
-const BLOCK = 512;
 
 // No archive path names a locally dropped video, so its subject entity falls back to `sub-unknown`
 // (see lib/bidsPath.ts's behEntities), and the recording entity is stamped from Save's own instant —
@@ -15,30 +12,6 @@ const BLOCK = 512;
 // derivatives/ and every filename inside it (see lib/bidsPath.ts's derivativesDirectory) — but not
 // the bundle's own name, which carries none of BEP047's entities at all.
 const RECORDING = "\\d{17}";
-
-/** Walks the 512-byte headers of a tar, the way `tar tf` lists it. */
-function listTar(gzipped: Buffer): { path: string; size: number; text: string }[] {
-  const tar = gunzipSync(gzipped);
-  const read = (offset: number, start: number, length: number) => {
-    const raw = tar.subarray(offset + start, offset + start + length);
-    const end = raw.findIndex((b) => b === 0 || b === 0x20);
-    return raw.subarray(0, end === -1 ? raw.length : end).toString();
-  };
-  const entries: { path: string; size: number; text: string }[] = [];
-  for (let offset = 0; offset + BLOCK <= tar.length && tar[offset] !== 0;) {
-    const prefix = read(offset, 345, 155);
-    const name = read(offset, 0, 100);
-    const size = parseInt(read(offset, 124, 12), 8);
-    offset += BLOCK;
-    entries.push({
-      path: prefix ? `${prefix}/${name}` : name,
-      size,
-      text: tar.subarray(offset, offset + size).toString(),
-    });
-    offset += Math.ceil(size / BLOCK) * BLOCK;
-  }
-  return entries;
-}
 
 test("a save writes a bundle holding the extract, the original, their sidecar and all three dataset_description.json files", async ({
   page,
