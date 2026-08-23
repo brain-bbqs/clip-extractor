@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+#### 🚀 Enhancement
+
+- Save and Upload now write a BIDS-Study-shaped tree instead of a single ad hoc folder: the source video under `sourcedata/rawbids/`, the extracted clip or frame and anything rendered from it under `derivatives/clip-extractor/`, each named per BEP047 and described by its own sidecar and `dataset_description.json` ([#41](https://github.com/brain-bbqs/clip-extractor/pull/41))
+
 ## 1.0.0
 
 #### 🐛 Bug Fix

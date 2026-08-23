@@ -1,0 +1,7 @@
+derivatives/clip-extractor/sub-01/ses-02/beh/date-DATE_time-TIME/sub-01_ses-02_date-DATE_time-TIME_image.png
+sourcedata/rawbids/sub-01/ses-02/beh/sub-01_ses-02_video.mp4
+sourcedata/rawbids/sub-01/ses-02/beh/sub-01_ses-02_video.json
+derivatives/clip-extractor/sub-01/ses-02/beh/date-DATE_time-TIME/sub-01_ses-02_date-DATE_time-TIME_image.json
+dataset_description.json
+derivatives/clip-extractor/dataset_description.json
+sourcedata/rawbids/dataset_description.json

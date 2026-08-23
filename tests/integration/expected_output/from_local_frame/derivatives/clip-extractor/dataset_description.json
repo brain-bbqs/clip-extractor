@@ -1,0 +1,16 @@
+{
+  "Name": "Frame extracted using the Clip Extractor (Extracted)",
+  "BIDSVersion": "1.10.0",
+  "DatasetType": "derivative",
+  "GeneratedBy": [
+    {
+      "Name": "clip-extractor",
+      "Description": "Extracted a trimmed clip or still frame from a source video.",
+      "Version": "APP-VERSION",
+      "CodeURL": "https://github.com/brain-bbqs/clip-extractor"
+    }
+  ],
+  "DatasetLinks": {
+    "raw": "../../sourcedata/rawbids"
+  }
+}

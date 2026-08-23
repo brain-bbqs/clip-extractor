@@ -157,6 +157,7 @@ beforeEach(() => {
       harness.statsTarget = target;
       return Promise.resolve({ packetCount: 0, averagePacketRate: harness.packetRate, averageBitrate: 0 });
     },
+    getCodecParameterString: () => Promise.resolve("avc1.640028"),
   };
   harness.disposed = 0;
   harness.sampled = [];
@@ -183,8 +184,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function open(): Promise<StreamingVideoBackend> {
-  return openStreamingBlob(new Blob([]));
+async function open(): Promise<StreamingVideoBackend> {
+  const backend = await openStreamingBlob(new Blob([]));
+  // Opening probes one frame for its pixel format (see lib/streaming.ts's `open`), which is itself a
+  // `getSample()` call — reset here so tests below assert only on the `getSample()` calls their own
+  // getFrame()/prefetch() make, not this unrelated one from opening.
+  harness.sampled = [];
+  return backend;
 }
 
 describe("StreamingVideoBackend.open, on a constant-rate file", () => {

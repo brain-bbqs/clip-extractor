@@ -1,0 +1,7 @@
+derivatives/clip-extractor/sub-unknown/beh/recording-TIMESTAMP/sub-unknown_recording-TIMESTAMP_video.mp4
+sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.mp4
+sourcedata/rawbids/sub-unknown/beh/sub-unknown_video.json
+derivatives/clip-extractor/sub-unknown/beh/recording-TIMESTAMP/sub-unknown_recording-TIMESTAMP_video.json
+dataset_description.json
+derivatives/clip-extractor/dataset_description.json
+sourcedata/rawbids/dataset_description.json

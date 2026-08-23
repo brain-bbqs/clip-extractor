@@ -7,13 +7,21 @@ import type { ArchiveConfig, Asset, FilePart } from "../../src/lib/types";
 
 vi.mock("../../src/lib/api");
 vi.mock("../../src/lib/s3");
-// jsdom has no Blob.arrayBuffer(), which the real checksum walks the blob with; the etag itself is
-// covered against a reference implementation in etag.test.ts.
+// jsdom has no Blob.arrayBuffer(), which the real checksum walks the blob with; all three digests
+// are covered against reference implementations in etag.test.ts.
 vi.mock("../../src/lib/etag", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/lib/etag")>()),
   computeDandiEtag: vi.fn((_blob: Blob, _parts: unknown, onProgress?: (fraction: number) => void) => {
     onProgress?.(1);
     return Promise.resolve(`${"0".repeat(32)}-1`);
+  }),
+  computeMd5: vi.fn((_blob: Blob, onProgress?: (fraction: number) => void) => {
+    onProgress?.(1);
+    return Promise.resolve("1".repeat(32));
+  }),
+  computeSha256: vi.fn((_blob: Blob, onProgress?: (fraction: number) => void) => {
+    onProgress?.(1);
+    return Promise.resolve("2".repeat(64));
   }),
 }));
 
@@ -31,6 +39,7 @@ const cfg: ArchiveConfig = {
 const blob = new Blob([new Uint8Array(10)], { type: "video/mp4" });
 const parts: FilePart[] = [{ number: 1, offset: 0, size: 10 }];
 const etag = `${"0".repeat(32)}-1`;
+const md5 = "1".repeat(32);
 
 /** A working init -> complete -> validate conversation for a single-part upload. */
 function mockHappyPath(): void {
@@ -162,7 +171,7 @@ describe("uploadAsset", () => {
     await uploadAsset(cfg, {
       blob,
       path: "sourcedata/raw/clip-extractor/stamp_snippet/clip.mp4",
-      digest: { etag, parts },
+      digest: { etag, md5, parts },
     });
 
     expect(vi.mocked(computeDandiEtag)).not.toHaveBeenCalled();
@@ -181,7 +190,14 @@ describe("uploadAsset", () => {
     });
 
     expect(asset).toEqual({ asset_id: "a1", path: "p" });
-    expect(phases.at(0)).toBe("checksum:1");
+    // Three full passes over the bytes — the dandi-etag, the plain MD5, then the SHA-256 — reported
+    // as one smooth, ascending 0..1 rather than a bar that fills and resets twice: each pass ends a
+    // third further along, the last of them at 1.
+    const checksumFractions = phases.filter((p) => p.startsWith("checksum:")).map((p) => Number(p.split(":")[1]));
+    expect(checksumFractions).toHaveLength(3);
+    expect(checksumFractions[0]).toBeCloseTo(1 / 3);
+    expect(checksumFractions[1]).toBeCloseTo(2 / 3);
+    expect(checksumFractions[2]).toBe(1);
     expect(phases.at(-1)).toBe("register:1");
     const created = apiFetchMock.mock.calls.find(([, path]) => path === "/dandisets/000123/versions/draft/assets/")!;
     expect(created[2]).toEqual({

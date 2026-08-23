@@ -1,0 +1,17 @@
+{
+  "Name": "Snippet extracted using the Clip Extractor",
+  "BIDSVersion": "1.10.0",
+  "DatasetType": "study",
+  "GeneratedBy": [
+    {
+      "Name": "clip-extractor",
+      "Description": "Extracted a trimmed clip or still frame from a source video.",
+      "Version": "APP-VERSION",
+      "CodeURL": "https://github.com/brain-bbqs/clip-extractor"
+    }
+  ],
+  "DatasetLinks": {
+    "clip": "derivatives/clip-extractor",
+    "source": "sourcedata/rawbids"
+  }
+}

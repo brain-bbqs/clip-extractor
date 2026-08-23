@@ -95,6 +95,17 @@ test("a local file takes the streamed video's link down with it, rather than lea
   await expect.poll(() => new URL(page.url()).search).toBe("");
 });
 
+test("a test-injection link is left exactly as pasted, bare flags and all", async ({ page }) => {
+  const search = "?test&mock_video&mock_ready&from_local&frame";
+  await page.goto(`/${search}`);
+  await expect(page.locator("#view")).toBeVisible();
+  // Give the coalesced URL write (400ms after anything moves) time to have fired if it was going
+  // to: the harness owns this address, so nothing may rewrite it — no `frame` stripped as a session
+  // param, no `&flag` respelled as `&flag=`.
+  await page.waitForTimeout(700);
+  expect(new URL(page.url()).search).toBe(search);
+});
+
 test("a link whose video will not open stays in the bar, so a reload is another go at it", async ({ page }) => {
   await page.route(CLIP_URL, (route) => route.fulfill({ status: 404, contentType: "text/plain", body: "gone" }));
   await page.goto(`/?url=${encodeURIComponent(CLIP_URL)}&in=4&out=12`);

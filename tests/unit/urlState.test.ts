@@ -88,6 +88,13 @@ describe("writeUrlState", () => {
     const once = writeUrlState("", session());
     expect(writeUrlState(once, session())).toBe(once);
   });
+
+  it("keeps a carried-through bare flag bare, rather than respelling it with an `=`", () => {
+    expect(writeUrlState("?test&mock_video", EMPTY_URL_STATE)).toBe("?test&mock_video");
+    expect(writeUrlState("?debug", session({ inF: null, outF: null, frame: null, description: "" }))).toBe(
+      `?debug&url=${encodeURIComponent(VIDEO)}`,
+    );
+  });
 });
 
 describe("the session held across signing in", () => {

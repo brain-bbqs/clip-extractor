@@ -1,0 +1,21 @@
+{
+  "Description": "Mock description, from a ?test&mock_ready live-test link.",
+  "Checksum": [
+    {
+      "ChecksumAlgorithm": "spdx:checksumAlgorithm_sha256",
+      "ChecksumValue": "SHA256-CHECKSUM"
+    },
+    {
+      "ChecksumAlgorithm": "spdx:checksumAlgorithm_md5",
+      "ChecksumValue": "MD5-CHECKSUM"
+    },
+    {
+      "ChecksumAlgorithm": "dandi:dandi-etag",
+      "ChecksumValue": "DANDI-ETAG-CHECKSUM"
+    }
+  ],
+  "ImageWidth": 320,
+  "ImageHeight": 240,
+  "ImagePixelFormat": "rgba",
+  "ImageBitDepth": 8
+}
