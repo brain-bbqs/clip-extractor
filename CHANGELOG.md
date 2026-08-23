@@ -4,7 +4,7 @@
 
 #### 🚀 Enhancement
 
-- Browse EMBER now highlights the video file you picked, the way it already highlights the open dataset, and a video opens with a snippet already marked out over the middle of the trim track instead of with nothing selected ([#42](https://github.com/brain-bbqs/clip-extractor/pull/42))
+- Browse EMBER now highlights the video file you picked, the way it already highlights the open dataset, and a video opens with a snippet already marked out over the middle of the trim track instead of with nothing selected ([#43](https://github.com/brain-bbqs/clip-extractor/pull/43))
 
 ## 1.1.0
 
