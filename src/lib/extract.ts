@@ -1,5 +1,5 @@
 import { VideoSample } from "mediabunny";
-import { encodedFraction, ensureFfmpeg, ffmpegArgs, streamCopies } from "./ffmpeg";
+import { ENCODED_PIXEL_FORMAT, encodedFraction, ensureFfmpeg, ffmpegArgs, streamCopies } from "./ffmpeg";
 import { decodeIndex, drawVideoFrame } from "./video";
 import { drawPose } from "./pose";
 import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
@@ -7,6 +7,8 @@ import type { StreamingVideoBackend } from "./streaming";
 import type { SelectionKind } from "./delivery";
 import { behFilename, behSidecarName, type BehEntities } from "./bidsPath";
 import { pngFormatInfo } from "./pngFormat";
+import { videoFormatInfo } from "./videoFormat";
+import type { TechnicalDetail } from "./provenance";
 import type { PoseModel, SleapVideoBackend, TrimMode } from "./types";
 
 // Turns the current selection into a single file, ready for either delivery route (download or
@@ -20,16 +22,11 @@ export interface ExtractedMedia {
   /** How this file was produced, recorded in the upload's provenance sidecar: the literal ffmpeg
    * command for a snippet, or the encoder used for a frame. */
   encoding: string;
-  /** The video stream's own codec (mediabunny's naming, e.g. `"h264"`, `"avc"`), for BEP047's
-   * `VideoCodec` sidecar field — undefined for a still image, and for a streamed cut this app
-   * re-encoded without pinning down what mediabunny chose to encode it as. */
-  codec?: string;
-  /** A still image's stored pixel layout, read off the PNG the browser actually wrote (see
-   * lib/pngFormat.ts) — BEP047's `ImagePixelFormat`/`ImageBitDepth`. Undefined for a video, whose
-   * sidecar takes these from the source's own probe instead, and for a PNG whose layout FFmpeg's
-   * vocabulary has no name for. */
-  pixelFormat?: string;
-  bitDepth?: number;
+  /** What this file's own codec and pixel layout turned out to be, filling BEP047's `VideoCodec`,
+   * `VideoCodecRFC6381`, `ImagePixelFormat` and `ImageBitDepth` sidecar keys — see `producedDetail`
+   * for where each of them is established. Empty where nothing established any of them, a key
+   * nothing answered for being left out rather than guessed. */
+  technical: TechnicalDetail;
 }
 
 /** Reports what extraction is doing, plus 0..1 progress when the step can measure it. */
@@ -115,6 +112,33 @@ export interface ExtractClipParams {
   onProgress?: ExtractProgress;
 }
 
+/**
+ * What a clip this app just wrote holds, for its sidecar's BEP047 technical keys.
+ *
+ * Two things know part of the answer and neither knows all of it, so both are asked. The file itself
+ * is opened and read (lib/videoFormat.ts), which is the only way to learn the codec strings — a
+ * `-c copy` carries whatever the source held, and neither ffmpeg nor mediabunny is told the profile
+ * and level that end up in `VideoCodecRFC6381`. And `guaranteed` is what producing the clip that way
+ * pinned down regardless: the `-pix_fmt` a re-encode was given, or, for frames copied over
+ * untouched, the source's own reading of them.
+ *
+ * A guarantee wins over the read where they overlap. It is the stronger of the two: reading a pixel
+ * format means decoding a frame and asking the *decoder* what layout it handed back, which is not
+ * always the layout the file stores — and on a browser that cannot decode H.264 at all, is not an
+ * answer to be had.
+ */
+async function producedDetail(blob: Blob, guaranteed: TechnicalDetail): Promise<TechnicalDetail> {
+  return { ...(await videoFormatInfo(blob)), ...guaranteed };
+}
+
+/** What running `ffmpegArgs`' command pins down before its output is opened at all: `-c copy` hands
+ * the source's own frames over untouched, and every other route through it is told the pixels it
+ * must write, whatever else about the encode it is left to decide. */
+function ffmpegGuarantees(backend: StreamingVideoBackend | null | undefined, trim: TrimMode, blur: BlurRegion[]): TechnicalDetail {
+  if (!streamCopies(trim, blur)) return ENCODED_PIXEL_FORMAT;
+  return backend?.technical ?? {};
+}
+
 /** Draws each frame onto a canvas, paints the blur into it, and hands it back to the muxer. */
 function blurProcessor(width: number, height: number, blur: BlurRegion[]): (sample: VideoSample) => VideoSample {
   const canvas = document.createElement("canvas");
@@ -151,9 +175,9 @@ async function extractStreamedClip(params: ExtractClipParams & { backend: Stream
     encoding: `mediabunny trim ${start.toFixed(3)}s–${end.toFixed(3)}s out of the streamed source, ${how}, audio dropped${
       blurred ? `, ${blurred}` : ""
     }`,
-    // A straight copy keeps the source's own codec; a re-encode leaves it to mediabunny, which this
-    // app does not pin down, so nothing is claimed either way.
-    codec: transcoded ? undefined : (backend.codec ?? undefined),
+    // A straight copy is the source's own frames, so the source's own reading of them holds; a
+    // re-encode is mediabunny's choice, which this app never makes and so can guarantee nothing of.
+    technical: await producedDetail(blob, transcoded ? {} : backend.technical),
   };
 }
 
@@ -213,10 +237,8 @@ export async function extractClip(params: ExtractClipParams): Promise<ExtractedM
     const data = await ff.readFile(outName);
     const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });
     if (!blob.size) throw new Error("ffmpeg produced an empty clip — try a different selection");
-    // A stream copy (`-c copy`) keeps the source's own codec, which this local-file path never
-    // probed to begin with; an actual encode always names it, since the command itself picks it.
-    const codec = streamCopies(trim, blur) ? undefined : "h264";
-    return { blob, filename: clipFileName(beh), mime: "video/mp4", encoding: command, codec };
+    const technical = await producedDetail(blob, ffmpegGuarantees(backend, trim, blur));
+    return { blob, filename: clipFileName(beh), mime: "video/mp4", encoding: command, technical };
   } finally {
     try {
       await ff.deleteFile(inName);
@@ -259,7 +281,7 @@ export async function extractFrame(params: ExtractFrameParams): Promise<Extracte
     filename: frameFileName(beh),
     mime: "image/png",
     encoding: `canvas.toBlob(image/png), decoded frame without pose overlay${blurred ? `, ${blurred}` : ""}`,
-    ...((await pngFormatInfo(blob)) ?? {}),
+    technical: (await pngFormatInfo(blob)) ?? {},
   };
 }
 
@@ -318,7 +340,7 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
       filename: overlayFileName(beh, mode),
       mime: "image/png",
       encoding: `canvas.toBlob(image/png), decoded frame with the pose overlay drawn in${blurred ? `, ${blurred}` : ""}`,
-      ...((await pngFormatInfo(blob)) ?? {}),
+      technical: (await pngFormatInfo(blob)) ?? {},
     };
   }
 
@@ -358,7 +380,7 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
       "-crf",
       "23",
       "-pix_fmt",
-      "yuv420p",
+      ENCODED_PIXEL_FORMAT.pixelFormat,
       "-movflags",
       "+faststart",
       outName,
@@ -378,7 +400,7 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
       filename: overlayFileName(beh, mode),
       mime: "video/mp4",
       encoding: blurred ? `${command} (frames drawn with ${blurred})` : command,
-      codec: "h264",
+      technical: await producedDetail(blob, ENCODED_PIXEL_FORMAT),
     };
   } finally {
     for (const name of [...written, outName]) {
