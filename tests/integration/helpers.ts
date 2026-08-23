@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { expect, type Page } from "@playwright/test";
@@ -9,6 +10,32 @@ import { expect, type Page } from "@playwright/test";
 /** Frames to draw for a clip that will be paired with the `.slp` fixture: it labels frames 0-29, so
  * the recording has to still cover them after the recorder drops one or two. */
 export const SLP_CLIP_FRAMES = 40;
+
+// Where lib/ffmpeg.ts fetches ffmpeg.wasm's ~32MB core from, and the copy of it `npm ci` already put
+// in node_modules (the `@ffmpeg/core` devDependency exists for exactly this).
+const FFMPEG_CORE_PATTERN = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@*/dist/esm/*";
+const FFMPEG_CORE_DIR = fileURLToPath(new URL("../../node_modules/@ffmpeg/core/dist/esm/", import.meta.url));
+
+/**
+ * Serves ffmpeg.wasm's core off disk instead of the CDN, so a spec can drive a real snippet encode.
+ *
+ * Snippet extraction from local bytes goes through ffmpeg.wasm (see lib/extract.ts), whose core the
+ * app deliberately does not bundle. Fetching it from jsdelivr mid-test would make the suite depend on
+ * a third-party CDN being up and reachable; routing it to the copy npm already installed keeps the
+ * encode real and the test hermetic.
+ */
+export async function serveFfmpegCore(page: Page): Promise<void> {
+  await page.route(FFMPEG_CORE_PATTERN, (route) => {
+    const name = new URL(route.request().url()).pathname.split("/").pop()!;
+    // Only the two files lib/ffmpeg.ts asks for; anything else is a mistake worth failing on.
+    if (!/^ffmpeg-core\.(js|wasm)$/.test(name)) return route.abort();
+    route.fulfill({
+      status: 200,
+      contentType: name.endsWith(".wasm") ? "application/wasm" : "text/javascript",
+      body: readFileSync(join(FFMPEG_CORE_DIR, name)),
+    });
+  });
+}
 
 const TAR_BLOCK = 512;
 

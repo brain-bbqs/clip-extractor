@@ -146,10 +146,10 @@ test("leaving the original out saves the extract and its sidecar alone, plus all
 // mid-clip selection rather than the whole recording or the frame it opened on — frame 12 and
 // frames 6–21 of `mock_video`'s own 30 (see lib/testInjection.ts's MOCK_READY_FRAME/_RANGE).
 //
-// The two `&snippet` cases stop at the state Save would write from rather than pressing it: a real
-// snippet extraction needs ffmpeg.wasm off a CDN, which no spec in this suite depends on (see
-// blur.spec.ts's own header comment). What is skipped is the encode, not the thing under test — the
-// marked range and the selector mode below are the selection itself. The bundle name is the other
+// The two `&snippet` cases stop at the state Save would write from rather than pressing it: what is
+// under test here is the selection a link lands on, and the ~30s ffmpeg.wasm encode behind the button
+// says nothing more about that. The bundle each would write is fixtured in full by
+// expectedOutput.spec.ts, which does press it. The bundle name is the other
 // half of the source split: named after the source dandiset (`200123.tar.gz`) for the from_ember
 // cases, and `local-dataset.tar.gz` for the from_local ones, which came from no dataset at all.
 
