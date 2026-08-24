@@ -66,8 +66,8 @@ describe("writeUrlState", () => {
     ).toBe(`?code=abc&url=${encodeURIComponent(VIDEO)}`);
   });
 
-  it("carries frame 0 only where it is the selection, since every video opens on it", () => {
-    expect(readUrlState(writeUrlState("", session({ frame: 0 }))).frame).toBe(null);
+  it("carries frame 0, which is no longer where a video opens", () => {
+    expect(readUrlState(writeUrlState("", session({ frame: 0 }))).frame).toBe(0);
     expect(readUrlState(writeUrlState("", session({ frame: 0, mode: "frame" }))).frame).toBe(0);
   });
 

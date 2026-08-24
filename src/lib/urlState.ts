@@ -100,8 +100,10 @@ export function writeUrlState(search: string, state: UrlState): string {
     if (state.mode === "frame") params.set("mode", "frame");
     if (state.inF !== null) params.set("in", String(state.inF));
     if (state.outF !== null) params.set("out", String(state.outF));
-    // Frame 0 is where every video opens, so it is only worth carrying when it is the selection.
-    if (state.frame !== null && (state.frame > 0 || state.mode === "frame")) params.set("frame", String(state.frame));
+    // Carried whatever frame it names, frame 0 included: a video opens on the start of the range it
+    // marks out rather than on its own first frame, so dropping 0 as "where every video opens" would
+    // now move the playhead on the way back.
+    if (state.frame !== null) params.set("frame", String(state.frame));
     // Written beside the video rather than beside the pose file, so the switch survives the case it
     // is most needed in: a link to a streamed recording, with the pose file sent along by hand.
     if (!state.overlay) params.set("overlay", "0");

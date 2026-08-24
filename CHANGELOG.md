@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+#### 🐛 Bug Fix
+
+- A video now opens on the first frame of the snippet it marks out, instead of leaving the playhead back at the start of the recording a fifth of the track away from the band; "Reset range" puts it back there too ([#45](https://github.com/brain-bbqs/clip-extractor/pull/45))
+
 ## 1.2.1
 
 #### 🐛 Bug Fix

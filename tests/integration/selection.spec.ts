@@ -57,6 +57,10 @@ test("the trim handles bound the snippet, and the readouts follow them", async (
   await expect(page.locator("#outHandle")).not.toHaveClass(/unset/);
   await expect(page.locator("#inVal")).toHaveValue(String(defaultIn));
   await expect(page.locator("#outVal")).toHaveValue(String(defaultOut));
+  // The playhead came along to the snippet's first frame, so the picture on screen is inside the
+  // band rather than a fifth of the track clear of it.
+  await expect(page.locator("#curVal")).toHaveValue(String(defaultIn));
+  await expect(page.locator("#overlayInfo")).toContainText(`frame ${defaultIn} /`);
 
   await dragHandle(page, "#inHandle", 5);
   // Moving one end leaves the other where it was.
@@ -76,6 +80,10 @@ test("Reset range puts the snippet back where the video opened it", async ({ pag
   await dragHandle(page, "#inHandle", 2);
   await dragHandle(page, "#outHandle", 4);
   await expect(page.locator("#inVal")).toHaveValue("2");
+  // Moved off the marks, so the playhead has somewhere to come back from.
+  await page.locator("#curVal").fill("20");
+  await page.locator("#curVal").press("Enter");
+  await expect(page.locator("#curVal")).toHaveValue("20");
 
   // Back to the opening range rather than to nothing marked: a snippet always has two real ends, so
   // Save is never handed the whole recording under the name of a clip.
@@ -83,6 +91,10 @@ test("Reset range puts the snippet back where the video opened it", async ({ pag
   await expect(page.locator("#inVal")).toHaveValue(String(defaultIn));
   await expect(page.locator("#outVal")).toHaveValue(String(defaultOut));
   await expect(page.locator("#selfill")).toBeVisible();
+  // And the playhead sits on the restored In, the way it does on a fresh load, rather than being
+  // left outside the band the reset just put back.
+  await expect(page.locator("#curVal")).toHaveValue(String(defaultIn));
+  await expect(page.locator("#overlayInfo")).toContainText(`frame ${defaultIn} /`);
 });
 
 test("a handle dragged past its partner stops there instead of crossing it", async ({ page }) => {
@@ -102,18 +114,17 @@ test("a trim marker stays grabbable with the playhead parked on it", async ({ pa
   await page.goto("/?test&mock_video");
   await expect(page.locator("#view")).toBeVisible();
 
-  // The playhead starts at frame 0, and the In mark is pulled onto it, so its line then runs
-  // straight down through the marker. The line is a readout rather than a target, so the press has
-  // to reach the marker underneath it — otherwise a mark cannot be moved off the frame being
-  // looked at.
-  await expect(page.locator("#curVal")).toHaveValue("0");
-  await dragHandle(page, "#inHandle", 0);
-  await expect(page.locator("#inVal")).toHaveValue("0");
+  // A video opens with the playhead on the In mark, so the playhead's line runs straight down
+  // through that marker from the moment it loads. The line is a readout rather than a target, so the
+  // press has to reach the marker underneath it — otherwise a mark cannot be moved off the frame
+  // being looked at.
+  const [defaultIn] = await defaultRange(page);
+  await expect(page.locator("#curVal")).toHaveValue(String(defaultIn));
 
   await dragHandle(page, "#inHandle", 8);
   await expect(page.locator("#inVal")).toHaveValue("8");
   // ...and the playhead did not come along for the ride.
-  await expect(page.locator("#curVal")).toHaveValue("0");
+  await expect(page.locator("#curVal")).toHaveValue(String(defaultIn));
 });
 
 test("dragging the band between the handles slides the range without resizing it", async ({ page }) => {

@@ -561,9 +561,9 @@ async function loadVideo(
     state.sourceFile = file;
     sourceGeneration++;
     clearDeliveryOutcomes();
-    state.cur = 0;
     // A recording opens with a snippet already marked out on it rather than with bare handles and a
-    // range that silently means all of it — see resetSelection.
+    // range that silently means all of it, and with the playhead on that snippet's first frame
+    // rather than back at the start of the recording — see resetSelection.
     resetSelection();
     // Blur areas are placed in the pixels of the video that was on screen when they were drawn.
     // Another recording puts something else under them, so they are dropped rather than carried
@@ -581,7 +581,10 @@ async function loadVideo(
     resetBlurRadius();
     log(`Loaded ${state.width}×${state.height}, ${state.totalFrames} frames @ ${state.fps.toFixed(2)} fps`, "ok");
     recheckPose();
-    await seek(0, true);
+    // Forced, since resetSelection has already put state.cur where the playhead belongs and there is
+    // no frame on the stage yet to match it; and never as a shift-extend, since nothing was scrubbed
+    // over — a key held down while a video loaded is not a gesture on the marks it arrives with.
+    await seek(state.cur, true, false);
     updateSelUI();
   } catch (e) {
     log(`Video error: ${(e as Error).message}`, "err");
@@ -1225,15 +1228,25 @@ function selRange(): [number, number] {
   return [Math.min(a, b), Math.max(a, b)];
 }
 
-/** Puts the snippet's ends back where a freshly opened recording starts them: a fifth of the trim
- * track in from each of its ends (see lib/timeline.ts's defaultSelection). Both the opening range
- * and what "Reset range" goes back to, so the two are the same range and the player is never left in
- * a state no load produces. Silent about the UI, since a load is still assembling one when it calls
- * this; the button below funnels through selectionChanged as every other move of the marks does. */
+/** Puts the snippet's ends back where a freshly opened recording starts them — a fifth of the trim
+ * track in from each of its ends (see lib/timeline.ts's defaultSelection) — and the playhead on the
+ * In it just set. Both the opening range and what "Reset range" goes back to, so the two are the
+ * same range and the player is never left in a state no load produces.
+ *
+ * The playhead comes along because the range is marked out for it. Left at the recording's start it
+ * would sit a fifth of the track clear of a band it is not inside, showing a frame outside what
+ * would be extracted, and the first press of play would jump away from it again.
+ *
+ * Silent about the UI and about decoding, since a load is still assembling both when it calls this.
+ * Each caller ends with the seek onto state.cur its own moment needs, and the button below funnels
+ * through selectionChanged as every other move of the marks does. */
 function resetSelection(): void {
   const range = defaultSelection(view(), state.totalFrames);
   state.inF = range?.[0] ?? null;
   state.outF = range?.[1] ?? null;
+  // Nothing to bound a snippet in means nothing to park on either: a recording that short is its own
+  // first frame.
+  state.cur = range?.[0] ?? 0;
 }
 
 // ============================================================
@@ -2339,6 +2352,11 @@ wireSeg(els.speedSeg, (v) => {
 els.btnClearSel.addEventListener("click", () => {
   resetSelection();
   selectionChanged();
+  // The marks moved and the playhead moved with them, so the frame on the stage is decoded to match
+  // rather than left showing wherever the playhead used to be. Forced, since resetSelection has
+  // already written state.cur and an unforced seek onto it would read as a seek to nowhere; and
+  // never as a shift-extend, since this is a reset of the marks rather than a scrub across them.
+  void seek(state.cur, true, false);
 });
 els.showPose.addEventListener("change", () => {
   renderFrame();
@@ -3538,9 +3556,12 @@ async function applyUrlMarks(link: UrlState): Promise<void> {
     setMode("frame");
   }
   selectionChanged();
-  const frame = held(link.frame);
-  // Forced, because the video opened on frame 0 and a link naming it would otherwise be a seek to
-  // where the player already is.
+  // A hand-written link can name marks and no playhead. Landing on the start of the range it names
+  // keeps it looking like a link the app wrote, rather than leaving the playhead a fifth into a
+  // track whose band has just moved somewhere else (see resetSelection).
+  const frame = held(link.frame) ?? (lo !== null || hi !== null ? selRange()[0] : null);
+  // Forced, because the frame a link names can be the one the load already opened on, which would
+  // otherwise be a seek to where the player already is.
   if (frame !== null) await seek(frame, true);
 }
 
@@ -3611,9 +3632,9 @@ async function applyMockReady(injection: TestInjection): Promise<void> {
     state.inF = held(injection.mockReadyRange.lo);
     state.outF = held(injection.mockReadyRange.hi);
     selectionChanged();
-    // Parked on the range's own start, so the picture on screen is inside what would be extracted
-    // rather than back at frame 0. Never extending the marks that were just set, whatever a key held
-    // during the load might otherwise have meant.
+    // Parked on the range's own start, the way a load parks it on the range it marks out, so the
+    // picture on screen is inside what would be extracted. Never extending the marks that were just
+    // set, whatever a key held during the load might otherwise have meant.
     await seek(state.inF, true, false);
   } else {
     selectSeg(els.modeSeg, "frame");

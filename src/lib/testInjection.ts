@@ -62,10 +62,10 @@ export interface TestInjection {
    * set. `&frame` is the explicit spelling of the default rather than a separate case, so a link
    * naming both reads as the snippet it asked for rather than being refused. */
   mockReadyMode: "frame" | "snippet";
-  /** Which frame `&frame` parks the playhead on — deliberately mid-clip rather than the frame 0 every
-   * video already opens on, so a preview shows a selection somebody actually made. `&frame=<n>` picks
-   * another; anything past the end of the mock video is held to its last frame (see main.ts's
-   * `applyMockReady`), same as every other way a frame is set in this app. */
+  /** Which frame `&frame` parks the playhead on — deliberately somewhere a video does not already
+   * open, so a preview shows a selection somebody actually made. `&frame=<n>` picks another; anything
+   * past the end of the mock video is held to its last frame (see main.ts's `applyMockReady`), same
+   * as every other way a frame is set in this app. */
   mockReadyFrame: number;
   /** Which range `&snippet` marks, likewise a real sub-range rather than the whole recording.
    * `&snippet=<lo>-<hi>` picks another, in either order; both ends are held to the video's own bounds
@@ -89,7 +89,7 @@ export interface TestInjection {
 /** Where `&frame` parks the playhead, and which range `&snippet` marks, when neither names its own.
  * Both are picked against `mock_video`'s own 30-frame default: mid-clip, and a real sub-range with
  * recording on either side of it, so what a preview shows reads as a selection somebody made rather
- * than the whole video or the frame it opened on. Both are held to the loaded video's own bounds
+ * than the whole video or the range it opened with. Both are held to the loaded video's own bounds
  * (see main.ts's `applyMockReady`), so a shorter `mock_video=<n>` still lands somewhere real. */
 const MOCK_READY_FRAME = 12;
 const MOCK_READY_RANGE = { lo: 6, hi: 21 };
