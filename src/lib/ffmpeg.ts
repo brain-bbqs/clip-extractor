@@ -1,6 +1,7 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import { blurFilterChain, type BlurRegion } from "./blur";
+import type { PixelFormatInfo } from "./videoFormat";
 import type { TrimMode } from "./types";
 
 // ffmpeg.wasm is loaded lazily (only when an MP4 clip is actually extracted) and its ~30MB core
@@ -13,8 +14,26 @@ let ffmpegInstance: FFmpeg | null = null;
 // requires the original listener reference to unregister one (there's no removeAllListeners).
 let currentHandlers: EnsureFfmpegHandlers = {};
 
+/** The pixel layout every re-encode here is told to write, named as the sidecar names it (BEP047's
+ * `ImagePixelFormat`/`ImageBitDepth`). Exported because that instruction is the last word on what
+ * lands: ffmpeg either writes these pixels or fails, where reading them back off the finished file
+ * depends on this browser being able to decode H.264 at all (see lib/videoFormat.ts). */
+export const ENCODED_PIXEL_FORMAT: PixelFormatInfo = { pixelFormat: "yuv420p", bitDepth: 8 };
+
 // Shared by every re-encoding path here: H.264 in a faststart MP4, no audio.
-const ENCODE_ARGS = ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart"];
+const ENCODE_ARGS = [
+  "-an",
+  "-c:v",
+  "libx264",
+  "-preset",
+  "veryfast",
+  "-crf",
+  "23",
+  "-pix_fmt",
+  ENCODED_PIXEL_FORMAT.pixelFormat,
+  "-movflags",
+  "+faststart",
+];
 
 // Nothing this app writes carries audio. A recording it exists to de-identify should not send
 // voices to the archive in a track nobody was shown, and the player never offered one to review.

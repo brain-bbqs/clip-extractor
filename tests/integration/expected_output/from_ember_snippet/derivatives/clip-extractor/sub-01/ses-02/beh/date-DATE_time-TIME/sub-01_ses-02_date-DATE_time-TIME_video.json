@@ -19,5 +19,8 @@
   "VideoFrameCount": 16,
   "ImageWidth": 320,
   "ImageHeight": 240,
-  "VideoCodec": "h264"
+  "ImagePixelFormat": "yuv420p",
+  "ImageBitDepth": 8,
+  "VideoCodec": "avc",
+  "VideoCodecRFC6381": "avc1.64000d"
 }

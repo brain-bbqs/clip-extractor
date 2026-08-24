@@ -83,6 +83,7 @@ describe("extractClip, on a streamed source", () => {
       width: 320,
       height: 240,
       codec: "vp9",
+      technical: { codec: "vp9", codecRFC6381: "vp09.00.10.08", pixelFormat: "yuv420p", bitDepth: 8 },
       extractRange: vi.fn(() => Promise.resolve({ blob: new Blob(["clip"], { type: "video/mp4" }), transcoded, start: 20, end: 25 })),
     } as unknown as StreamingVideoBackend;
   }
@@ -106,14 +107,16 @@ describe("extractClip, on a streamed source", () => {
     expect(media.encoding).toContain("audio dropped");
   });
 
-  it("does not claim a codec for a re-encode, since mediabunny's own choice is never pinned down", async () => {
+  // The stub hands back four bytes no demuxer can open, so reading the cut back establishes nothing
+  // — which leaves only what making it that way guaranteed.
+  it("claims nothing about a re-encode it cannot read back: mediabunny's own choice guarantees none of it", async () => {
     const media = await extractClip({ ...selection, sourceFile: null, backend: streamingBackend(true) });
-    expect(media.codec).toBeUndefined();
+    expect(media.technical).toEqual({});
   });
 
-  it("carries the source's own codec forward for a straight copy", async () => {
+  it("carries the source's own bitstream forward for a straight copy, those being the very frames copied", async () => {
     const media = await extractClip({ ...selection, sourceFile: null, backend: streamingBackend(false) });
-    expect(media.codec).toBe("vp9");
+    expect(media.technical).toEqual({ codec: "vp9", codecRFC6381: "vp09.00.10.08", pixelFormat: "yuv420p", bitDepth: 8 });
   });
 
   it("asks for a copy rather than a frame-exact cut in fast trim mode", async () => {

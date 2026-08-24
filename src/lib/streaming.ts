@@ -10,8 +10,10 @@ import {
   UrlSource,
   VideoSampleSink,
 } from "mediabunny";
-import type { InputVideoTrack, Source, VideoSample, VideoSamplePixelFormat } from "mediabunny";
+import type { InputVideoTrack, Source, VideoSample } from "mediabunny";
 import { bytes } from "./format";
+import { pixelFormatInfo, type PixelFormatInfo } from "./videoFormat";
+import type { TechnicalDetail } from "./provenance";
 import type { SleapVideoBackend } from "./types";
 
 // A frame-indexed video backend built straight on mediabunny, used in place of sleap-io.js's
@@ -236,36 +238,6 @@ function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** What a decoded frame's own pixel format says about it, in BEP047's own vocabulary —
- * `ImagePixelFormat`'s FFmpeg `pix_fmt` naming (`"yuv420p"`, `"yuv420p10le"`, …) and
- * `ImageBitDepth`'s plain integer, rather than mediabunny's WebCodecs-style format string
- * (`"I420"`, `"I420P10"`, …) directly. */
-interface PixelFormatInfo {
-  pixelFormat: string;
-  bitDepth: number;
-}
-
-// mediabunny names a decoded frame's pixel format after the WebCodecs spec
-// (https://www.w3.org/TR/webcodecs/#pixel-format); BEP047 asks for FFmpeg's own `pix_fmt` naming
-// instead. The two vocabularies name the same handful of planar YUV and packed RGB layouts, just
-// with different spellings — this is that translation, not a guess: every WebCodecs format
-// mediabunny can produce (see VIDEO_SAMPLE_PIXEL_FORMATS in mediabunny's own sample.ts) has a real
-// FFmpeg pix_fmt counterpart named here.
-const YUV_PIXEL_FORMAT = /^I(420|422|444)(A)?(P10|P12)?$/;
-const PACKED_PIXEL_FORMATS: Record<string, string> = { NV12: "nv12", RGBA: "rgba", RGBX: "rgb0", BGRA: "bgra", BGRX: "bgr0" };
-
-export function pixelFormatInfo(format: VideoSamplePixelFormat): PixelFormatInfo | null {
-  const yuv = YUV_PIXEL_FORMAT.exec(format);
-  if (yuv) {
-    const [, chroma, alpha, depthSuffix] = yuv;
-    const bitDepth = depthSuffix === "P10" ? 10 : depthSuffix === "P12" ? 12 : 8;
-    const depthTag = depthSuffix ? `${bitDepth}le` : "";
-    return { pixelFormat: `yuv${alpha ? "a" : ""}${chroma}p${depthTag}`, bitDepth };
-  }
-  const packed = PACKED_PIXEL_FORMATS[format];
-  return packed ? { pixelFormat: packed, bitDepth: 8 } : null;
-}
-
 /** Checks a constant-rate model against frames spread through the file, including one frame past
  * its end, which has to land back on the last frame or the count is wrong. */
 export async function modelHolds(
@@ -370,7 +342,7 @@ export class StreamingVideoBackend implements SleapVideoBackend {
    * loosely but not build a full parameter string for. */
   readonly codecRFC6381: string | null;
   /** The first decoded frame's own pixel format and bit depth, in BEP047's `ImagePixelFormat`/
-   * `ImageBitDepth` vocabulary (see `pixelFormatInfo`) — null on a layout that vocabulary has no name
+   * `ImageBitDepth` vocabulary (see lib/videoFormat.ts) — null on a layout that vocabulary has no name
    * for, rather than a guess. Read once at open time (see `open`): every frame of one track shares one
    * layout, so there is nothing a later frame could tell this that the first one didn't already. */
   readonly imagePixelFormat: string | null;
@@ -405,6 +377,19 @@ export class StreamingVideoBackend implements SleapVideoBackend {
 
   get numFrames(): number {
     return this.index.count;
+  }
+
+  /** What this source says about its own bitstream, in the shape a sidecar's technical keys take
+   * (lib/provenance.ts's `TechnicalDetail`) — whatever it could not answer simply absent, so this
+   * can be spread over or under another reading without blanking what that one did establish. Also
+   * what a clip *copied* out of this source holds, its frames being the same frames. */
+  get technical(): TechnicalDetail {
+    const detail: TechnicalDetail = {};
+    if (this.codec) detail.codec = this.codec;
+    if (this.codecRFC6381) detail.codecRFC6381 = this.codecRFC6381;
+    if (this.imagePixelFormat) detail.pixelFormat = this.imagePixelFormat;
+    if (this.imageBitDepth) detail.bitDepth = this.imageBitDepth;
+    return detail;
   }
 
   /** Opens `source`, reading only as much of it as the container index takes. */

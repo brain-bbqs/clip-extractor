@@ -10,6 +10,8 @@ interface FakeSample {
   closed: boolean;
   close(): void;
   toVideoFrame(): { close(): void };
+  /** A decoded frame's WebCodecs pixel format, on a fake set up to name one. */
+  format?: string;
 }
 
 const harness = vi.hoisted(() => ({
@@ -40,6 +42,8 @@ const harness = vi.hoisted(() => ({
   bytesPerPacket: 0,
   /** What the source says the whole file is, or null for one that will not say. */
   sourceSize: null as number | null,
+  /** The WebCodecs pixel format decoded samples carry, or null for a fake that names none. */
+  sampleFormat: null as string | null,
 }));
 
 /** Reports `bytes` read from the source, as mediabunny does while it works through a container. */
@@ -56,6 +60,7 @@ function sample(timestamp: number): FakeSample {
       s.closed = true;
     },
     toVideoFrame: () => ({ close: () => {} }),
+    ...(harness.sampleFormat ? { format: harness.sampleFormat } : {}),
   };
   return s;
 }
@@ -166,6 +171,7 @@ beforeEach(() => {
   harness.readListeners = [];
   harness.bytesPerPacket = 0;
   harness.sourceSize = null;
+  harness.sampleFormat = null;
   bitmaps = [];
   vi.stubGlobal("createImageBitmap", (frame: unknown) => {
     const bitmap: FakeBitmap = {
@@ -333,6 +339,24 @@ describe("StreamingVideoBackend.open, refusals", () => {
     harness.track = { displayWidth: 320, displayHeight: 240, codec: "vp9", canDecode: () => Promise.resolve(false) };
     await expect(open()).rejects.toThrow(/cannot decode/i);
     expect(harness.disposed).toBe(1);
+  });
+});
+
+describe("StreamingVideoBackend.technical", () => {
+  it("gathers what the container answered for into the shape a sidecar's technical keys take", async () => {
+    harness.sampleFormat = "I420";
+    const backend = await open();
+    expect(backend.technical).toEqual({ codec: "avc", codecRFC6381: "avc1.640028", pixelFormat: "yuv420p", bitDepth: 8 });
+  });
+
+  // Absent, not present-and-undefined. This record is spread underneath a reading taken off a file
+  // this app wrote (see lib/extract.ts's producedDetail), where a key carrying undefined would blank
+  // out what that reading did establish.
+  it("leaves out what the source never answered for, rather than carrying an empty key", async () => {
+    harness.track = { ...(harness.track as object), getCodecParameterString: () => Promise.resolve(null) };
+    const backend = await open();
+    expect(backend.technical).toEqual({ codec: "avc" });
+    expect(Object.keys(backend.technical)).toEqual(["codec"]);
   });
 });
 

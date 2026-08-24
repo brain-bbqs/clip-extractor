@@ -21,6 +21,6 @@
   "ImageHeight": 240,
   "ImagePixelFormat": "yuv420p",
   "ImageBitDepth": 8,
-  "VideoCodec": "h264",
+  "VideoCodec": "avc",
   "VideoCodecRFC6381": "avc1.42E01E"
 }

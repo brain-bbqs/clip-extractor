@@ -48,10 +48,9 @@ export function buildSourceDatasetEntry(api: string, source: ArchiveSource | nul
 
 /** Everything about a video/image's technical properties this app only ever has best-effort — never
  * guessed when unknown, so every field here is optional and omitted rather than invented (see
- * `videoTechnicalFields`/`imageTechnicalFields`). `codec`/`codecRFC6381` come off
- * `StreamingVideoBackend`'s own inspection of a real container (see lib/streaming.ts); ffmpeg.wasm's
- * own h264 output does not carry a probed pixel format the same way, so `pixelFormat`/`bitDepth` are
- * only ever known for a source read through that backend, not for what this app itself encoded. */
+ * `videoTechnicalFields`/`imageTechnicalFields`). Every one of them is read off a real file: a
+ * source's off the container it was opened from (`StreamingVideoBackend`, lib/streaming.ts), an
+ * extract's off the bytes this app itself just wrote (lib/videoFormat.ts, lib/pngFormat.ts). */
 export interface TechnicalDetail {
   codec?: string;
   /** The same codec as a full RFC 6381 parameter string (BEP047's `VideoCodecRFC6381`) — more

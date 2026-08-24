@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1
+
+#### 🐛 Bug Fix
+
+- The sidecar written beside an extracted clip now reports its pixel format, bit depth and full codec string, which until now only the copied-along source video's sidecar carried ([#44](https://github.com/brain-bbqs/clip-extractor/pull/44))
+
 ## 1.2.0
 
 #### 🚀 Enhancement

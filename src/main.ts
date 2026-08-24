@@ -3151,8 +3151,8 @@ async function deliverOverlay(
   // so `Sources` is enough to tie the two together.
   const technical =
     entities.mode === "frame"
-      ? imageTechnicalFields(state.width, state.height, { pixelFormat: media.pixelFormat, bitDepth: media.bitDepth })
-      : videoTechnicalFields(state.fps, state.width, state.height, entities.outFrame - entities.inFrame + 1, { codec: media.codec });
+      ? imageTechnicalFields(state.width, state.height, media.technical)
+      : videoTechnicalFields(state.fps, state.width, state.height, entities.outFrame - entities.inFrame + 1, media.technical);
   const sidecar = buildCompanionSidecar({
     description: "The selection with the pose overlay drawn into the pixels.",
     technical,
@@ -3206,17 +3206,13 @@ async function deliverOriginalVideo(deliver: DeliverFile, directory: string, beh
   // nothing is claimed rather than guessed. A `?test&mock_video` preview is the one exception: its
   // synthesized clip is really VP8 (see lib/testInjection.ts's synthesizeVideoFile), an implementation
   // detail of the mock rather than anything worth previewing — the values below are h264's own typical
-  // ones instead, which is what a real delivery's own source almost always reports.
+  // ones instead, which is what a real delivery's own source almost always reports, spelled the way
+  // that source would be read back (mediabunny names H.264 `"avc"`).
   const isMockVideo = testInjection?.mockVideoFrames != null || testInjection?.mockVideoLongSeconds != null;
   const sourceDetail: TechnicalDetail = isMockVideo
-    ? { codec: "h264", codecRFC6381: "avc1.42E01E", pixelFormat: "yuv420p", bitDepth: 8 }
+    ? { codec: "avc", codecRFC6381: "avc1.42E01E", pixelFormat: "yuv420p", bitDepth: 8 }
     : state.backend instanceof StreamingVideoBackend
-      ? {
-          codec: state.backend.codec ?? undefined,
-          codecRFC6381: state.backend.codecRFC6381 ?? undefined,
-          pixelFormat: state.backend.imagePixelFormat ?? undefined,
-          bitDepth: state.backend.imageBitDepth ?? undefined,
-        }
+      ? state.backend.technical
       : {};
   await deliverSidecar(deliver, directory, originalName, onProgress, {
     description: "The source video this selection was clipped from.",
@@ -3338,8 +3334,8 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // `GeneratedBy` entry, and the description typed for this delivery — see lib/provenance.ts.
   const technical =
     kind === "frame"
-      ? imageTechnicalFields(state.width, state.height, { pixelFormat: media.pixelFormat, bitDepth: media.bitDepth })
-      : videoTechnicalFields(state.fps, state.width, state.height, hi - lo + 1, { codec: media.codec });
+      ? imageTechnicalFields(state.width, state.height, media.technical)
+      : videoTechnicalFields(state.fps, state.width, state.height, hi - lo + 1, media.technical);
   const sidecar = buildBehSidecar(provenanceInput, technical, {
     md5: mediaDigest.md5,
     sha256: mediaDigest.sha256,
