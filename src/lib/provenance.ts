@@ -62,6 +62,23 @@ export interface TechnicalDetail {
   bitDepth?: number;
 }
 
+/** The same, for the sound a file carries rather than its pictures — read off the container it was
+ * opened from (lib/audioFormat.ts). Only ever non-empty for the copy of the source video carried
+ * into `sourcedata/`: everything this app itself produces is silent (see lib/ffmpeg.ts), so there is
+ * no audio track of its own to describe. */
+export interface AudioDetail {
+  codec?: string;
+  /** The same codec as a full RFC 6381 parameter string (BEP047's `AudioCodecRFC6381`). */
+  codecRFC6381?: string;
+  /** Sampling frequency in Hz — BEP047's `AudioSampleRate`. */
+  sampleRate?: number;
+  /** Channels in the track, 1 for mono and 2 for stereo — BEP047's `AudioChannelCount`. */
+  channelCount?: number;
+  /** Bits per sample — BEP047's `AudioBitDepth`, which it asks for on uncompressed and losslessly
+   * compressed audio, so this is only known for the PCM codecs whose name states it. */
+  bitDepth?: number;
+}
+
 /** The subset of BEP047's technical keys that make sense for a video (or the derivatives entity
  * that produced one) — omitted entirely for a still frame, whose sidecar uses
  * {@link imageTechnicalFields} instead. */
@@ -99,6 +116,30 @@ export function videoTechnicalFields(
   };
 }
 
+/** BEP047's audio keys, for a file that carries a sound track. Every one of them is optional in the
+ * spec and omitted here rather than guessed, so a track this app could read nothing about still
+ * declares itself through the file's `_audiovideo` suffix alone. */
+export interface AudioTechnicalFields {
+  AudioCodec?: string;
+  AudioSampleRate?: number;
+  AudioChannelCount?: number;
+  AudioBitDepth?: number;
+  AudioCodecRFC6381?: string;
+}
+
+/** Null (a file with no audio track at all) yields no keys, which is the same thing an unreadable
+ * track yields: in both cases the sidecar simply says nothing about sound. */
+export function audioTechnicalFields(detail: AudioDetail | null): AudioTechnicalFields {
+  if (!detail) return {};
+  return {
+    ...(detail.codec ? { AudioCodec: detail.codec } : {}),
+    ...(detail.sampleRate ? { AudioSampleRate: detail.sampleRate } : {}),
+    ...(detail.channelCount ? { AudioChannelCount: detail.channelCount } : {}),
+    ...(detail.bitDepth ? { AudioBitDepth: detail.bitDepth } : {}),
+    ...(detail.codecRFC6381 ? { AudioCodecRFC6381: detail.codecRFC6381 } : {}),
+  };
+}
+
 export interface ImageTechnicalFields {
   ImageWidth: number;
   ImageHeight: number;
@@ -114,6 +155,11 @@ export function imageTechnicalFields(width: number, height: number, detail: Tech
     ...(detail.bitDepth ? { ImageBitDepth: detail.bitDepth } : {}),
   };
 }
+
+/** The whole technical block one media sidecar carries: the picture keys for whichever of a video or
+ * a still frame it describes, plus the audio keys when that file has a sound track. Only the source
+ * video's own copy ever does — see {@link AudioDetail}. */
+export type MediaTechnicalFields = (VideoTechnicalFields | ImageTechnicalFields) & AudioTechnicalFields;
 
 /** A blob's own digests, in the shape a sidecar's `Checksum` field takes — see `checksumField`. Named
  * a sidecar's `Checksum` names all three of a file's digests, not just the one the archive uses. */
@@ -154,11 +200,7 @@ function checksumField(digest: FileDigest): SidecarChecksum[] {
  * own technical keys (`VideoFrameRate`, `ImageWidth`, …) are written last, grouped together at the
  * end of the file rather than interleaved with everything else, so the "what is this and where did
  * it come from" keys read together first. */
-export function buildBehSidecar(
-  input: ProvenanceInput,
-  technical: VideoTechnicalFields | ImageTechnicalFields,
-  digest: FileDigest,
-): Record<string, unknown> {
+export function buildBehSidecar(input: ProvenanceInput, technical: MediaTechnicalFields, digest: FileDigest): Record<string, unknown> {
   return {
     Description: input.description?.trim() || null,
     Checksum: checksumField(digest),
@@ -176,7 +218,7 @@ export function buildBehSidecar(
  * would restate what opening the file already says (see main.ts's deliverAnnotationFile). */
 export interface CompanionSidecarInput {
   description: string;
-  technical: VideoTechnicalFields | ImageTechnicalFields;
+  technical: MediaTechnicalFields;
   /** The asset path(s) this file was derived or copied from, relative to the dataset root; empty for
    * the untouched source video itself, which has no upstream to name. */
   sources: string[];
