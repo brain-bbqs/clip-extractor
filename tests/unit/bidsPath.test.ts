@@ -124,20 +124,29 @@ describe("sourcedataDirectory / derivativesDirectory", () => {
 
 describe("sourcedataOriginalFilename", () => {
   it("names it entity-shaped, with no disambiguator — a known subject/session's copy overwrites, not duplicates", () => {
-    expect(sourcedataOriginalFilename(knownBeh, "mice.mp4")).toBe("sub-1_video.mp4");
-    expect(sourcedataOriginalFilename(knownBehWithSession, "mice.mp4")).toBe("sub-1_ses-2_video.mp4");
+    expect(sourcedataOriginalFilename(knownBeh, "mice.mp4", false)).toBe("sub-1_video.mp4");
+    expect(sourcedataOriginalFilename(knownBehWithSession, "mice.mp4", false)).toBe("sub-1_ses-2_video.mp4");
+  });
+
+  // The only file a delivery writes that can take either suffix: what is extracted from this source
+  // never carries audio, so the derivative stays `_video` however loud the source is.
+  it("takes BEP047's _audiovideo suffix when the source carries a sound track", () => {
+    expect(sourcedataOriginalFilename(knownBeh, "mice.mp4", true)).toBe("sub-1_audiovideo.mp4");
+    expect(sourcedataOriginalFilename(knownBehWithSession, "mice.mp4", true)).toBe("sub-1_ses-2_audiovideo.mp4");
+    expect(sourcedataOriginalFilename(unknownBeh, "mice.mp4", true)).toBe("sub-unknown_audiovideo.mp4");
   });
 
   it("keeps sub-unknown undisambiguated too — nothing else tells apart two locally dropped files", () => {
-    expect(sourcedataOriginalFilename(unknownBeh, "mice.mp4")).toBe("sub-unknown_video.mp4");
+    expect(sourcedataOriginalFilename(unknownBeh, "mice.mp4", false)).toBe("sub-unknown_video.mp4");
   });
 
   it("keeps the original file's own extension, lowercased", () => {
-    expect(sourcedataOriginalFilename(knownBeh, "mice.WEBM")).toBe("sub-1_video.webm");
+    expect(sourcedataOriginalFilename(knownBeh, "mice.WEBM", false)).toBe("sub-1_video.webm");
+    expect(sourcedataOriginalFilename(knownBeh, "mice.MKV", true)).toBe("sub-1_audiovideo.mkv");
   });
 
   it("falls back to mp4 when the original name carries no extension", () => {
-    expect(sourcedataOriginalFilename(knownBeh, "mice")).toBe("sub-1_video.mp4");
+    expect(sourcedataOriginalFilename(knownBeh, "mice", false)).toBe("sub-1_video.mp4");
   });
 });
 

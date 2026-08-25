@@ -1,4 +1,4 @@
-import { BufferTarget, CanvasSource, Output, QUALITY_LOW, WebMOutputFormat } from "mediabunny";
+import { AudioSample, AudioSampleSource, BufferTarget, CanvasSource, Output, QUALITY_LOW, WebMOutputFormat } from "mediabunny";
 import type { IncomingDandiset } from "./dandisets";
 import type { ArchiveDandiset, ArchiveSource, ArchiveVideo } from "./archives";
 
@@ -46,6 +46,13 @@ export interface TestInjection {
    * (`±30 min`, a full hour) would otherwise still cover a 40-minute clip in its entirety, making the
    * window indistinguishable from no window at all. */
   mockVideoLongSeconds: number | null;
+  /** Synthesizes the mock video with an audio track (see `synthesizeAudioVideoFile`), so the one
+   * thing a source recording can carry that nothing extracted from it ever does can be previewed and
+   * tested: BEP047 names such a recording `_audiovideo` rather than `_video`, and its sidecar
+   * describes the sound as well as the pictures (see lib/audioFormat.ts). Only meaningful alongside
+   * `mockVideoFrames`; `mock_video_long` previews the timeline of a long recording, where sound has
+   * nothing to do with what is being looked at. */
+  mockAudio: boolean;
   /** Synthesizes a pose model alongside the mock video, once it has loaded. */
   mockSlp: boolean;
   /** Makes the synthesized pose deliberately describe a different recording than the mock video, so
@@ -102,6 +109,7 @@ const INERT: TestInjection = {
   humanSubjects: false,
   mockVideoFrames: null,
   mockVideoLongSeconds: null,
+  mockAudio: false,
   mockSlp: false,
   mismatch: false,
   mockReady: false,
@@ -148,6 +156,7 @@ export function readTestInjection(search: string): TestInjection | null {
     humanSubjects: params.has("human_subjects"),
     mockVideoFrames: mockVideoRaw !== null && mockVideoRaw > 0 ? mockVideoRaw : mockVideoRaw !== null ? 30 : null,
     mockVideoLongSeconds: mockVideoLongRaw !== null && mockVideoLongRaw > 0 ? mockVideoLongRaw : mockVideoLongRaw !== null ? 14400 : null,
+    mockAudio: params.has("mock_audio"),
     mockSlp: params.has("mock_slp"),
     mismatch: params.has("mismatch"),
     mockReady: params.has("mock_ready"),
@@ -306,6 +315,68 @@ export async function synthesizeVideoFile(frames: number, filename = "test-injec
   // inside — so the name and MIME type are deliberately mislabeled to match, same as the forced
   // `VideoCodec: "h264"` override applies to this same mock elsewhere.
   return new File(chunks, filename, { type: "video/mp4" });
+}
+
+/** Frame rate and sound of the audio-bearing mock — 30fps to match what `synthesizeVideoFile`
+ * captures at, and one quiet mono tone at the rate Opus itself works in, so nothing is resampled on
+ * the way into the encoder. */
+const MOCK_AUDIO_FPS = 30;
+const MOCK_AUDIO_SAMPLE_RATE = 48000;
+const MOCK_AUDIO_HZ = 440;
+const MOCK_AUDIO_GAIN = 0.05;
+
+/**
+ * Synthesizes the same short clip with an Opus audio track alongside its pictures — the one shape of
+ * recording this app treats differently, since a source that carries sound is copied into
+ * `sourcedata/` as BEP047's `_audiovideo` rather than `_video`, with its own sidecar describing the
+ * sound (see lib/audioFormat.ts). What is extracted from it never carries audio at all, so this is
+ * also the only way to see both suffixes in one delivery.
+ *
+ * Written through mediabunny rather than recorded through MediaRecorder like `synthesizeVideoFile`
+ * above, because the only way to hand MediaRecorder a live audio track is an `AudioContext`, and a
+ * page that boots straight into a synthesized recording has had no user gesture to start one with —
+ * Chrome's autoplay policy leaves such a context suspended, and a recorder waiting on a track that
+ * never produces data writes nothing at all. Encoding samples directly needs no context, no gesture
+ * and no real time.
+ */
+export async function synthesizeAudioVideoFile(frames: number, filename = "test-injection-mock-audiovideo.mp4"): Promise<File> {
+  const canvas = document.createElement("canvas");
+  canvas.width = MOCK_VIDEO_WIDTH;
+  canvas.height = MOCK_VIDEO_HEIGHT;
+  const ctx = canvas.getContext("2d")!;
+  const target = new BufferTarget();
+  const output = new Output({ format: new WebMOutputFormat(), target });
+  const video = new CanvasSource(canvas, { codec: "vp8", quality: QUALITY_LOW });
+  output.addVideoTrack(video, { frameRate: MOCK_AUDIO_FPS });
+  const audio = new AudioSampleSource({ codec: "opus", quality: QUALITY_LOW });
+  output.addAudioTrack(audio);
+  await output.start();
+  const step = 1 / MOCK_AUDIO_FPS;
+  for (let i = 0; i < frames; i++) {
+    const timestamp = i * step;
+    // The same picture `synthesizeVideoFile` records, so a screenshot of either mock reads the same.
+    ctx.fillStyle = `hsl(${i * 10} 80% 50%)`;
+    ctx.fillRect(0, 0, MOCK_VIDEO_WIDTH, MOCK_VIDEO_HEIGHT);
+    ctx.fillStyle = "#000";
+    ctx.font = "20px sans-serif";
+    ctx.fillText(`test frame ${i}`, 12, MOCK_VIDEO_HEIGHT - 16);
+    await video.add(timestamp, step);
+    await audio.add(toneSample(timestamp, step));
+  }
+  await output.finalize();
+  // Same deliberate mislabeling as the two synthesizers above — real WebM bytes, named and typed as
+  // the mp4 this mock stands in for.
+  return new File([target.buffer!], filename, { type: "video/mp4" });
+}
+
+/** One frame's worth of quiet sine tone, as a raw sample the Opus encoder can take directly. */
+function toneSample(timestamp: number, duration: number): AudioSample {
+  const frameCount = Math.round(duration * MOCK_AUDIO_SAMPLE_RATE);
+  const data = new Float32Array(frameCount);
+  for (let i = 0; i < frameCount; i++) {
+    data[i] = MOCK_AUDIO_GAIN * Math.sin(2 * Math.PI * MOCK_AUDIO_HZ * (timestamp + i / MOCK_AUDIO_SAMPLE_RATE));
+  }
+  return new AudioSample({ data, format: "f32", numberOfChannels: 1, sampleRate: MOCK_AUDIO_SAMPLE_RATE, timestamp });
 }
 
 /** How densely a synthesized long recording is sampled, in seconds per real frame. `showsWindow`

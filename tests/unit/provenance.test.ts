@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  audioTechnicalFields,
   buildBehSidecar,
   buildCompanionSidecar,
   buildSourceDatasetEntry,
@@ -51,6 +52,28 @@ describe("videoTechnicalFields / imageTechnicalFields", () => {
 
   it("carries only width and height for a still image", () => {
     expect(imageTechnicalFields(640, 480)).toEqual({ ImageWidth: 640, ImageHeight: 480 });
+  });
+});
+
+describe("audioTechnicalFields", () => {
+  it("writes BEP047's audio keys for whatever the track answered for", () => {
+    expect(audioTechnicalFields({ codec: "aac", codecRFC6381: "mp4a.40.2", sampleRate: 48000, channelCount: 2 })).toEqual({
+      AudioCodec: "aac",
+      AudioSampleRate: 48000,
+      AudioChannelCount: 2,
+      AudioCodecRFC6381: "mp4a.40.2",
+    });
+  });
+
+  it("carries the bit depth uncompressed audio states in its own codec name", () => {
+    expect(audioTechnicalFields({ codec: "pcm_s16le", bitDepth: 16 })).toEqual({ AudioCodec: "pcm_s16le", AudioBitDepth: 16 });
+  });
+
+  // Both mean "say nothing about sound": a silent file has no track, and a track this app could read
+  // nothing off still declares itself through the file's own `_audiovideo` suffix.
+  it("writes no keys at all for a silent file, or for a track that answered for nothing", () => {
+    expect(audioTechnicalFields(null)).toEqual({});
+    expect(audioTechnicalFields({})).toEqual({});
   });
 });
 
@@ -152,6 +175,32 @@ describe("buildCompanionSidecar", () => {
       checksum: digest,
     });
     expect(sidecar).not.toHaveProperty("Sources");
+  });
+
+  // What the copied-along source video's own sidecar looks like: the one file a delivery writes that
+  // can carry sound, so the one whose sidecar has audio keys to write.
+  it("writes the audio keys alongside the picture keys, for a source video that carries sound", () => {
+    const sidecar = buildCompanionSidecar({
+      description: "The source video this selection was clipped from.",
+      technical: {
+        ...videoTechnicalFields(30, 640, 480, 90),
+        ...audioTechnicalFields({ codec: "aac", sampleRate: 44100, channelCount: 2 }),
+      },
+      sources: [],
+      checksum: digest,
+    });
+    expect(Object.keys(sidecar)).toEqual([
+      "Description",
+      "Checksum",
+      "RecordingDuration",
+      "VideoFrameRate",
+      "VideoFrameCount",
+      "ImageWidth",
+      "ImageHeight",
+      "AudioCodec",
+      "AudioSampleRate",
+      "AudioChannelCount",
+    ]);
   });
 
   it("writes the technical keys last, after what the file is and where it came from", () => {

@@ -78,6 +78,7 @@ import {
   type SelectionKind,
 } from "./lib/delivery";
 import { behEntities, sourcedataOriginalFilename, type BehEntities } from "./lib/bidsPath";
+import { audioFormatInfo } from "./lib/audioFormat";
 import { verbatimFilename } from "./lib/sanitize";
 import {
   bundleFileName,
@@ -93,6 +94,7 @@ import { tarGzip, type BundleEntry } from "./lib/bundle";
 import { memoOne } from "./lib/memo";
 import { checksumBlob, uploadAsset, type BlobDigest, type UploadPhase } from "./lib/upload";
 import {
+  audioTechnicalFields,
   buildBehSidecar,
   buildCompanionSidecar,
   buildSourceDatasetEntry,
@@ -122,6 +124,7 @@ import {
   fromEmberArchiveSource,
   fromEmberSourceUrl,
   readTestInjection,
+  synthesizeAudioVideoFile,
   synthesizeLongVideoFile,
   synthesizeVideoFile,
   type TestInjection,
@@ -3202,11 +3205,18 @@ async function deliverOriginalVideo(deliver: DeliverFile, directory: string, beh
   // many selections are cut out of them, and this is the hash that can take minutes.
   const originalDigest = await sourceDigestOnce(`source-${sourceGeneration}`, () => checksumFor(original, label, onProgress));
   if (!els.uploadOriginal.checked) return;
+  // Whether the source carries sound decides both what this copy is called and what its sidecar can
+  // say about it. BEP047 names an audio-bearing recording `_audiovideo` where a silent one is
+  // `_video`, and this copy is the only file a delivery writes that can be either: everything
+  // extracted from it drops audio on the way out (see lib/ffmpeg.ts), so the derivative stays
+  // `_video` whatever the source held. Read off the file itself rather than assumed from its
+  // container or its name (see lib/audioFormat.ts); one that cannot be opened at all reads as silent.
+  const audio = await audioFormatInfo(original);
   // BEP047 entity-shaped, like everything else this app writes — not the name it arrived with — but
   // with no disambiguator at all (see lib/bidsPath.ts's own header comment and
   // `sourcedataOriginalFilename`): re-delivering the same source is expected to overwrite this copy,
   // not duplicate it.
-  const originalName = sourcedataOriginalFilename(beh, original.name);
+  const originalName = sourcedataOriginalFilename(beh, original.name, audio !== null);
   const originalPath = uploadAssetPath(directory, originalName);
   await deliver({
     blob: original,
@@ -3234,7 +3244,10 @@ async function deliverOriginalVideo(deliver: DeliverFile, directory: string, beh
       : {};
   await deliverSidecar(deliver, directory, originalName, onProgress, {
     description: "The source video this selection was clipped from.",
-    technical: videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames, sourceDetail),
+    technical: {
+      ...videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames, sourceDetail),
+      ...audioTechnicalFields(audio),
+    },
     sources: [],
     checksum: { md5: originalDigest.md5, sha256: originalDigest.sha256, dandiEtag: originalDigest.etag },
   });
@@ -3655,7 +3668,9 @@ async function applyMockReady(injection: TestInjection): Promise<void> {
  * no-URL fallback `&from_local` (the default, and still the common "dropped locally" case) previews. */
 async function applyMockVideo(): Promise<void> {
   if (testInjection?.mockVideoFrames != null) {
-    const file = await synthesizeVideoFile(testInjection.mockVideoFrames);
+    const file = testInjection.mockAudio
+      ? await synthesizeAudioVideoFile(testInjection.mockVideoFrames)
+      : await synthesizeVideoFile(testInjection.mockVideoFrames);
     await loadVideo(
       file,
       file.name,

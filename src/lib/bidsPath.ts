@@ -136,11 +136,16 @@ export function sourcedataDirectory(e: BehEntities): string {
  * own header comment) — and that holds for the `sub-unknown` fallback too, not just a known
  * subject/session: nothing else identifies one locally dropped file from another either, so this is
  * not a case `sourcedata` tries to disambiguate at all. Keeps the original file's own extension —
- * BEP047 says nothing about which container a `_video` suffix must sit in. */
-export function sourcedataOriginalFilename(e: BehEntities, originalName: string): string {
+ * BEP047 says nothing about which container a `_video` suffix must sit in.
+ *
+ * `hasAudio` picks the suffix: BEP047 distinguishes a silent recording (`_video`) from one carrying
+ * sound (`_audiovideo`), and the source copy is the only file this app writes that can be either,
+ * since everything it produces itself drops audio on the way out (see lib/ffmpeg.ts). Read off the
+ * file rather than assumed — see lib/audioFormat.ts. */
+export function sourcedataOriginalFilename(e: BehEntities, originalName: string, hasAudio: boolean): string {
   const dot = originalName.lastIndexOf(".");
   const ext = dot > 0 ? originalName.slice(dot + 1).toLowerCase() : "mp4";
-  return `${subjectSessionSegments(e).join("_")}_video.${ext}`;
+  return `${subjectSessionSegments(e).join("_")}_${hasAudio ? "audiovideo" : "video"}.${ext}`;
 }
 
 /** Where this app's own output sits —
