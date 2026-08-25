@@ -4,7 +4,7 @@
 
 #### 🚀 Enhancement
 
-- A source video that carries sound is now copied into `sourcedata/` under BEP047's `_audiovideo` suffix instead of `_video`, with its codec, sample rate, channel count and bit depth recorded in its sidecar; the extracted clip drops the audio as before and keeps the plain `_video` name ([#46](https://github.com/brain-bbqs/clip-extractor/pull/46))
+- A source video that carries sound is now copied into `sourcedata/` under BEP047's `_audiovideo` suffix instead of `_video`, with its codec, sample rate, channel count and bit depth recorded in its sidecar; the extracted clip drops the audio as before and keeps the plain `_video` name ([#47](https://github.com/brain-bbqs/clip-extractor/pull/47))
 
 ## 1.2.2
 
