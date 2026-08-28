@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0
+
+#### 🚀 Enhancement
+
+- Picking a file and working on it are now one card: the source picker gives way to the player once a video opens, the pose card gives way to the file it read, and **Change video** / **Change pose file** put each picker back ([#51](https://github.com/brain-bbqs/clip-extractor/pull/51))
+
 ## 1.3.1
 
 #### 🚀 Enhancement
