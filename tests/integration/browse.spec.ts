@@ -156,6 +156,49 @@ test("browsing EMBER lists only the datasets that hold video, and says nothing o
   await expect(page.locator("#browseStatus")).toHaveText("");
 });
 
+test("the list holds nothing until the scan says it holds video, rather than showing every candidate", async ({ page }) => {
+  // The pane cannot know which datasets hold video until it has read their file lists, and it used
+  // to paint every candidate while it found out — so a video-less dataset (and, before the archive
+  // API settled it, an embargoed one) sat in the list for as long as the scan ran and then
+  // vanished. The manifests are served slowly here so that window is wide enough to look inside:
+  // the ephys-only dataset must never appear in it.
+  const delayed = async (ms: number, body: string, route: Parameters<Parameters<Page["route"]>[1]>[0]) => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    await route.fulfill({ status: 200, contentType: "application/json", body });
+  };
+  await page.route(`${BUCKET}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("list-type") === "2") {
+      return route.fulfill({ status: 200, contentType: "application/xml", body: listingXml(PUBLIC_DATASETS) });
+    }
+    const dataset = PUBLIC_DATASETS.find((d) => url.pathname.startsWith(`/dandisets/${d.id}/`));
+    if (!dataset) return route.continue();
+    if (url.pathname.endsWith("/dandiset.jsonld")) return delayed(500, JSON.stringify({ name: dataset.name }), route);
+    // The gerbil dataset answers last, so there is a long stretch in which exactly one dataset has
+    // been confirmed to hold video and the ephys-only one has already answered that it holds none.
+    return delayed(dataset.id === "000299" ? 2500 : 300, assetsJson(dataset.id, dataset.paths), route);
+  });
+  await stubPublicDandisetList(
+    page,
+    PUBLIC_DATASETS.map((d) => d.id),
+  );
+  await page.goto("/");
+  await page.locator('#srcSeg button[data-src="browse"]').click();
+
+  // Nothing is confirmed yet, so the list says so instead of listing three datasets it is about to
+  // cut down to two.
+  await expect(page.locator("#browseDandisets .browse-empty")).toContainText("Looking for the datasets that hold video");
+  const rows = page.locator("#browseDandisets .browse-item");
+  // Rows arrive as the scan confirms them, already carrying their video count.
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Mouse open field");
+  await expect(rows.first()).toContainText("1 video");
+
+  await expect(rows).toHaveCount(2);
+  await expect(page.locator("#browseDandisets")).not.toContainText("Ephys only");
+  await expect(page.locator("#browseStatus")).toHaveText("");
+});
+
 test("the filter matches a dataset by number, by title and by the files in it", async ({ page }) => {
   await stubBucket(page);
   await page.goto("/");
