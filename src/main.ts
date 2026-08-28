@@ -563,6 +563,28 @@ async function refuseUnstreamable(url: string, name: string): Promise<void> {
   log(`${name} cannot be streamed, so all ${bytes(size)} of it will be downloaded first`, "warn");
 }
 
+/**
+ * Hands `backend` back only once a frame has come out of it.
+ *
+ * Opening and decoding are different questions, and the last of the fallbacks below answers only the
+ * first: sleap-io.js's backends read a container without asking whether this browser has a decoder
+ * for what is inside it, so a file in a codec the browser will not touch opens, reports its size and
+ * frame count, and then draws nothing. What that looked like was a load that finished — the
+ * indicator came down, the player switched on — over a stage that stayed blank, with the only word
+ * of it in the console. Asked here instead, where the answer is still a refusal the picker can
+ * report, and at no cost to a source that can decode: the frame is the one the player is about to
+ * ask for, and it is already cached by the time it does.
+ */
+async function requireFirstFrame(backend: SleapVideoBackend, name: string): Promise<SleapVideoBackend> {
+  const frame = await backend.getFrame(0).catch(() => null);
+  if (frame) return backend;
+  backend.close?.();
+  throw new Error(
+    `${name} opened, but this browser could not decode any of its frames. ` +
+      `Please use the Encoding Helper (${ENCODING_HELPER_URL}) to improve the video accessibility.`,
+  );
+}
+
 async function openVideoBackend(source: File | string, name: string): Promise<OpenedSource> {
   if (typeof source === "string") {
     await refuseUnstreamable(source, name);
@@ -575,7 +597,7 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
         // is the recording pulled through it whole, silently, for as long as that takes.
         maxIndexBytes: WHOLE_FILE_LIMIT_BYTES,
       });
-      return { backend, file: null };
+      return { backend: await requireFirstFrame(backend, name), file: null };
     } catch (e) {
       // What the open failed with is left here rather than carried into the refusal: it is a
       // sentence about container internals, and the refusal is about a file being too large to
@@ -584,10 +606,10 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
       loadStatus.show(`Downloading ${name}…`);
       const blob = await fetchWholeVideo(source, name);
       const file = new File([blob], name, { type: blob.type || "video/mp4" });
-      return { backend: await openLocalBackend(file, name), file };
+      return { backend: await requireFirstFrame(await openLocalBackend(file, name), name), file };
     }
   }
-  return { backend: await openLocalBackend(source, name), file: source };
+  return { backend: await requireFirstFrame(await openLocalBackend(source, name), name), file: source };
 }
 
 /**

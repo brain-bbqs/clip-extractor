@@ -218,6 +218,43 @@ test("a picker dismissed without a file takes the waiting line back down", async
   await expect(page.locator("#dropzone")).toContainText("Drop a video here");
 });
 
+test("a video that opens but cannot be decoded is refused, rather than leaving a blank stage", async ({ page }) => {
+  await page.goto("/");
+  // A container that reads perfectly and whose frames this browser cannot turn into pictures: a real
+  // recording with its codec id rewritten, so the track opens, declares its size and frame count,
+  // and then decodes to nothing. It stands in for the everyday version of the same thing — an H.264
+  // recording on a browser built without H.264 — which is what turned up the bug.
+  await stageRecordedFile(page, "undecodable.webm");
+  await page.evaluate(async () => {
+    const bytes = new Uint8Array(await window.__recordedClip!.arrayBuffer());
+    // Matroska's CodecID, as the ASCII it is stored as. The replacement is the same length, so every
+    // element size around it still holds.
+    const from = [...("V_VP8" as string)].map((c) => c.charCodeAt(0));
+    const to = [...("V_AV1" as string)].map((c) => c.charCodeAt(0));
+    for (let i = 0; i + from.length <= bytes.length; i++) {
+      if (from.some((code, k) => bytes[i + k] !== code)) continue;
+      to.forEach((code, k) => (bytes[i + k] = code));
+      break;
+    }
+    window.__recordedClip = new File([bytes], "undecodable.webm", { type: "video/webm" });
+  });
+
+  await page.evaluate(() => {
+    const input = document.querySelector<HTMLInputElement>("#videoFile")!;
+    const transfer = new DataTransfer();
+    transfer.items.add(window.__recordedClip!);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change"));
+  });
+
+  // Said where the video was asked for, and the player left as it was: a load that draws nothing
+  // used to finish quietly all the same, switching the player on over a stage that stayed bare.
+  await expect(page.locator("#emptyStage")).toContainText("undecodable.webm");
+  await expect(page.locator("#view")).toBeHidden();
+  await expect(page.locator("#dropzoneBusy")).toBeHidden();
+  await expect(page.locator("#btnPlay")).toBeDisabled();
+});
+
 const HELD_URL = "https://videos.test/held-clip.webm";
 
 test("a streamed video says it is loading on the load card as well as over the stage", async ({ page }) => {

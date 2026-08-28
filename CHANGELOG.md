@@ -2,6 +2,10 @@
 
 ## 1.4.0
 
+#### 🐛 Bug Fix
+
+- A video this browser has no decoder for is now refused where you picked it, instead of switching the player on over a stage that stays blank ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
+
 #### 🚀 Enhancement
 
 - A local video is now opened on a background thread, so the page keeps answering clicks while a large recording is read instead of locking up until it is done ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
