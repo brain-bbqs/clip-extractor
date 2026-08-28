@@ -93,8 +93,8 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-D1OFGYgS.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Dx9fg3a3.css">
+    <script type="module" crossorigin src="./assets/index-DvxzCH4Z.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CbWFYLpA.css">
   </head>
   <body>
     <a class="brand-watermark-link" href="https://brain-bbqs.org" target="_blank" rel="noopener" aria-label="BBQS" title="BBQS">
@@ -216,6 +216,16 @@
               </div>
               <p>Drop a video here, or click to browse <button type="button" id="browseVideoBtn" class="dz-browse">files</button>.</p>
               <p class="dz-sample"><button type="button" id="sampleBtn" class="dz-browse">Load the sample (mice)</button></p>
+            </div>
+            <!-- What the dropzone says once a file has been handed to it, in place of the invitation
+                 above: the file's own name, and how much of it has been read. A picker that goes on
+                 inviting a video while it is busy opening one — or that only dims — leaves somebody
+                 who just chose a large file with no sign it registered the choice, which is exactly
+                 where they are looking for one. -->
+            <div id="dropzoneBusy" class="dz-busy" hidden>
+              <span class="load-spinner" aria-hidden="true"></span>
+              <span id="dropzoneBusyLabel" class="dz-busy-label" role="status"></span>
+              <span id="dropzoneBusyDetail" class="dz-busy-detail" aria-hidden="true"></span>
             </div>
           </div>
         </div>
