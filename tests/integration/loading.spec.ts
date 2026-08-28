@@ -73,6 +73,44 @@ test("a local video is named by the dropzone it was handed to, drawn before the 
   await expect(page.locator("#dropzone")).toContainText("Drop a video here");
 });
 
+test("the dropzone says it is waiting from the moment the picker opens, not the moment the file lands", async ({ page }) => {
+  await page.goto("/");
+  // The picker is opened for real; nothing is chosen in it here.
+  page.on("filechooser", () => {});
+  await stageRecordedFile(page, "chosen-clip.webm");
+
+  await page.locator("#dropzone").click();
+  // Between dismissing a picker and the browser handing the file over there is a stretch no page
+  // is told about. This is what stands in it.
+  await expect(page.locator("#dropzoneBusy")).toBeVisible();
+  await expect(page.locator("#dropzoneBusyLabel")).toHaveText(/Waiting for the file/);
+
+  // And it gives way to the file itself, rather than the two of them being separate states.
+  await page.evaluate(() => {
+    const input = document.querySelector<HTMLInputElement>("#videoFile")!;
+    const transfer = new DataTransfer();
+    transfer.items.add(window.__recordedClip!);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change"));
+  });
+  await expect(page.locator("#dropzoneBusyLabel")).toHaveText("chosen-clip.webm");
+  await expect(page.locator("#view")).toBeVisible();
+  await expect(page.locator("#dropzoneBusy")).toBeHidden();
+});
+
+test("a picker dismissed without a file takes the waiting line back down", async ({ page }) => {
+  await page.goto("/");
+  page.on("filechooser", () => {});
+
+  await page.locator("#dropzone").click();
+  await expect(page.locator("#dropzoneBusy")).toBeVisible();
+
+  // What a browser fires when the picker is closed with nothing chosen.
+  await page.evaluate(() => document.querySelector("#videoFile")!.dispatchEvent(new Event("cancel")));
+  await expect(page.locator("#dropzoneBusy")).toBeHidden();
+  await expect(page.locator("#dropzone")).toContainText("Drop a video here");
+});
+
 const HELD_URL = "https://videos.test/held-clip.webm";
 
 test("a streamed video says it is loading on the load card as well as over the stage", async ({ page }) => {

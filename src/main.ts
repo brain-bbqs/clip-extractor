@@ -2508,12 +2508,53 @@ function wireDropzone(dz: HTMLElement): void {
 wireDropzone(els.dropzone);
 wireDropzone(els.slpDropzone);
 
-els.dropzone.addEventListener("click", () => els.videoFile.click());
+/**
+ * Opens the file picker, with the dropzone already saying it is waiting on one.
+ *
+ * The load itself is announced the moment the browser hands the file over, which is as early as any
+ * page can manage — but that is not as early as the file was *chosen*. Between dismissing the
+ * picker and the `change` event there is a stretch, longer for a large file or one on a network or
+ * cloud-synced drive, that belongs to the browser: the page has not been told anything yet and can
+ * only sit there looking like it missed the click. Saying so before the picker even opens puts
+ * something in that gap that costs nothing to draw when the dialog comes down.
+ */
+/** Whether a picker opened by {@link pickVideoFile} has yet to answer, either way. Nothing below
+ * takes the line down unless this is still true: the same events fire around a load already in
+ * progress, and that one is not theirs to end. */
+let awaitingPick = false;
+
+function pickVideoFile(): void {
+  awaitingPick = true;
+  dropzoneStatus.show("Waiting for the file you choose…");
+  els.videoFile.click();
+}
+
+/** Ends the wait for a file that is not coming. */
+function pickCancelled(): void {
+  if (!awaitingPick) return;
+  awaitingPick = false;
+  dropzoneStatus.hide();
+}
+
+// How long after the window comes back a `change` may still arrive. Only a backstop for a browser
+// without `cancel` below: long enough that a file on its way cannot lose the race, short enough
+// that a dismissed picker does not leave the line sitting there.
+const PICKER_CANCEL_GRACE_MS = 1500;
+// Fired outright by browsers that have it when a picker is dismissed with nothing chosen.
+els.videoFile.addEventListener("cancel", pickCancelled);
+// The window coming back is the picker closing, one way or the other; which way is settled by
+// whether a `change` follows.
+window.addEventListener("focus", () => {
+  if (!awaitingPick) return;
+  setTimeout(pickCancelled, PICKER_CANCEL_GRACE_MS);
+});
+
+els.dropzone.addEventListener("click", () => pickVideoFile());
 els.slpDropzone.addEventListener("click", () => els.slpFile.click());
 // stopPropagation keeps a dropzone's own click handler from also firing on the inner buttons.
 els.browseVideoBtn.addEventListener("click", (e) => {
   e.stopPropagation();
-  els.videoFile.click();
+  pickVideoFile();
 });
 els.browseSlpBtn.addEventListener("click", (e) => {
   e.stopPropagation();
@@ -2524,8 +2565,12 @@ els.sampleBtn.addEventListener("click", (e) => {
   void loadSample();
 });
 els.videoFile.addEventListener("change", () => {
+  // Whatever happens next, the picker has answered: the line it left up is the load's now, or
+  // nobody's.
+  awaitingPick = false;
   const f = els.videoFile.files?.[0];
   if (f) void loadVideo(f, f.name);
+  else dropzoneStatus.hide();
   els.videoFile.value = "";
 });
 els.slpFile.addEventListener("change", () => {
