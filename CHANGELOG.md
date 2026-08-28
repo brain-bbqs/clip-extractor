@@ -8,6 +8,7 @@
 
 #### 🚀 Enhancement
 
+- A video now opens on a key frame where one is near the snippet it marks out, so the first picture is one decode rather than a run of them: on a recording with key frames 250 frames apart that is the difference between decoding 64 frames before anything appears and decoding one ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
 - A local video is now opened on a background thread, so the page keeps answering clicks while a large recording is read instead of locking up until it is done ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
 - A video being opened is now acknowledged where you picked it: the dropzone reads "Loading video…" from the moment the file picker opens until the first frame is drawn, naming the file and counting the bytes read underneath, and a streamed video says the same on the load card ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
 

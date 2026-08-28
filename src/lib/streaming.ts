@@ -475,6 +475,35 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     }
   }
 
+  /**
+   * The first key frame at or after `index`: the nearest frame from here on that a decoder can
+   * produce on its own.
+   *
+   * Every other frame costs the ones between it and the key frame before it, decoded in order to get
+   * there — which on a recording with key frames seconds apart is the whole of the wait before a
+   * picture appears. What the player opens on is rounded through this (see main.ts's
+   * `resetSelection`), and a range copied out untouched begins at the key frame at or before In, so
+   * a selection starting on one carries no lead-in either.
+   *
+   * Forwards rather than back, because what asks is a band inset from the start of the recording:
+   * rounded the other way it would slide towards frame 0 — on a file whose only early key frame is
+   * its first, all the way onto it — and stop being inset at all.
+   *
+   * Null where there is no later key frame, or where the container will not say. The caller then
+   * keeps the frame it had, which is never wrong, only slower.
+   */
+  async nextKeyFrameIndex(index: number): Promise<number | null> {
+    if (this.closed || index < 0 || index >= this.index.count) return null;
+    const packets = new EncodedPacketSink(this.track);
+    const at = await packets.getKeyPacket(this.index.time(index), { metadataOnly: true }).catch(() => null);
+    if (!at) return null;
+    if (this.index.indexAt(at.timestamp, 0, this.index.count - 1) === index) return index;
+    const next = await packets.getNextKeyPacket(at, { metadataOnly: true }).catch(() => null);
+    if (!next) return null;
+    const found = this.index.indexAt(next.timestamp, 0, this.index.count - 1);
+    return found === null || found < index || found >= this.index.count ? null : found;
+  }
+
   /** The frame at `index`, given up rather than kept: decoded like {@link getFrame}, then dropped
    * from the cache. What the worker wrapper (lib/workerVideo.ts) reads through, the bitmap being
    * transferred out of this thread the moment it is handed over — after which the cache's copy is

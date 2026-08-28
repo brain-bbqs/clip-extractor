@@ -84,6 +84,8 @@ worker.onmessage = async (event: MessageEvent<ToVideoWorker>): Promise<void> => 
       postFrame(message.id, message.index, await open_.takeFrame(message.index));
     } else if (message.kind === "prefetch") {
       await prefetch(message.id, message.lo, message.hi, open_);
+    } else if (message.kind === "keyFrame") {
+      post({ kind: "keyFrame", id: message.id, index: await open_.nextKeyFrameIndex(message.index) });
     } else {
       const times = await open_.getFrameTimes();
       const packed = times ? Float64Array.from(times) : null;

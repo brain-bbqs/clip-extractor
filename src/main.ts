@@ -700,7 +700,7 @@ async function loadVideo(
     // A recording opens with a snippet already marked out on it rather than with bare handles and a
     // range that silently means all of it, and with the playhead on that snippet's first frame
     // rather than back at the start of the recording — see resetSelection.
-    resetSelection();
+    await resetSelection();
     // Blur areas are placed in the pixels of the video that was on screen when they were drawn.
     // Another recording puts something else under them, so they are dropped rather than carried
     // over onto a frame nobody has looked at.
@@ -1382,24 +1382,49 @@ function selRange(): [number, number] {
 }
 
 /** Puts the snippet's ends back where a freshly opened recording starts them — a fifth of the trim
- * track in from each of its ends (see lib/timeline.ts's defaultSelection) — and the playhead on the
- * In it just set. Both the opening range and what "Reset range" goes back to, so the two are the
- * same range and the player is never left in a state no load produces.
+ * track in from each of its ends (see lib/timeline.ts's defaultSelection), rounded back to a key
+ * frame — and the playhead on the In it just set. Both the opening range and what "Reset range" goes
+ * back to, so the two are the same range and the player is never left in a state no load produces.
  *
  * The playhead comes along because the range is marked out for it. Left at the recording's start it
  * would sit a fifth of the track clear of a band it is not inside, showing a frame outside what
  * would be extracted, and the first press of play would jump away from it again.
  *
- * Silent about the UI and about decoding, since a load is still assembling both when it calls this.
- * Each caller ends with the seek onto state.cur its own moment needs, and the button below funnels
- * through selectionChanged as every other move of the marks does. */
-function resetSelection(): void {
+ * Rounded because of what the frame under it costs. Only a key frame can be decoded on its own;
+ * every other frame is reached by decoding the ones between it and the key frame before it, and a
+ * recording with key frames seconds apart makes that the whole of the wait before the first picture
+ * — a fifth of the way into a file with one every 250 frames is 64 frames of decoding before
+ * anything is on screen. A default band is a starting point rather than a chosen moment, so it costs
+ * nothing to begin it where the decoder can. It gains something too: a range copied out untouched
+ * begins at the key frame at or before In, so one that starts on a key frame carries no lead-in.
+ *
+ * Forwards, and only into the first half of the band. Rounded back it would slide towards frame 0 —
+ * on a file whose only early key frame is its first, onto it — and the band would stop being inset
+ * at all; rounded forwards past the middle it would eat the snippet instead. A file that offers
+ * neither leaves the band where the inset put it, which is slower to draw and nothing worse.
+ *
+ * Silent about the UI, since a load is still assembling it when it calls this. Each caller ends with
+ * the seek onto state.cur its own moment needs, and the button below funnels through
+ * selectionChanged as every other move of the marks does. */
+async function resetSelection(): Promise<void> {
   const range = defaultSelection(view(), state.totalFrames);
-  state.inF = range?.[0] ?? null;
-  state.outF = range?.[1] ?? null;
   // Nothing to bound a snippet in means nothing to park on either: a recording that short is its own
   // first frame.
-  state.cur = range?.[0] ?? 0;
+  if (!range) {
+    state.inF = null;
+    state.outF = null;
+    state.cur = 0;
+    return;
+  }
+  const [lo, hi] = range;
+  // Far enough short of Out that what is left is still a band: a key frame past that is one this
+  // rounding would trade a snippet for.
+  const room = lo + Math.floor((hi - lo) / 2);
+  const key = await state.backend?.nextKeyFrameIndex?.(lo).catch(() => null);
+  const start = key !== null && key !== undefined && key <= room ? key : lo;
+  state.inF = start;
+  state.outF = hi;
+  state.cur = start;
 }
 
 // ============================================================
@@ -2503,13 +2528,15 @@ wireSeg(els.speedSeg, (v) => {
   state.speed = parseFloat(v);
 });
 els.btnClearSel.addEventListener("click", () => {
-  resetSelection();
-  selectionChanged();
-  // The marks moved and the playhead moved with them, so the frame on the stage is decoded to match
-  // rather than left showing wherever the playhead used to be. Forced, since resetSelection has
-  // already written state.cur and an unforced seek onto it would read as a seek to nowhere; and
-  // never as a shift-extend, since this is a reset of the marks rather than a scrub across them.
-  void seek(state.cur, true, false);
+  void (async () => {
+    await resetSelection();
+    selectionChanged();
+    // The marks moved and the playhead moved with them, so the frame on the stage is decoded to match
+    // rather than left showing wherever the playhead used to be. Forced, since resetSelection has
+    // already written state.cur and an unforced seek onto it would read as a seek to nowhere; and
+    // never as a shift-extend, since this is a reset of the marks rather than a scrub across them.
+    await seek(state.cur, true, false);
+  })();
 });
 els.showPose.addEventListener("change", () => {
   renderFrame();

@@ -47,12 +47,18 @@ export interface PrefetchRequest {
   hi: number;
 }
 
+export interface KeyFrameRequest {
+  kind: "keyFrame";
+  id: number;
+  index: number;
+}
+
 export interface FrameTimesRequest {
   kind: "frameTimes";
   id: number;
 }
 
-export type ToVideoWorker = OpenRequest | FrameRequest | PrefetchRequest | FrameTimesRequest;
+export type ToVideoWorker = OpenRequest | FrameRequest | PrefetchRequest | KeyFrameRequest | FrameTimesRequest;
 
 export interface OpenedMessage {
   kind: "opened";
@@ -92,10 +98,19 @@ export interface FrameTimesMessage {
   times: Float64Array | null;
 }
 
+/** The first key frame at or after the one asked about, or null where there is none — see
+ * `StreamingVideoBackend.nextKeyFrameIndex`. */
+export interface KeyFrameMessage {
+  kind: "keyFrame";
+  id: number;
+  index: number | null;
+}
+
 export interface FailureMessage {
   kind: "failed";
   id: number;
   message: string;
 }
 
-export type FromVideoWorker = OpenedMessage | IndexProgressMessage | FrameMessage | PrefetchedMessage | FrameTimesMessage | FailureMessage;
+export type FromVideoWorker =
+  OpenedMessage | IndexProgressMessage | FrameMessage | PrefetchedMessage | KeyFrameMessage | FrameTimesMessage | FailureMessage;

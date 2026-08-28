@@ -93,6 +93,11 @@ export interface SleapVideoBackend {
   // depends on that being a real possibility as far as the type checker is concerned.
   getFrameTimes?(): Promise<number[] | null | undefined>;
   prefetch?(startIndex: number, endIndex: number): Promise<void>;
+  /** The first frame at or after `index` that can be decoded without decoding anything before it —
+   * a key frame — or null where there is none or the container will not say. Optional: only the
+   * backends that read the container themselves can answer, and a caller that gets no answer keeps
+   * the frame it asked about. */
+  nextKeyFrameIndex?(index: number): Promise<number | null>;
   /** Releases decoded frames and any reads still in flight. Optional: not every backend has one. */
   close?(): void;
 }

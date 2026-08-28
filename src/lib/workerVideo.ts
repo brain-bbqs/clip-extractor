@@ -152,6 +152,14 @@ export class WorkerVideoBackend implements SleapVideoBackend {
     }
   }
 
+  /** The first key frame at or after `index` — see `StreamingVideoBackend.nextKeyFrameIndex`. Null
+   * where there is none, or where nothing answered. */
+  async nextKeyFrameIndex(index: number): Promise<number | null> {
+    if (this.closed) return null;
+    const answer = await this.request({ kind: "keyFrame", id: 0, index }).catch(() => null);
+    return answer?.kind === "keyFrame" ? answer.index : null;
+  }
+
   async getFrameTimes(): Promise<number[] | null> {
     if (this.closed) return null;
     const answer = await this.request({ kind: "frameTimes", id: 0 }).catch(() => null);

@@ -1,5 +1,13 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
 import { recordClipBytes, stageRecordedFile } from "./helpers";
+
+/** Where the spec below imports mediabunny from inside the page, and the copy `npm ci` already put
+ * on disk to answer it with. Writing a clip with a chosen key-frame interval is the only way to know
+ * where its key frames are, and MediaRecorder does not offer one. */
+const MEDIABUNNY_URL = "https://mediabunny.test/mediabunny.mjs";
+const MEDIABUNNY_MODULE = fileURLToPath(new URL("../../node_modules/mediabunny/dist/bundles/mediabunny.mjs", import.meta.url));
 
 // Opening a video is work this page does on its own thread — a container index parsed here, a first
 // frame decoded here — so for a large recording there is a stretch where nothing on the page answers
@@ -253,6 +261,51 @@ test("a video that opens but cannot be decoded is refused, rather than leaving a
   await expect(page.locator("#view")).toBeHidden();
   await expect(page.locator("#dropzoneBusy")).toBeHidden();
   await expect(page.locator("#btnPlay")).toBeDisabled();
+});
+
+test("a video opens on a key frame, so the first picture costs one decode rather than a run of them", async ({ page }) => {
+  await page.goto("/");
+  // A clip whose key frames are a known distance apart: 90 frames at 30fps with one every second, so
+  // they land on 0, 30 and 60. The snippet a load marks out starts a fifth in, at frame 18, which
+  // sits 18 frames past the key frame before it — 18 frames of decoding before a picture, where the
+  // key frame at 30 is one decode. 30 is inside the first half of the band (18..71), so that is
+  // where the band starts instead.
+  // Served off disk rather than fetched, the way the ffmpeg core is for the extraction specs: the
+  // page under test is the built app, which carries no node_modules.
+  await page.route(MEDIABUNNY_URL, (route) => route.fulfill({ contentType: "text/javascript", body: readFileSync(MEDIABUNNY_MODULE) }));
+  await page.evaluate(async (MEDIABUNNY_URL) => {
+    const { BufferTarget, CanvasSource, Output, QUALITY_LOW, WebMOutputFormat } = await import(/* @vite-ignore */ MEDIABUNNY_URL);
+    const canvas = document.createElement("canvas");
+    canvas.width = 320;
+    canvas.height = 240;
+    const ctx = canvas.getContext("2d")!;
+    const target = new BufferTarget();
+    const output = new Output({ format: new WebMOutputFormat(), target });
+    const source = new CanvasSource(canvas, { codec: "vp8", quality: QUALITY_LOW, keyFrameInterval: 1 });
+    output.addVideoTrack(source, { frameRate: 30 });
+    await output.start();
+    for (let i = 0; i < 90; i++) {
+      ctx.fillStyle = `hsl(${i * 6} 80% 50%)`;
+      ctx.fillRect(0, 0, 320, 240);
+      await source.add(i / 30, 1 / 30);
+    }
+    await output.finalize();
+    window.__recordedClip = new File([target.buffer!], "keyframes.webm", { type: "video/webm" });
+  }, MEDIABUNNY_URL);
+
+  await page.evaluate(() => {
+    const input = document.querySelector<HTMLInputElement>("#videoFile")!;
+    const transfer = new DataTransfer();
+    transfer.items.add(window.__recordedClip!);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change"));
+  });
+  await expect(page.locator("#view")).toBeVisible();
+
+  // Rounded on to the key frame at 30 rather than left on 18. The playhead is still on In, which is
+  // what a load marks out for it — the band moved, and the pair moved together.
+  await expect(page.locator("#inVal")).toHaveValue("30");
+  await expect(page.locator("#curVal")).toHaveValue("30");
 });
 
 const HELD_URL = "https://videos.test/held-clip.webm";
