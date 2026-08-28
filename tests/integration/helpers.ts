@@ -215,6 +215,27 @@ export async function recordClipBytes(page: Page, frames = 20): Promise<Buffer> 
  * with the `.slp` fixture has to draw comfortably more than the 30 frames it labels — a clip that
  * ends before the last labeled frame is one the SLEAP card is right to refuse. */
 export async function loadRecordedVideo(page: Page, filename: string, frames = 30): Promise<void> {
+  await stageRecordedFile(page, filename, frames);
+  await page.evaluate(() => {
+    const input = document.querySelector<HTMLInputElement>("#videoFile")!;
+    const transfer = new DataTransfer();
+    transfer.items.add(window.__recordedClip!);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change"));
+  });
+  await expect(page.locator("#view")).toBeVisible();
+}
+
+declare global {
+  interface Window {
+    /** Where {@link stageRecordedFile} leaves the clip it recorded. */
+    __recordedClip?: File;
+  }
+}
+
+/** Records the same clip and leaves it on `window`, without handing it to the picker — for a spec
+ * that wants to do the handing itself and watch what the page does in the same tick. */
+export async function stageRecordedFile(page: Page, filename: string, frames = 30): Promise<void> {
   await page.evaluate(
     async ({ name, frames }) => {
       const canvas = document.createElement("canvas");
@@ -234,13 +255,8 @@ export async function loadRecordedVideo(page: Page, filename: string, frames = 3
         recorder.onstop = () => resolve();
         recorder.stop();
       });
-      const input = document.querySelector<HTMLInputElement>("#videoFile")!;
-      const transfer = new DataTransfer();
-      transfer.items.add(new File(chunks, name, { type: "video/webm" }));
-      input.files = transfer.files;
-      input.dispatchEvent(new Event("change"));
+      window.__recordedClip = new File(chunks, name, { type: "video/webm" });
     },
     { name: filename, frames },
   );
-  await expect(page.locator("#view")).toBeVisible();
 }

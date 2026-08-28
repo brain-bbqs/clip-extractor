@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { StageStatus, type StageStatusElements } from "../../src/ui/stageStatus";
+import { BusyStatus, type BusyStatusElements } from "../../src/ui/busyStatus";
 
-function makeStatus(minVisibleMs = 400): { status: StageStatus; els: StageStatusElements } {
+function makeStatus(minVisibleMs = 400): { status: BusyStatus; els: BusyStatusElements } {
   const make = (): HTMLElement => document.createElement("span");
-  const els: StageStatusElements = { root: make(), label: make(), detail: make() };
+  const els: BusyStatusElements = { root: make(), label: make(), detail: make() };
   els.root.hidden = true;
-  return { status: new StageStatus(els, { minVisibleMs }), els };
+  return { status: new BusyStatus(els, { minVisibleMs }), els };
 }
 
 beforeEach(() => {

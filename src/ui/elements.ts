@@ -15,6 +15,7 @@ export function getElements() {
     oauthSignoutBtn: required<HTMLButtonElement>("oauthSignoutBtn"),
 
     // Load card
+    loadCard: required<HTMLElement>("loadCard"),
     srcSeg: required<HTMLDivElement>("srcSeg"),
     localPane: required<HTMLDivElement>("localPane"),
     browsePane: required<HTMLDivElement>("browsePane"),
@@ -33,6 +34,9 @@ export function getElements() {
     videoFile: required<HTMLInputElement>("videoFile"),
     slpFile: required<HTMLInputElement>("slpFile"),
     slpToggle: required<HTMLInputElement>("slpToggle"),
+    loadBusy: required<HTMLDivElement>("loadBusy"),
+    loadBusyLabel: required<HTMLSpanElement>("loadBusyLabel"),
+    loadBusyDetail: required<HTMLSpanElement>("loadBusyDetail"),
 
     // Player
     playerCard: required<HTMLElement>("playerCard"),

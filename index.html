@@ -253,6 +253,18 @@
             <button type="button" id="emberLoadBtn" class="primary">Stream</button>
           </div>
         </div>
+        <!-- What a load in progress says on the picker it was asked from. The stage carries the same
+             line over the player, but that is the wrong place to say it while a video is being
+             opened: whoever just dropped a file is looking at this card, and on a short window the
+             stage is below the fold entirely. Opening a local recording runs on the page's own
+             thread, so without this the wait reads as the page having seized up. The byte counter is
+             marked aria-hidden for the same reason the stage's is — the label beside it is announced
+             once, rather than the running total being re-read every quarter second. -->
+        <div id="loadBusy" class="load-busy" hidden>
+          <span class="load-spinner" aria-hidden="true"></span>
+          <span id="loadBusyLabel" class="load-busy-label" role="status"></span>
+          <span id="loadBusyDetail" class="load-busy-detail" aria-hidden="true"></span>
+        </div>
         <input type="file" id="videoFile" accept="video/*,.mp4,.avi,.mov,.mkv" hidden />
         <input type="file" id="slpFile" accept=".slp,.nwb,.h5,.hdf5" hidden />
       </section>

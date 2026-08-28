@@ -50,9 +50,15 @@ const PROBE_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
  * the rate is judged not to describe the file. */
 const COUNT_TOLERANCE = 0.5;
 
-/** Packets enumerated between yields back to the event loop. Large enough that the yields cost
- * nothing on a normal clip, small enough that a long one stays interactive while it is read. */
-const YIELD_EVERY = 20_000;
+/** How long the packet walk may run before handing the event loop a turn. One frame at 60Hz: short
+ * enough that the tab goes on painting — the line saying the video is loading, most of all — while a
+ * long recording is read, long enough that the yields cost a normal clip nothing.
+ *
+ * Measured in time rather than counted in packets, because how many packets fit in a frame's worth
+ * of work is not knowable from here: over a URL each one may be a range request that yields anyway,
+ * while a local file already in the page cache walks them as fast as the CPU can, and a count picked
+ * for either is wrong for the other. */
+const YIELD_AFTER_MS = 16;
 
 export interface StreamingBackendOptions {
   /** Decoded frames to keep. Defaults to {@link DEFAULT_CACHE_SIZE}. */
@@ -286,15 +292,19 @@ async function constantRateFor(track: InputVideoTrack, packets: EncodedPacketSin
 /** Every packet's timestamp, in decode order, yielding to the event loop as it goes. */
 async function enumerateFrameTimes(packets: EncodedPacketSink, budget: ReadBudget): Promise<number[]> {
   const times: number[] = [];
+  let lastYield = Date.now();
   for await (const packet of packets.packets(undefined, undefined, { metadataOnly: true })) {
     times.push(packet.timestamp);
-    // Checked every packet rather than at the yields below: over a URL each one of these can be
-    // another range request, and a budget only looked at every twenty thousand of them is twenty
-    // thousand requests coarse.
+    // Checked every packet rather than only at the yields below: over a URL each one of these can be
+    // another range request, and a budget looked at a frame's worth of them at a time is that many
+    // requests coarse.
     budget();
     // Nothing in this loop waits on the network once the container index is in memory, so without
     // a yield it drains as one uninterrupted flood and the tab goes unresponsive until it ends.
-    if (times.length % YIELD_EVERY === 0) await yieldToEventLoop();
+    const now = Date.now();
+    if (now - lastYield < YIELD_AFTER_MS) continue;
+    lastYield = now;
+    await yieldToEventLoop();
   }
   return times;
 }

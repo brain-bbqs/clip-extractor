@@ -116,7 +116,7 @@ import { fetchArchiveUser, type ArchiveUser } from "./lib/users";
 import { friendlyError } from "./lib/errors";
 import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
-import { StageStatus } from "./ui/stageStatus";
+import { BusyStatus } from "./ui/busyStatus";
 import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type UrlState } from "./lib/urlState";
 import {
   fakeArchiveBrowse,
@@ -165,8 +165,45 @@ function log(msg: string, cls: LogClass = ""): void {
 }
 
 // Since the console is the only place the log goes, it is also the only place anything says a video
-// is on its way — so the waiting itself is reported on the stage instead (see ui/stageStatus.ts).
-const stageStatus = new StageStatus({ root: els.stageBusy, label: els.stageBusyLabel, detail: els.stageBusyDetail });
+// is on its way — so the waiting itself is reported on the page instead (see ui/busyStatus.ts).
+// The stage answers for the player: a seek waiting on a frame is about the picture, and is said over
+// it.
+const stageStatus = new BusyStatus({ root: els.stageBusy, label: els.stageBusyLabel, detail: els.stageBusyDetail });
+// The load card answers for the picker a video was asked from, which is where whoever asked is
+// looking — and on a short window the only one of the two on screen.
+const pickerStatus = new BusyStatus({ root: els.loadBusy, label: els.loadBusyLabel, detail: els.loadBusyDetail });
+
+/**
+ * Both of the above at once, for the one wait that belongs in both places: opening a video.
+ *
+ * The card also goes `aria-busy` while it is up, which is what takes the dropzone out of service
+ * (see style.css). Opening a recording runs on this same thread — the container index is parsed
+ * here, not in a worker — so a second file dropped on top of a load in progress lands in a page that
+ * cannot answer it, and a picker that looks ready while nothing it is clicked for happens is exactly
+ * what "the page froze" means.
+ */
+const loadStatus = {
+  show(label: string, detail = ""): void {
+    els.loadCard.setAttribute("aria-busy", "true");
+    stageStatus.show(label, detail);
+    pickerStatus.show(label, detail);
+  },
+  hide(): void {
+    els.loadCard.removeAttribute("aria-busy");
+    stageStatus.hide();
+    pickerStatus.hide();
+  },
+};
+
+/** Hands the browser a frame to draw in. Awaited where something just put on screen would otherwise
+ * be raised and then buried under work that holds this thread: what is never painted is not a
+ * notification, and a page that stops answering without one is indistinguishable from a page that
+ * has crashed. */
+function nextPaint(): Promise<void> {
+  // The animation-frame callback runs *before* the paint it is scheduled for; the timeout inside it
+  // is what lands after.
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
 
 const ctx2d = els.view.getContext("2d");
 if (!ctx2d) throw new Error("Canvas 2D context unavailable");
@@ -351,10 +388,10 @@ const FRAME_CACHE_SIZE = 32;
 // through in silence, so the read is logged as it goes, no more often than this.
 const INDEX_PROGRESS_MS = 2000;
 
-// How often the same count is refreshed on the stage, where it is the only sign the tab is doing
+// How often the same count is refreshed on screen, where it is the only sign the tab is doing
 // anything at all: often enough to read as movement, rarely enough that a fast source is not
-// repainting the overlay on every chunk it receives.
-const STAGE_PROGRESS_MS = 250;
+// repainting both indicators on every chunk it receives.
+const LOAD_PROGRESS_MS = 250;
 
 /** A throttled reporter for how much of `name` has been read while it is being opened. */
 function indexProgress(name: string): (bytesRead: number) => void {
@@ -362,9 +399,9 @@ function indexProgress(name: string): (bytesRead: number) => void {
   let lastPaint = 0;
   return (bytesRead) => {
     const now = Date.now();
-    if (now - lastPaint >= STAGE_PROGRESS_MS) {
+    if (now - lastPaint >= LOAD_PROGRESS_MS) {
       lastPaint = now;
-      stageStatus.show(`Loading ${name}…`, `${bytes(bytesRead)} read`);
+      loadStatus.show(`Loading ${name}…`, `${bytes(bytesRead)} read`);
     }
     if (now - lastLog < INDEX_PROGRESS_MS) return;
     lastLog = now;
@@ -412,9 +449,9 @@ async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
       );
     }
     const now = Date.now();
-    if (now - lastPaint < STAGE_PROGRESS_MS) continue;
+    if (now - lastPaint < LOAD_PROGRESS_MS) continue;
     lastPaint = now;
-    stageStatus.show(`Downloading ${name}…`, total ? `${bytes(read)} of ${bytes(total)}` : `${bytes(read)} so far`);
+    loadStatus.show(`Downloading ${name}…`, total ? `${bytes(read)} of ${bytes(total)}` : `${bytes(read)} so far`);
   }
   return new Blob(chunks, { type });
 }
@@ -450,7 +487,7 @@ async function openLocalBackend(file: File, name: string): Promise<SleapVideoBac
  */
 async function refuseUnstreamable(url: string, name: string): Promise<void> {
   if (streamsEfficiently(name)) return;
-  stageStatus.show(`Checking ${name}…`);
+  loadStatus.show(`Checking ${name}…`);
   const size = await remoteFileSize(url);
   const refusal = unstreamableRefusal(name, size);
   if (refusal) throw new Error(refusal);
@@ -475,7 +512,7 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
       // sentence about container internals, and the refusal is about a file being too large to
       // fetch and where to have it re-encoded.
       log(`Range/stream open failed (${(e as Error).message}); downloading full file…`, "warn");
-      stageStatus.show(`Downloading ${name}…`);
+      loadStatus.show(`Downloading ${name}…`);
       const blob = await fetchWholeVideo(source, name);
       const file = new File([blob], name, { type: blob.type || "video/mp4" });
       return { backend: await openLocalBackend(file, name), file };
@@ -534,7 +571,12 @@ async function loadVideo(
   log(`Loading video: ${name}…`);
   // Raised before the first await, and lowered once there is a frame on the stage — or an error in
   // the console — so the wait is never unaccounted for.
-  stageStatus.show(`Loading ${name}…`);
+  loadStatus.show(`Loading ${name}…`);
+  // Opening a video is not all waiting on a network: a container index is parsed on this thread, and
+  // for a large local file that is long enough to be noticed as the page not answering. The frame
+  // handed back here is the one the line above is drawn in, so it is on screen before any of that
+  // starts rather than arriving with the video it was meant to cover for.
+  await nextPaint();
   try {
     // A file that reaches here already looks like it should play — its container streams, or it
     // arrived as bytes the picker accepted — so nothing beyond this point is expected to run long.
@@ -598,7 +640,7 @@ async function loadVideo(
     // nobody can click is only half an answer.
     report(name, friendlyError(e));
   } finally {
-    stageStatus.hide();
+    loadStatus.hide();
   }
 }
 
@@ -1137,7 +1179,7 @@ async function seek(frame: number, force = false, extend = true): Promise<void> 
   // A frame the cache already holds is served in the time it takes to draw it, and one that has to
   // be decoded off a stream is a network round trip — the same call, with three orders of magnitude
   // between them. Rather than guess which this is, say so only once it has taken long enough to be
-  // worth saying (see ui/stageStatus.ts), which leaves ordinary scrubbing untouched.
+  // worth saying (see ui/busyStatus.ts), which leaves ordinary scrubbing untouched.
   stageStatus.showAfter(FRAME_WAIT_MS, "Loading frame…");
   try {
     do {

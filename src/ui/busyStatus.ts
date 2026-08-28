@@ -1,5 +1,5 @@
 /**
- * The line over the player saying what it is waiting on.
+ * A line saying what the app is waiting on, wherever somebody is waiting for it.
  *
  * Streaming moved most of the waiting out of the load and into the player: a recording opens after
  * its container index has been read, which for a multi-gigabyte file is tens of megabytes over the
@@ -7,14 +7,19 @@
  * show as a stage that simply did not change until the frame arrived, with the only word of it in
  * the browser console, which is not where someone waiting for a video is looking.
  *
+ * Two surfaces carry one of these. The stage answers for the player, where the picture is; the load
+ * card answers for the picker, where the file was asked for — and, on a short window, where the
+ * person who just dropped one is looking while the stage is below the fold. They are driven
+ * together (see main.ts's `loadStatus`), so a load says the same thing in both places.
+ *
  * Two pieces of timing keep the indicator from becoming its own annoyance. A wait may be declared
  * only after it has lasted a while, so the great majority of seeks — served from the decoded-frame
  * cache in a few milliseconds — never draw anything; and once drawn it stays up for a short minimum,
  * so a run of slow frames reads as one continuous wait rather than a spinner blinking once per
  * frame.
  */
-export interface StageStatusElements {
-  /** The overlay itself, raised and lowered by the `hidden` attribute. */
+export interface BusyStatusElements {
+  /** The indicator itself, raised and lowered by the `hidden` attribute. */
   root: HTMLElement;
   /** What is being waited on. */
   label: HTMLElement;
@@ -22,14 +27,14 @@ export interface StageStatusElements {
   detail: HTMLElement;
 }
 
-export interface StageStatusOptions {
+export interface BusyStatusOptions {
   /** How long the indicator stays up once raised. */
   minVisibleMs?: number;
 }
 
 const DEFAULT_MIN_VISIBLE_MS = 400;
 
-export class StageStatus {
+export class BusyStatus {
   private readonly minVisibleMs: number;
   /** A deferred {@link showAfter}, with the label it will raise. */
   private pending: { timer: ReturnType<typeof setTimeout>; label: string } | null = null;
@@ -38,8 +43,8 @@ export class StageStatus {
   private shownAt = 0;
 
   constructor(
-    private readonly els: StageStatusElements,
-    { minVisibleMs = DEFAULT_MIN_VISIBLE_MS }: StageStatusOptions = {},
+    private readonly els: BusyStatusElements,
+    { minVisibleMs = DEFAULT_MIN_VISIBLE_MS }: BusyStatusOptions = {},
   ) {
     this.minVisibleMs = minVisibleMs;
   }

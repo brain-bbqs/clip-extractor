@@ -579,6 +579,55 @@ input[type="checkbox"].switch:checked::after {
   background: none;
 }
 
+/* What a load in progress says on the load card, under whichever pane asked for it. Unlike the
+   stage's own indicator this one sits in the flow rather than over a picture, so it is themed like
+   the rest of the card. */
+.load-busy {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 0.9rem;
+}
+/* `display` above would otherwise override the hidden attribute. */
+.load-busy[hidden] {
+  display: none;
+}
+.load-busy-detail {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+/* The stage's spinner is white on a dark scrim; this one turns on the card's own colours. */
+.load-spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: stage-spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Same as the stage's: the label beside it says what is happening, so the spin is decoration. */
+  .load-spinner {
+    animation: none;
+  }
+}
+
+/* A load in progress holds this thread — the container index is parsed on it — so the dropzone
+   stops inviting a second file it could not answer until the first one is open. Dimmed rather than
+   taken away, so the card reads as busy with the line above rather than as having lost a control. */
+#loadCard[aria-busy="true"] #localPane {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 /* Stream-from-a-URL pane */
 .url-row {
   display: flex;
