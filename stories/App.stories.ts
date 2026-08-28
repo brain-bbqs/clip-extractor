@@ -37,6 +37,10 @@ function applySignedIn(wrapper: HTMLElement): void {
   }
   // The Save/Upload toggle only exists for a signed-in visitor, so it is revealed alongside the rest.
   wrapper.querySelector("#deliverToggleRow")?.removeAttribute("hidden");
+  // The delivery card itself waits for a recording in the real app (see syncVideoStep in main.ts).
+  // These stories carry no video — they are static markup — so it is raised here instead: the point
+  // of this story is the destination picker, which only exists on that card.
+  wrapper.querySelector("#deliverCard")?.removeAttribute("hidden");
   const link = wrapper.querySelector<HTMLAnchorElement>("#viewDatasetLink");
   if (link) {
     link.hidden = false;

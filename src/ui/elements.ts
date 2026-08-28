@@ -97,6 +97,7 @@ export function getElements() {
     btnChangePose: required<HTMLButtonElement>("btnChangePose"),
 
     // Delivery card (Download / Upload)
+    deliverCard: required<HTMLElement>("deliverCard"),
     deliverToggleRow: required<HTMLDivElement>("deliverToggleRow"),
     deliverSeg: required<HTMLDivElement>("deliverSeg"),
     selectionDescription: required<HTMLTextAreaElement>("selectionDescription"),

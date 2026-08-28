@@ -30,6 +30,8 @@ test("the picker gives way to the player once a video is open, and Change video 
   await expect(page.locator("#modeSeg")).toBeVisible();
   await expect(page.locator("#playerControls")).toBeVisible();
   await expect(page.locator("#btnPlay")).toBeEnabled();
+  // And there is something to describe and send, so the card that does that is on screen too.
+  await expect(page.locator("#deliverCard")).toBeVisible();
 
   await page.locator("#btnChangeVideo").click();
 
@@ -39,8 +41,8 @@ test("the picker gives way to the player once a video is open, and Change video 
   await expect(page.locator("#playerControls")).toBeHidden();
   await expect(page.locator("#loadedSource")).toBeHidden();
   await expect(page.locator("#btnPlay")).toBeDisabled();
-  // The recording is gone, so the delivery card is back to asking for one.
-  await expect(page.locator("#downloadStatus")).toContainText("Load a video");
+  // The recording is gone, and with it everything there was to send.
+  await expect(page.locator("#deliverCard")).toBeHidden();
 });
 
 test("the pose card swaps its dropzone for what it read, and Change pose file brings it back", async ({ page }) => {
@@ -169,7 +171,9 @@ test("the overlay switch comes and goes with the picture it draws on", async ({ 
 });
 
 test("delivery card offers only Save while signed out", async ({ page }) => {
-  await page.goto("/");
+  // The card waits for a recording, so this needs one open to look at the card at all.
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#deliverCard")).toBeVisible();
   await expect(page.locator("#oauthSigninBtn")).toBeVisible();
   // Upload is the only side the toggle leads to, so signed out there is no choice to offer.
   await expect(page.locator("#deliverToggleRow")).toBeHidden();
@@ -177,13 +181,13 @@ test("delivery card offers only Save while signed out", async ({ page }) => {
   await expect(page.locator("#downloadPane")).toBeVisible();
   await expect(page.locator("#btnDownload")).toHaveText("Save");
   await expect(page.locator("#btnDownload")).toBeDisabled();
-  await expect(page.locator("#downloadStatus")).toContainText("Load a video");
+  await expect(page.locator("#downloadStatus")).toContainText("Describe the snippet");
 });
 
 test("delivery toggle appears once signed in and swaps between the save and upload panes", async ({ page }) => {
   // A fake, signed-in-looking destination — see lib/testInjection.ts — reaches the same UI as a real
   // sign-in for this test's purposes (toggling panes, nothing verified about an actual request).
-  await page.goto("/?test&num_datasets=1");
+  await page.goto("/?test&num_datasets=1&mock_video");
   await expect(page.locator("#deliverToggleRow")).toBeVisible();
   // The stored setting is still "download"/"upload"; only one label reads "Save".
   await expect(page.locator('#deliverSeg button[data-deliver="download"]')).toHaveText("Save");
@@ -202,7 +206,7 @@ test("delivery toggle appears once signed in and swaps between the save and uplo
 });
 
 test("the chosen delivery side survives a refresh", async ({ page }) => {
-  await page.goto("/?test&num_datasets=1");
+  await page.goto("/?test&num_datasets=1&mock_video");
   await page.locator('#deliverSeg button[data-deliver="upload"]').click();
   await expect(page.locator("#uploadPane")).toBeVisible();
 
@@ -221,7 +225,7 @@ test("the chosen delivery side survives a refresh", async ({ page }) => {
 
 test("signing out takes the delivery toggle away and falls back to Save", async ({ page }) => {
   await stubArchive(page);
-  await page.goto("/");
+  await page.goto("/?test&mock_video");
   await expect(page.locator("#uploadPane")).toBeVisible();
 
   // The sign-out action lives in the avatar's hover popover.

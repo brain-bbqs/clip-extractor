@@ -549,8 +549,10 @@
       </section>
 
       <!-- Delivery: save the extracted selection locally, or upload it to EMBER. main.ts picks the
-           starting side once sign-in resolves (Upload when there is a dataset to upload to). -->
-      <section class="card" id="deliverCard">
+           starting side once sign-in resolves (Upload when there is a dataset to upload to).
+           Hidden until a recording is open, like the player above it: there is nothing to describe,
+           name or send until there is something to take a selection out of. -->
+      <section class="card" id="deliverCard" hidden>
         <!-- Hidden until an EMBER sign-in resolves: Upload is the only side it leads to, and there
              is nothing to upload to while signed out. Starts hidden so a signed-out visitor never
              sees it flash; the pre-paint `data-signed-in` attribute (see the script above) holds it

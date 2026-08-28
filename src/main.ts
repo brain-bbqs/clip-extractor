@@ -614,7 +614,9 @@ async function loadVideo(
 }
 
 /** Which half of the merged card is on screen. Until a recording is open the card is the file
- * picker; from then on it is the player, and Change video is the way back to the picker. */
+ * picker; from then on it is the player, and Change video is the way back to the picker. The
+ * delivery card follows the player: nothing can be described, named or sent until there is
+ * something to take a selection out of. */
 function syncVideoStep(): void {
   const loaded = state.backend !== null;
   els.sourcePicker.hidden = loaded;
@@ -623,6 +625,7 @@ function syncVideoStep(): void {
   els.modeSeg.hidden = !loaded;
   els.stage.hidden = !loaded;
   els.playerControls.hidden = !loaded;
+  els.deliverCard.hidden = !loaded;
   els.loadedSourceName.textContent = state.sourceName;
   // The name is elided to whatever the row leaves it, so the whole of it — the URL, where it was
   // streamed from one — goes where hovering will show it.
