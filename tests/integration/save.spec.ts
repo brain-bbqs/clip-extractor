@@ -18,10 +18,10 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
 }) => {
   await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await page.goto("/");
-  // Signed out, Save is the side that leads.
-  await expect(page.locator("#downloadPane")).toBeVisible();
 
   await loadRecordedVideo(page, "file_example_480 - Copy.webm");
+  // The delivery card comes up with the recording, and signed out Save is the side that leads.
+  await expect(page.locator("#downloadPane")).toBeVisible();
   await page.locator('#modeSeg button[data-mode="frame"]').click();
   await seekTo(page, 5);
   // Nothing is saved until the selection has been described.

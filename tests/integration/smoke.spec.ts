@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { stubArchive } from "./helpers";
 
-test("loads the app shell with the player disabled", async ({ page }) => {
+test("loads the app shell as a file picker, with the player still off screen", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveTitle("Clip Extractor");
   await expect(page.locator("h1")).toContainText("Clip Extractor");
@@ -9,10 +9,55 @@ test("loads the app shell with the player disabled", async ({ page }) => {
     "Extract, describe, and share short clips or individual frames of behavioral recordings",
   );
   await expect(page.locator("#dropzone")).toBeVisible();
-  await expect(page.locator("#emptyStage")).toBeVisible();
+  // Nothing to play, so nothing that plays it: the card is the picker and only the picker.
+  await expect(page.locator("#stage")).toBeHidden();
+  await expect(page.locator("#playerControls")).toBeHidden();
+  await expect(page.locator("#modeSeg")).toBeHidden();
+  await expect(page.locator("#loadedSource")).toBeHidden();
   await expect(page.locator("#view")).toBeHidden();
-  await expect(page.locator("#btnPlay")).toBeDisabled();
   await expect(page.locator("#btnUpload")).toBeDisabled();
+});
+
+test("the picker gives way to the player once a video is open, and Change video brings it back", async ({ page }) => {
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
+
+  // The one card is the player now: the source picker that filled it has gone, and what it opened
+  // is named in its place.
+  await expect(page.locator("#dropzone")).toBeHidden();
+  await expect(page.locator("#srcSeg")).toBeHidden();
+  await expect(page.locator("#loadedSourceName")).toHaveText("test-injection-mock-video.mp4");
+  await expect(page.locator("#modeSeg")).toBeVisible();
+  await expect(page.locator("#playerControls")).toBeVisible();
+  await expect(page.locator("#btnPlay")).toBeEnabled();
+  // And there is something to describe and send, so the card that does that is on screen too.
+  await expect(page.locator("#deliverCard")).toBeVisible();
+
+  await page.locator("#btnChangeVideo").click();
+
+  await expect(page.locator("#dropzone")).toBeVisible();
+  await expect(page.locator("#srcSeg")).toBeVisible();
+  await expect(page.locator("#stage")).toBeHidden();
+  await expect(page.locator("#playerControls")).toBeHidden();
+  await expect(page.locator("#loadedSource")).toBeHidden();
+  await expect(page.locator("#btnPlay")).toBeDisabled();
+  // The recording is gone, and with it everything there was to send.
+  await expect(page.locator("#deliverCard")).toBeHidden();
+});
+
+test("the pose card swaps its dropzone for what it read, and Change pose file brings it back", async ({ page }) => {
+  await page.goto("/?test&mock_video&mock_slp");
+  await expect(page.locator("#slpBadge")).toHaveText(/frames/);
+
+  await expect(page.locator("#slpDropzone")).toBeHidden();
+  await expect(page.locator("#slpNameLabel")).toHaveText("test-injection-mock.slp");
+
+  await page.locator("#btnChangePose").click();
+
+  await expect(page.locator("#slpDropzone")).toBeVisible();
+  await expect(page.locator("#slpStatus")).toBeHidden();
+  // The video it was overlaid on is untouched — the two files are separate steps.
+  await expect(page.locator("#view")).toBeVisible();
 });
 
 test("brand watermarks and the version link frame the page", async ({ page }) => {
@@ -57,7 +102,9 @@ test("source toggle swaps between the local dropzone and the EMBER stream pane",
 });
 
 test("mode toggle switches the selector between range and single frame", async ({ page }) => {
-  await page.goto("/");
+  // The selector is part of the player, so it needs a recording under it to be on screen at all.
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
   // The track itself is shared: it carries the playhead in both modes.
   await expect(page.locator("#selbar")).toBeVisible();
   await expect(page.locator("#inVal")).toBeVisible();
@@ -81,7 +128,8 @@ test("mode toggle switches the selector between range and single frame", async (
 });
 
 test("the transport carries no first/last frame buttons", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#view")).toBeVisible();
   // Removed in favour of the timeline itself: dragging to either end is the same gesture as any
   // other seek, and the two buttons only ever crowded the row.
   await expect(page.locator("#btnFirst")).toHaveCount(0);
@@ -99,22 +147,33 @@ test("SLEAP annotations card is revealed by its toggle (default off)", async ({ 
   await page.goto("/");
   await expect(page.locator("#slpToggle")).not.toBeChecked();
   await expect(page.locator("#slpCard")).toBeHidden();
-  // With the step off there is no overlay to show, so the player's switch is off screen too.
+  // With the step off there is no overlay to show, so the switch that shows it is off screen too.
   await expect(page.locator("#showPoseRow")).toBeHidden();
 
   await page.locator("#slpToggle").check();
   await expect(page.locator("#slpCard")).toBeVisible();
   await expect(page.locator("#slpDropzone")).toBeVisible();
-  await expect(page.locator("#showPoseRow")).toBeVisible();
-  await expect(page.locator("#showPose")).toBeChecked();
+  // Still nothing to draw an overlay over, though: that switch waits for a video.
+  await expect(page.locator("#showPoseRow")).toBeHidden();
 
   await page.locator("#slpToggle").uncheck();
   await expect(page.locator("#slpCard")).toBeHidden();
+});
+
+test("the overlay switch comes and goes with the picture it draws on", async ({ page }) => {
+  await page.goto("/?test&mock_video&mock_slp");
+  await expect(page.locator("#view")).toBeVisible();
+  await expect(page.locator("#showPoseRow")).toBeVisible();
+  await expect(page.locator("#showPose")).toBeChecked();
+
+  await page.locator("#btnChangeVideo").click();
   await expect(page.locator("#showPoseRow")).toBeHidden();
 });
 
 test("delivery card offers only Save while signed out", async ({ page }) => {
-  await page.goto("/");
+  // The card waits for a recording, so this needs one open to look at the card at all.
+  await page.goto("/?test&mock_video");
+  await expect(page.locator("#deliverCard")).toBeVisible();
   await expect(page.locator("#oauthSigninBtn")).toBeVisible();
   // Upload is the only side the toggle leads to, so signed out there is no choice to offer.
   await expect(page.locator("#deliverToggleRow")).toBeHidden();
@@ -122,13 +181,13 @@ test("delivery card offers only Save while signed out", async ({ page }) => {
   await expect(page.locator("#downloadPane")).toBeVisible();
   await expect(page.locator("#btnDownload")).toHaveText("Save");
   await expect(page.locator("#btnDownload")).toBeDisabled();
-  await expect(page.locator("#downloadStatus")).toContainText("Load a video");
+  await expect(page.locator("#downloadStatus")).toContainText("Describe the snippet");
 });
 
 test("delivery toggle appears once signed in and swaps between the save and upload panes", async ({ page }) => {
   // A fake, signed-in-looking destination — see lib/testInjection.ts — reaches the same UI as a real
   // sign-in for this test's purposes (toggling panes, nothing verified about an actual request).
-  await page.goto("/?test&num_datasets=1");
+  await page.goto("/?test&num_datasets=1&mock_video");
   await expect(page.locator("#deliverToggleRow")).toBeVisible();
   // The stored setting is still "download"/"upload"; only one label reads "Save".
   await expect(page.locator('#deliverSeg button[data-deliver="download"]')).toHaveText("Save");
@@ -147,7 +206,7 @@ test("delivery toggle appears once signed in and swaps between the save and uplo
 });
 
 test("the chosen delivery side survives a refresh", async ({ page }) => {
-  await page.goto("/?test&num_datasets=1");
+  await page.goto("/?test&num_datasets=1&mock_video");
   await page.locator('#deliverSeg button[data-deliver="upload"]').click();
   await expect(page.locator("#uploadPane")).toBeVisible();
 
@@ -166,7 +225,7 @@ test("the chosen delivery side survives a refresh", async ({ page }) => {
 
 test("signing out takes the delivery toggle away and falls back to Save", async ({ page }) => {
   await stubArchive(page);
-  await page.goto("/");
+  await page.goto("/?test&mock_video");
   await expect(page.locator("#uploadPane")).toBeVisible();
 
   // The sign-out action lives in the avatar's hover popover.
