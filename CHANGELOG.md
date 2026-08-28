@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.1
+
+#### 🐛 Bug Fix
+
+- **Browse EMBER** no longer flashes a list of every dataset in the archive before cutting it down to the ones that hold video: rows now appear as the scan confirms each dataset, and the list says it is still looking until the first one lands ([#52](https://github.com/brain-bbqs/clip-extractor/pull/52))
+
 ## 1.4.0
 
 #### 🚀 Enhancement

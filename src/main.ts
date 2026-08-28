@@ -1972,6 +1972,13 @@ interface BrowseState {
   names: Map<string, string>;
   /** Videos per dataset id. A dataset missing from the map has not had its file list read yet. */
   videos: Map<string, ArchiveVideo[]>;
+  /** Whether this pass reads every dataset's file list, and so gets to say which datasets hold
+   * video. True from the moment the sweep is known to be affordable, not from the moment it
+   * finishes: the list then fills in with the datasets the sweep has confirmed, instead of painting
+   * every candidate up front and taking most of them back once it lands. False on an archive too
+   * large to sweep at all (see SWEEP_BUDGET_BYTES), where nothing is confirmable and every
+   * candidate is listed. */
+  sweeping: boolean;
   /** True once every dataset's file list has been read, which is what "with video only" needs. */
   swept: boolean;
   selected: string | null;
@@ -2046,6 +2053,7 @@ async function refreshBrowse(): Promise<void> {
     datasets: [],
     names: loadCachedNames(),
     videos: new Map(),
+    sweeping: false,
     swept: false,
     selected: null,
     selectedVideo: picked,
@@ -2066,6 +2074,7 @@ async function refreshBrowse(): Promise<void> {
     const { datasets, videos } = fakeArchiveBrowse(testInjection.remoteListing);
     current.datasets = datasets;
     current.videos = videos;
+    current.sweeping = true;
     current.swept = true;
     renderDandisetList();
     browseSay("");
@@ -2088,6 +2097,10 @@ async function refreshBrowse(): Promise<void> {
     if (generation !== browseGeneration) return;
     const pub = candidates.filter((d) => publicIds.has(d.id));
     current.datasets = mergeDandisets(pub, owned);
+    // Settled before the first paint, because it decides what that paint is allowed to show: a
+    // sweep that is going to run makes every candidate row provisional, and a provisional row is
+    // one the pane would have to take back.
+    current.sweeping = canSweep(current.datasets);
     renderDandisetList();
     browseSay(browseCountLine(current));
     // A rebuild is a change of what can be seen, not a change of mind: whatever dataset was open
@@ -2163,7 +2176,7 @@ function readDandisetVideos(dandiset: ArchiveDandiset, signal?: AbortSignal): Pr
  * dataset's file list is then read when it is opened instead.
  */
 async function sweepVideos(current: BrowseState, generation: number): Promise<void> {
-  if (!canSweep(current.datasets)) return;
+  if (!current.sweeping) return;
   let done = 0;
   await sweepArchiveVideos(
     current.datasets,
@@ -2172,8 +2185,10 @@ async function sweepVideos(current: BrowseState, generation: number): Promise<vo
       if (generation !== browseGeneration) return;
       done++;
       current.videos.set(dandiset.id, videos);
-      const meta = browseRowMeta.get(dandiset.id);
-      if (meta) meta.textContent = videoCountLabel(videos.length);
+      // A dataset holding video is a row the list does not have yet; one holding none was never
+      // drawn, so it needs no redraw at all. Either way a row's video count is drawn correct the
+      // first time rather than filled in afterwards.
+      if (videos.length) scheduleDandisetRender();
       browseSay(`Looking for video, ${done} of ${current.datasets.length} datasets…`);
     },
     current.abort.signal,
@@ -2193,17 +2208,19 @@ function videoCountLabel(count: number): string {
 
 /**
  * The datasets left visible. A dataset holding no video is never shown: this pane exists to pick a
- * video out of one, and a dataset that cannot offer one is a dead end. That is only knowable once
- * the sweep has read every file list, so before then — and on an archive too large to sweep at all —
- * every dataset is listed and a video-less one answers for itself when it is opened. Which datasets
- * are candidates at all (public vs. embargoed) is settled earlier, in refreshBrowse, before any of
- * this ever runs.
+ * video out of one, and a dataset that cannot offer one is a dead end. Whether it holds any is only
+ * known once its file list has been read, so wherever a sweep is reading them (see
+ * SWEEP_BUDGET_BYTES) a dataset waits its turn out of the list rather than sitting in it unconfirmed
+ * — the pane fills in as the sweep lands instead of showing every candidate and then dropping most
+ * of them. On an archive too large to sweep, no file list is read up front, so every dataset is
+ * listed and a video-less one answers for itself when it is opened. Which datasets are candidates at
+ * all (public vs. embargoed) is settled earlier, in refreshBrowse, before any of this ever runs.
  */
 function visibleDandisets(current: BrowseState): ArchiveDandiset[] {
   const query = els.browseFilter.value.trim().toLowerCase();
   return current.datasets.filter((d) => {
     const videos = current.videos.get(d.id);
-    if (current.swept && !videos?.length) return false;
+    if (current.sweeping && !videos?.length) return false;
     if (!query) return true;
     if (d.id.includes(query)) return true;
     if (browseName(current, d).toLowerCase().includes(query)) return true;
@@ -2268,14 +2285,30 @@ function browseNote(list: HTMLUListElement, message: string): void {
   list.append(li);
 }
 
+/** A redraw asked for by the sweep, held to one a frame: the scan lands a dataset at a time and
+ * each new row would otherwise rebuild the whole list on its own. */
+let browseRenderFrame: number | null = null;
+
+function scheduleDandisetRender(): void {
+  if (browseRenderFrame === null) browseRenderFrame = requestAnimationFrame(renderDandisetList);
+}
+
+/** What an empty list has to say for itself, which during a sweep is "not yet" rather than "none". */
+function browseEmptyReason(current: BrowseState): string {
+  if (current.sweeping && !current.swept) return "Looking for the datasets that hold video…";
+  return current.datasets.length ? "No dataset matches that filter." : "No datasets found.";
+}
+
 function renderDandisetList(): void {
+  if (browseRenderFrame !== null) cancelAnimationFrame(browseRenderFrame);
+  browseRenderFrame = null;
   const current = browse;
   browseRowLabels.clear();
   browseRowMeta.clear();
   if (!current) return;
   const matches = visibleDandisets(current);
   if (!matches.length) {
-    browseEmpty(els.browseDandisets, current.datasets.length ? "No dataset matches that filter." : "No datasets found.");
+    browseEmpty(els.browseDandisets, browseEmptyReason(current));
     return;
   }
   const shown = matches.slice(0, BROWSE_ROW_LIMIT);
