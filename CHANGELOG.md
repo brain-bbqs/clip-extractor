@@ -2,6 +2,10 @@
 
 ## 1.3.1
 
+#### 🚀 Enhancement
+
+- The caption that appears while a snippet still needs a description now names both things it is holding up, saving and uploading, instead of "sending it on" ([#50](https://github.com/brain-bbqs/clip-extractor/pull/50))
+
 #### 🐛 Bug Fix
 
 - The dropzone no longer offers **Load the sample (mice)**: it fetched the file from a sibling site the app has not been served next to since it moved to its own domain, so the button only ever failed; **Browse EMBER** is the way to open a video without one of your own ([#50](https://github.com/brain-bbqs/clip-extractor/pull/50))

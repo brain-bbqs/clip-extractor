@@ -2959,7 +2959,7 @@ function updateDeliveryGate(): void {
     : !selected
       ? "Drag the In and Out handles under the player to select a snippet."
       : !described
-        ? `Describe the ${kind} above before sending it on.`
+        ? `Describe the ${kind} above before saving or uploading.`
         : "";
   // A finished delivery's own line outranks these captions until it is retired.
   if (!showsOutcome(els.downloadStatus)) setStatus(els.downloadStatus, blocked);
