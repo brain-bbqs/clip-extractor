@@ -412,12 +412,12 @@ test("a second refusal replaces the first, rather than being read beside it", as
   await expect(page.locator("#browseStatus")).toContainText("first.mkv cannot be opened.");
   // The stage keeps its invitation: the pane is where this video was asked for, so it is where the
   // answer goes.
-  await expect(page.locator("#emptyStage")).toHaveText(/No video loaded/);
+  await expect(page.locator("#emptyStage")).toHaveText(/Load a video/);
 
   await videos.nth(1).click();
   await expect(page.locator("#browseStatus")).toContainText("second.avi cannot be opened.");
   await expect(page.locator("#browseStatus")).not.toContainText("first.mkv");
-  await expect(page.locator("#emptyStage")).toHaveText(/No video loaded/);
+  await expect(page.locator("#emptyStage")).toHaveText(/Load a video/);
   // One refusal on the page, not two.
   await expect(page.locator("p.message-line", { hasText: "cannot be opened efficiently through streaming" })).toHaveCount(1);
 });

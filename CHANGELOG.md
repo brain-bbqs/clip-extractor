@@ -4,7 +4,7 @@
 
 #### 🚀 Enhancement
 
-- The caption that appears while a snippet still needs a description now names both things it is holding up, saving and uploading, instead of "sending it on" ([#50](https://github.com/brain-bbqs/clip-extractor/pull/50))
+- The app's guidance copy now names the actions it is talking about: the empty stage reads "Load a video to extract a clip", and the caption shown while a snippet still needs a description names saving and uploading instead of "sending it on" ([#50](https://github.com/brain-bbqs/clip-extractor/pull/50))
 
 #### 🐛 Bug Fix
 
