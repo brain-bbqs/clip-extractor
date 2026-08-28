@@ -16,7 +16,8 @@ import {
   type TimelineView,
 } from "./lib/timeline";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
-import { openStreamingBlob, openStreamingUrl, StreamingVideoBackend } from "./lib/streaming";
+import { openStreamingBlob, openStreamingUrl } from "./lib/streaming";
+import { openWorkerBlob, workerVideoSupported } from "./lib/workerVideo";
 import { withTimeout } from "./lib/timeout";
 import {
   loadTimeoutRefusal,
@@ -89,6 +90,7 @@ import {
   type AssetEntities,
   type ExtractedMedia,
   type ExtractProgress,
+  type ExtractSource,
 } from "./lib/extract";
 import { tarGzip, type BundleEntry } from "./lib/bundle";
 import { memoOne } from "./lib/memo";
@@ -508,6 +510,18 @@ async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
  * reads the whole file to index it (see lib/streaming.ts), which is slow but not wrong, and its
  * mp4box one covers files MediaBunny will not open at all. */
 async function openLocalBackend(file: File, name: string): Promise<SleapVideoBackend> {
+  // Reading a container's index is the longest thing this app does without waiting on anything, and
+  // on this thread it is the page refusing clicks for as long as it takes. A file already on the
+  // machine is opened on a worker instead (see lib/workerVideo.ts), where none of that is in the way
+  // of a click. Anything that cannot be opened there falls through to the same backends as before,
+  // which is also the whole of the answer for a browser without workers at all.
+  if (workerVideoSupported()) {
+    try {
+      return await openWorkerBlob(file, name, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
+    } catch (e) {
+      log(`Opening ${name} off the page's thread failed (${(e as Error).message}); opening it here instead…`, "warn");
+    }
+  }
   try {
     return await openStreamingBlob(file, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
   } catch (e) {
@@ -522,6 +536,13 @@ async function openLocalBackend(file: File, name: string): Promise<SleapVideoBac
     if (maybeReady) await maybeReady;
     return vb;
   }
+}
+
+/** The open source as extraction and provenance see it, or null for one that can say nothing about
+ * itself. Asked by what a backend carries rather than which class it is: a local file's container is
+ * open on a worker and a streamed one's on this thread, and both describe their own bitstream. */
+function describedSource(backend: SleapVideoBackend | null | undefined): ExtractSource | null {
+  return backend && "technical" in backend ? (backend as unknown as ExtractSource) : null;
 }
 
 /**
@@ -3176,9 +3197,10 @@ async function extractSelection(
   return extractClip({
     sourceFile: state.sourceFile,
     sourceUrl: state.sourceUrl,
-    // Only the streaming backend can cut a selection out of a source it never downloaded; the
-    // sleap-io.js fallbacks hold no such thing, and fall through to ffmpeg as before.
-    backend: backend instanceof StreamingVideoBackend ? backend : null,
+    // What the open source can say for itself: its own bitstream either way, and — for a streamed
+    // one — the trim that reads only the bytes the selection needs. The sleap-io.js fallbacks answer
+    // for neither and fall through to ffmpeg as before.
+    backend: describedSource(backend),
     sourceName: entities.sourceName,
     beh: entities.beh,
     lo: entities.inFrame,
@@ -3374,9 +3396,7 @@ async function deliverOriginalVideo(deliver: DeliverFile, directory: string, beh
   const isMockVideo = testInjection?.mockVideoFrames != null || testInjection?.mockVideoLongSeconds != null;
   const sourceDetail: TechnicalDetail = isMockVideo
     ? { codec: "avc", codecRFC6381: "avc1.42E01E", pixelFormat: "yuv420p", bitDepth: 8 }
-    : state.backend instanceof StreamingVideoBackend
-      ? state.backend.technical
-      : {};
+    : (describedSource(state.backend)?.technical ?? {});
   await deliverSidecar(deliver, directory, originalName, onProgress, {
     description: "The source video this selection was clipped from.",
     technical: {

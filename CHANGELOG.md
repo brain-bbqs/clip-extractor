@@ -4,7 +4,8 @@
 
 #### 🚀 Enhancement
 
-- A video being opened is now acknowledged where you picked it: the dropzone reads "Loading video…" from the moment the file picker opens until the first frame is drawn, naming the file and counting the bytes read underneath, and a streamed video says the same on the load card, instead of the picker sitting unresponsive with no sign it registered anything ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
+- A local video is now opened on a background thread, so the page keeps answering clicks while a large recording is read instead of locking up until it is done ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
+- A video being opened is now acknowledged where you picked it: the dropzone reads "Loading video…" from the moment the file picker opens until the first frame is drawn, naming the file and counting the bytes read underneath, and a streamed video says the same on the load card ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
 
 ## 1.3.0
 

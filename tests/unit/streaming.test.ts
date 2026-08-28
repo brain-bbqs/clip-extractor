@@ -58,6 +58,19 @@ describe("FrameCache", () => {
     expect(first.closed).toBe(false);
   });
 
+  it("gives a frame up without closing it, so what is handed away can still be drawn", () => {
+    const cache = new FrameCache(2);
+    const a = frame();
+    cache.set(0, a);
+    expect(cache.take(0)).toBe(a);
+    // The point of taking rather than reading: the bitmap is about to be transferred to another
+    // thread, and a cache still holding it would hand back a detached one later.
+    expect(a.closed).toBe(false);
+    expect(cache.has(0)).toBe(false);
+    expect(cache.size).toBe(0);
+    expect(cache.take(0)).toBeNull();
+  });
+
   it("closes everything it holds when cleared", () => {
     const cache = new FrameCache(4);
     const [a, b] = [frame(), frame()];

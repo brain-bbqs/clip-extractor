@@ -136,6 +136,15 @@ export class FrameCache<T extends Closable> {
     this.entries.set(index, frame);
   }
 
+  /** Hands the frame at `index` to the caller and forgets it, without closing it: for a bitmap
+   * about to be transferred to another thread, which detaches it where it stands. A cache still
+   * holding one of those hands back a frame that can no longer be drawn. */
+  take(index: number): T | null {
+    const frame = this.entries.get(index) ?? null;
+    this.entries.delete(index);
+    return frame;
+  }
+
   /** Closes and drops everything held. */
   clear(): void {
     for (const frame of this.entries.values()) frame.close();
@@ -464,6 +473,17 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     } finally {
       stopWatching();
     }
+  }
+
+  /** The frame at `index`, given up rather than kept: decoded like {@link getFrame}, then dropped
+   * from the cache. What the worker wrapper (lib/workerVideo.ts) reads through, the bitmap being
+   * transferred out of this thread the moment it is handed over — after which the cache's copy is
+   * a detached one nobody can draw. The cache on the other side of that transfer is the one that
+   * spares the second decode. */
+  async takeFrame(index: number): Promise<ImageBitmap | null> {
+    const frame = await this.getFrame(index);
+    if (frame) this.cache.take(index);
+    return frame;
   }
 
   /** Frame timestamps in the order they are indexed, or null when the rate describes them and

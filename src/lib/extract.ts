@@ -3,7 +3,7 @@ import { ENCODED_PIXEL_FORMAT, encodedFraction, ensureFfmpeg, ffmpegArgs, stream
 import { decodeIndex, drawVideoFrame } from "./video";
 import { drawPose } from "./pose";
 import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
-import type { StreamingVideoBackend } from "./streaming";
+import type { RangeExtractOptions, ExtractedRange } from "./streaming";
 import type { SelectionKind } from "./delivery";
 import { behFilename, behSidecarName, type BehEntities } from "./bidsPath";
 import { pngFormatInfo } from "./pngFormat";
@@ -28,6 +28,26 @@ export interface ExtractedMedia {
    * nothing answered for being left out rather than guessed. */
   technical: TechnicalDetail;
 }
+
+/**
+ * What extraction needs of the open source, whichever kind is open.
+ *
+ * Every source can say what its own bitstream is, which is what a sidecar records. Only one can hand
+ * a range over without the whole file being downloaded first — the streamed one, whose container is
+ * open on this thread and can be trimmed straight out of; a local file is opened on a worker
+ * (lib/workerVideo.ts) and extracted through ffmpeg.wasm from the bytes already in hand, and the
+ * sleap-io.js fallbacks can do neither. So `extractRange` is what separates them, and its absence is
+ * how the route below is chosen.
+ */
+export interface ExtractSource {
+  readonly technical: TechnicalDetail;
+  readonly width: number;
+  readonly height: number;
+  extractRange?(lo: number, hi: number, options: RangeExtractOptions): Promise<ExtractedRange>;
+}
+
+/** An {@link ExtractSource} that can be trimmed in place. */
+type StreamedSource = ExtractSource & Required<Pick<ExtractSource, "extractRange">>;
 
 /** Reports what extraction is doing, plus 0..1 progress when the step can measure it. */
 export type ExtractProgress = (message: string, fraction?: number) => void;
@@ -97,7 +117,7 @@ export interface ExtractClipParams {
   sourceUrl: string | null;
   /** The open video, when it is one being streamed. With no local bytes this is what the selection
    * is cut out of, over the same range requests that play it. */
-  backend?: StreamingVideoBackend | null;
+  backend?: ExtractSource | null;
   sourceName: string;
   beh: BehEntities;
   /** Inclusive selected frame range. */
@@ -134,7 +154,7 @@ async function producedDetail(blob: Blob, guaranteed: TechnicalDetail): Promise<
 /** What running `ffmpegArgs`' command pins down before its output is opened at all: `-c copy` hands
  * the source's own frames over untouched, and every other route through it is told the pixels it
  * must write, whatever else about the encode it is left to decide. */
-function ffmpegGuarantees(backend: StreamingVideoBackend | null | undefined, trim: TrimMode, blur: BlurRegion[]): TechnicalDetail {
+function ffmpegGuarantees(backend: ExtractSource | null | undefined, trim: TrimMode, blur: BlurRegion[]): TechnicalDetail {
   if (!streamCopies(trim, blur)) return ENCODED_PIXEL_FORMAT;
   return backend?.technical ?? {};
 }
@@ -157,7 +177,7 @@ function blurProcessor(width: number, height: number, blur: BlurRegion[]): (samp
 }
 
 /** Trims [lo, hi] straight out of a streamed source, reading only the bytes that range needs. */
-async function extractStreamedClip(params: ExtractClipParams & { backend: StreamingVideoBackend }): Promise<ExtractedMedia> {
+async function extractStreamedClip(params: ExtractClipParams & { backend: StreamedSource }): Promise<ExtractedMedia> {
   const { backend, beh, lo, hi, trim = "precise", blur = [], onProgress } = params;
   onProgress?.("Trimming the selection out of the stream…", 0);
   const { blob, transcoded, start, end } = await backend.extractRange(lo, hi, {
@@ -188,7 +208,7 @@ export async function extractClip(params: ExtractClipParams): Promise<ExtractedM
   // Checked before ffmpeg is even loaded: it works out of a virtual filesystem, so it would need
   // the whole container written into memory first, which for a streamed recording means downloading
   // all of it however few frames were selected.
-  if (!sourceFile && backend) return extractStreamedClip({ ...params, backend });
+  if (!sourceFile && backend?.extractRange) return extractStreamedClip({ ...params, backend: backend as StreamedSource });
   const ext = (/\.[a-z0-9]+$/i.exec(sourceName) ?? [".mp4"])[0];
   const inName = `in${ext}`;
   const outName = "clip.mp4";

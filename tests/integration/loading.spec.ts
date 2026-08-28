@@ -73,6 +73,49 @@ test("a local video is named by the dropzone it was handed to, drawn before the 
   await expect(page.locator("#dropzone")).toContainText("Drop a video here");
 });
 
+test("a local video is opened on a worker, leaving the page free to answer while it is read", async ({ page }) => {
+  await page.goto("/");
+  // A fall back to opening it here says so in the console; the spec fails on having seen one, since
+  // the in-thread path passes every other test in this file just as well while freezing the page.
+  const fallbacks: string[] = [];
+  page.on("console", (message) => {
+    if (/off the page's thread/.test(message.text())) fallbacks.push(message.text());
+  });
+  const workers: string[] = [];
+  page.on("worker", (worker) => workers.push(worker.url()));
+  await stageRecordedFile(page, "worker-clip.webm");
+
+  const answered = await page.evaluate(async () => {
+    // Clicks fired at the page throughout the load. On the thread that parses a container they wait
+    // for it to finish, which for a large recording is the page refusing input outright.
+    let clicks = 0;
+    const target = document.querySelector<HTMLElement>("#srcSeg")!;
+    target.addEventListener("click", () => clicks++);
+
+    const input = document.querySelector<HTMLInputElement>("#videoFile")!;
+    const transfer = new DataTransfer();
+    transfer.items.add(window.__recordedClip!);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change"));
+    const clicking = setInterval(() => target.dispatchEvent(new MouseEvent("click", { bubbles: true })), 20);
+
+    await new Promise<void>((resolve) => {
+      const settled = setInterval(() => {
+        if (document.querySelector<HTMLCanvasElement>("#view")!.style.display !== "block") return;
+        clearInterval(settled);
+        resolve();
+      }, 5);
+    });
+    clearInterval(clicking);
+    return clicks;
+  });
+
+  expect(workers.some((url) => /videoWorker/.test(url))).toBe(true);
+  expect(fallbacks).toEqual([]);
+  expect(answered).toBeGreaterThan(0);
+  await expect(page.locator("#view")).toBeVisible();
+});
+
 test("the dropzone says it is waiting from the moment the picker opens, not the moment the file lands", async ({ page }) => {
   await page.goto("/");
   // The picker is opened for real; nothing is chosen in it here.
