@@ -71,11 +71,12 @@ function buildApp({ withSlp = false, signedIn = false }: AppStoryOptions = {}): 
   const version = wrapper.querySelector("#version-indicator");
   if (version) version.textContent = `v${__APP_VERSION__}`;
   if (withSlp) {
-    // Mirrors what main.ts does when the SLEAP annotations switch is flipped on.
+    // Mirrors what main.ts does when the SLEAP annotations switch is flipped on. The overlay switch
+    // stays off screen: these stories are the unloaded state, and with no picture there is nothing
+    // to draw an overlay over.
     const toggle = wrapper.querySelector<HTMLInputElement>("#slpToggle");
     if (toggle) toggle.checked = true;
     wrapper.querySelector("#slpCard")?.removeAttribute("hidden");
-    wrapper.querySelector("#showPoseRow")?.removeAttribute("hidden");
   }
   if (signedIn) applySignedIn(wrapper);
   return wrapper;

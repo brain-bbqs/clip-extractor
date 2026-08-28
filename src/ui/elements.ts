@@ -14,7 +14,8 @@ export function getElements() {
     oauthUsername: required<HTMLElement>("oauthUsername"),
     oauthSignoutBtn: required<HTMLButtonElement>("oauthSignoutBtn"),
 
-    // Load card
+    // Source picker (the merged card's first half)
+    sourcePicker: required<HTMLDivElement>("sourcePicker"),
     srcSeg: required<HTMLDivElement>("srcSeg"),
     localPane: required<HTMLDivElement>("localPane"),
     browsePane: required<HTMLDivElement>("browsePane"),
@@ -33,8 +34,12 @@ export function getElements() {
     slpFile: required<HTMLInputElement>("slpFile"),
     slpToggle: required<HTMLInputElement>("slpToggle"),
 
-    // Player
+    // Player (the merged card's second half)
     playerCard: required<HTMLElement>("playerCard"),
+    playerControls: required<HTMLDivElement>("playerControls"),
+    loadedSource: required<HTMLDivElement>("loadedSource"),
+    loadedSourceName: required<HTMLSpanElement>("loadedSourceName"),
+    btnChangeVideo: required<HTMLButtonElement>("btnChangeVideo"),
     modeSeg: required<HTMLDivElement>("modeSeg"),
     showPoseRow: required<HTMLLabelElement>("showPoseRow"),
     showPose: required<HTMLInputElement>("showPose"),
@@ -87,7 +92,9 @@ export function getElements() {
     slpWarningTitle: required<HTMLParagraphElement>("slpWarningTitle"),
     slpWarningList: required<HTMLUListElement>("slpWarningList"),
     slpStatus: required<HTMLDivElement>("slpStatus"),
+    slpNameLabel: required<HTMLSpanElement>("slpNameLabel"),
     slpBadge: required<HTMLSpanElement>("slpBadge"),
+    btnChangePose: required<HTMLButtonElement>("btnChangePose"),
 
     // Delivery card (Download / Upload)
     deliverToggleRow: required<HTMLDivElement>("deliverToggleRow"),

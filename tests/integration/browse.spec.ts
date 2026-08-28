@@ -226,11 +226,16 @@ test("the video picked out of the list is marked in it, the way its dataset is",
 
   await videos.first().click();
   await expect(page.locator("#view")).toBeVisible();
+  // Opening it hands the card over to the player, so the mark is read where it is of use: in the
+  // list Change video comes back to.
+  await page.locator("#btnChangeVideo").click();
   await expect(videos.first()).toHaveAttribute("aria-current", "true");
   await expect(videos.nth(1)).not.toHaveAttribute("aria-current", "true");
 
   // A second pick moves the mark rather than adding to it.
   await videos.nth(1).click();
+  await expect(page.locator("#view")).toBeVisible();
+  await page.locator("#btnChangeVideo").click();
   await expect(videos.nth(1)).toHaveAttribute("aria-current", "true");
   await expect(videos.first()).not.toHaveAttribute("aria-current", "true");
 });
@@ -245,6 +250,7 @@ test("the mark stays with the video that was picked, not with the row it sat in"
   await page.locator('#browseDandisets .browse-item:has-text("000265")').click();
   await page.locator("#browseVideos .browse-item").first().click();
   await expect(page.locator("#view")).toBeVisible();
+  await page.locator("#btnChangeVideo").click();
   await expect(page.locator('#browseVideos .browse-item[aria-current="true"]')).toHaveCount(1);
 
   // Another dataset's list holds nothing that was picked, so nothing in it is marked...
@@ -410,14 +416,14 @@ test("a second refusal replaces the first, rather than being read beside it", as
 
   await videos.first().click();
   await expect(page.locator("#browseStatus")).toContainText("first.mkv cannot be opened.");
-  // The stage keeps its invitation: the pane is where this video was asked for, so it is where the
-  // answer goes.
-  await expect(page.locator("#emptyStage")).toHaveText(/Load a video/);
+  // The pane is where this video was asked for, so it is where the answer goes: the stage is not
+  // raised to repeat it.
+  await expect(page.locator("#stage")).toBeHidden();
 
   await videos.nth(1).click();
   await expect(page.locator("#browseStatus")).toContainText("second.avi cannot be opened.");
   await expect(page.locator("#browseStatus")).not.toContainText("first.mkv");
-  await expect(page.locator("#emptyStage")).toHaveText(/Load a video/);
+  await expect(page.locator("#stage")).toBeHidden();
   // One refusal on the page, not two.
   await expect(page.locator("p.message-line", { hasText: "cannot be opened efficiently through streaming" })).toHaveCount(1);
 });
@@ -434,7 +440,9 @@ test("an embargoed video the archive will not hand out says so, and leaves the p
 
   await expect(page.locator("#browseStatus")).toContainText("held.mp4 cannot be opened.");
   await expect(page.locator("#view")).toBeHidden();
-  await expect(page.locator("#emptyStage")).toBeVisible();
+  // Nothing opened, so the card is still the picker it was: the pane the video was asked for in.
+  await expect(page.locator("#stage")).toBeHidden();
+  await expect(page.locator("#browsePane")).toBeVisible();
 });
 
 test("an unreachable bucket is reported instead of an empty archive", async ({ page }) => {

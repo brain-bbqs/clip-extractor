@@ -507,6 +507,9 @@ function failureHeadline(name: string): string {
 const stageFailure: LoadFailureReport = (name, message) => {
   if (state.backend) return;
   setMessage(els.emptyStage, `${failureHeadline(name)}${PARAGRAPH}${message}`, APP_LINKS);
+  // The load that raised the stage has failed, so syncVideoStep has just taken it back down again.
+  // It stays up to hold the refusal: put away with the picker, the answer would go with it.
+  els.stage.hidden = false;
 };
 
 /** Says so in the browse pane, for a video picked out of it. */
@@ -532,6 +535,9 @@ async function loadVideo(
   stopPlay();
   clearLoadMessages();
   log(`Loading video: ${name}…`);
+  // Raised before the indicator below, which lives on the stage: with nothing loaded the stage is
+  // off screen, and a wait reported onto a hidden element is a wait reported nowhere.
+  els.stage.hidden = false;
   // Raised before the first await, and lowered once there is a frame on the stage — or an error in
   // the console — so the wait is never unaccounted for.
   stageStatus.show(`Loading ${name}…`);
@@ -580,6 +586,8 @@ async function loadVideo(
     els.view.style.display = "block";
     els.overlayInfo.style.display = "block";
     enablePlayer(true);
+    // The picker has done its job: from here the card is the player.
+    syncVideoStep();
     // The radius controls are bounded by the frame, so they only mean anything once one is loaded.
     resetBlurRadius();
     log(`Loaded ${state.width}×${state.height}, ${state.totalFrames} frames @ ${state.fps.toFixed(2)} fps`, "ok");
@@ -592,6 +600,9 @@ async function loadVideo(
   } catch (e) {
     log(`Video error: ${(e as Error).message}`, "err");
     console.error(e);
+    // Nothing opened, so the card goes back to being the picker — the refusal below is reported
+    // onto it, or onto the stage, which stageFailure raises again for the purpose.
+    syncVideoStep();
     // A load that failed has to say so where it was asked for: otherwise the indicator comes down
     // and the page goes back to inviting a file as though nothing had happened.
     // Set through linkify because a refusal names where the file can be re-encoded, and a URL
@@ -600,6 +611,73 @@ async function loadVideo(
   } finally {
     stageStatus.hide();
   }
+}
+
+/** Which half of the merged card is on screen. Until a recording is open the card is the file
+ * picker; from then on it is the player, and Change video is the way back to the picker. */
+function syncVideoStep(): void {
+  const loaded = state.backend !== null;
+  els.sourcePicker.hidden = loaded;
+  els.srcSeg.hidden = loaded;
+  els.loadedSource.hidden = !loaded;
+  els.modeSeg.hidden = !loaded;
+  els.stage.hidden = !loaded;
+  els.playerControls.hidden = !loaded;
+  els.loadedSourceName.textContent = state.sourceName;
+  // The name is elided to whatever the row leaves it, so the whole of it — the URL, where it was
+  // streamed from one — goes where hovering will show it.
+  els.loadedSourceName.title = state.sourceUrl ?? state.sourceName;
+  // The overlay switch is part of the picture, so it comes and goes with it.
+  syncSlpStep();
+}
+
+/**
+ * Closes the recording and puts the picker back.
+ *
+ * Everything marked in the video goes with it: the snippet, the blur areas placed on its pixels and
+ * the description written for the selection all describe a recording that is no longer on screen,
+ * and a description carried over onto the next one would travel with a clip it was never about. The
+ * pose file is left alone — it is its own step, with its own way back, and it is re-checked against
+ * whatever opens next exactly as it would be if it had been dropped in afterwards.
+ */
+function unloadVideo(): void {
+  stopPlay();
+  state.backend?.close?.();
+  state.backend = null;
+  state.frameOrder = null;
+  state.curBitmap = null;
+  state.totalFrames = 0;
+  state.width = 0;
+  state.height = 0;
+  state.fps = 30;
+  state.sourceName = "";
+  state.sourceUrl = null;
+  state.sourceFile = null;
+  state.sourceArchive = null;
+  state.cur = 0;
+  state.inF = null;
+  state.outF = null;
+  state.viewCenter = 0;
+  // Same reasoning as a load: anything derived from the bytes that were behind the player stops
+  // describing what is on screen the moment they are gone.
+  sourceGeneration++;
+  clearBlurRegions();
+  prefetched = null;
+  prefetchInFlight = false;
+  els.view.style.display = "none";
+  els.overlayInfo.style.display = "none";
+  els.emptyStage.style.display = "";
+  els.emptyStage.textContent = EMPTY_STAGE_DEFAULT;
+  els.selectionDescription.value = "";
+  clearDeliveryOutcomes();
+  enablePlayer(false);
+  updateSelUI();
+  syncVideoStep();
+  // Clears any mismatch the pose file was refused over: it was raised against the video that has
+  // just gone, and the next one gets to be judged on its own terms.
+  recheckPose();
+  renderFrame();
+  syncUrl();
 }
 
 // ============================================================
@@ -621,10 +699,28 @@ function clearPose(): void {
   state.slpMeta = null;
   poseGeneration++;
   clearDeliveryOutcomes();
-  els.slpStatus.hidden = true;
+  syncPoseStep();
   // Nothing is loaded, so there is no pair left to caution anyone about.
   els.slpWarning.hidden = true;
   syncUrl();
+}
+
+/** The pose card's own version of syncVideoStep: the dropzone until a pose file is read, what was
+ * read from then on, with Change pose file as the way back. */
+function syncPoseStep(): void {
+  const loaded = state.pose !== null;
+  els.slpDropzone.hidden = loaded;
+  els.slpStatus.hidden = !loaded;
+  els.slpNameLabel.textContent = state.slpName ?? "";
+  els.slpNameLabel.title = state.poseUrl ?? state.slpName ?? "";
+}
+
+/** Says which pose file is loaded and how much of the recording it labels. */
+function showPoseLoaded(labeledFrames: number): void {
+  els.slpBadge.textContent = `${labeledFrames} frames`;
+  els.slpBadge.className = "badge ok";
+  els.slpError.hidden = true;
+  syncPoseStep();
 }
 
 /** Fills one of the card's notice blocks with a headline and a line per reason. */
@@ -758,10 +854,7 @@ async function loadPoseFile(source: File | string, name: string): Promise<void> 
     clearDeliveryOutcomes();
     const nFrames = state.pose.byFrame.size;
     log(`Pose loaded: ${state.pose.skeleton.nodes.length} nodes, ${state.pose.tracks.length} tracks, ${nFrames} labeled frames`, "ok");
-    els.slpBadge.textContent = `${nFrames} frames`;
-    els.slpBadge.className = "badge ok";
-    els.slpError.hidden = true;
-    els.slpStatus.hidden = false;
+    showPoseLoaded(nFrames);
     // Raised after the load rather than instead of it: the pose is on screen either way.
     if (video) showSlpWarnings(name, video, slpVideoWarnings(meta, video, kind));
     else els.slpWarning.hidden = true;
@@ -2323,16 +2416,25 @@ els.browseFilter.addEventListener("input", () => {
   browseFilterTimer = setTimeout(renderDandisetList, 150);
 });
 
-// SLEAP annotations step: hidden until the toggle above the player is switched on. The overlay
-// switch on the player card follows it, since with the step off there is no overlay to show.
+// SLEAP annotations step: hidden until the toggle in the card below is switched on. The overlay
+// switch follows both that step and the video, since it belongs to the picture it is drawn on: with
+// the step off there is no overlay to show, and with no video there is nothing to show it over.
 function syncSlpStep(): void {
   els.slpCard.hidden = !els.slpToggle.checked;
-  els.showPoseRow.hidden = !els.slpToggle.checked;
+  els.showPoseRow.hidden = !els.slpToggle.checked || state.backend === null;
 }
 function enableSlpStep(): void {
   els.slpToggle.checked = true;
   syncSlpStep();
 }
+els.btnChangeVideo.addEventListener("click", unloadVideo);
+els.btnChangePose.addEventListener("click", () => {
+  clearPose();
+  // A refusal raised over the file being dropped is not about the empty card it leaves behind.
+  els.slpError.hidden = true;
+  // The overlay it was drawing goes with it.
+  renderFrame();
+});
 els.slpToggle.addEventListener("change", () => {
   syncSlpStep();
   // The overlay is only drawn while the step is enabled, so re-render on either flip.
@@ -2949,6 +3051,9 @@ function updateDeliveryGate(): void {
   els.btnDownload.disabled = deliveryBusy || !hasVideo || !selected || !described;
   els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !described || !cfg.dandisetId || notEmbargoed || unconfirmed;
   els.btnUpload.hidden = uploadSubmitted;
+  // A delivery reads the video and the pose as it runs, so neither can be closed out from under it.
+  els.btnChangeVideo.disabled = deliveryBusy;
+  els.btnChangePose.disabled = deliveryBusy;
   updateDeliveryCopy(kind);
   updateOriginalContentRow();
   if (deliveryBusy) return;
@@ -3759,10 +3864,7 @@ function applyMockSlp(): void {
   state.slpKind = ".slp";
   poseGeneration++;
   clearDeliveryOutcomes();
-  els.slpBadge.textContent = `${byFrame.size} frames`;
-  els.slpBadge.className = "badge ok";
-  els.slpError.hidden = true;
-  els.slpStatus.hidden = false;
+  showPoseLoaded(byFrame.size);
   showSlpWarnings(name, video, slpVideoWarnings(meta, video, ".slp"));
   renderFrame();
   syncUrl();
