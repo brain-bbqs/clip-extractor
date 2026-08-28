@@ -29,7 +29,6 @@ export function getElements() {
     emberLoadBtn: required<HTMLButtonElement>("emberLoadBtn"),
     dropzone: required<HTMLDivElement>("dropzone"),
     browseVideoBtn: required<HTMLButtonElement>("browseVideoBtn"),
-    sampleBtn: required<HTMLButtonElement>("sampleBtn"),
     videoFile: required<HTMLInputElement>("videoFile"),
     slpFile: required<HTMLInputElement>("slpFile"),
     slpToggle: required<HTMLInputElement>("slpToggle"),

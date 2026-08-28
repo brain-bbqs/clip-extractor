@@ -562,10 +562,6 @@ input[type="checkbox"].switch:checked::after {
 .dz-inner p {
   margin: 0.4rem 0;
 }
-.dz-sample {
-  font-size: 0.85rem;
-  color: var(--muted);
-}
 .dz-browse {
   background: none;
   border: none;
