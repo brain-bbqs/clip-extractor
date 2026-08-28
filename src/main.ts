@@ -2443,10 +2443,6 @@ els.browseSlpBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   els.slpFile.click();
 });
-els.sampleBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  void loadSample();
-});
 els.videoFile.addEventListener("change", () => {
   const f = els.videoFile.files?.[0];
   if (f) void loadVideo(f, f.name);
@@ -2460,14 +2456,6 @@ els.slpFile.addEventListener("change", () => {
 // Prevent the browser from navigating away when a file misses the dropzone.
 window.addEventListener("dragover", (e) => e.preventDefault());
 window.addEventListener("drop", (e) => e.preventDefault());
-
-// Sample
-async function loadSample(): Promise<void> {
-  const base = new URL("..", location.href).href; // repo root
-  log("Loading sample from slp-viewer/…");
-  await loadVideo(`${base}slp-viewer/mice.mp4`, "mice.mp4", `${base}slp-viewer/mice.mp4`);
-  await loadPoseFile(`${base}slp-viewer/mice.tracked.slp`, "mice.tracked.slp");
-}
 
 // ============================================================
 // EMBER sign-in + upload destination (mirrors bbqs-uploader)
@@ -2971,7 +2959,7 @@ function updateDeliveryGate(): void {
     : !selected
       ? "Drag the In and Out handles under the player to select a snippet."
       : !described
-        ? `Describe the ${kind} above before sending it on.`
+        ? `Describe the ${kind} above before saving or uploading.`
         : "";
   // A finished delivery's own line outranks these captions until it is retired.
   if (!showsOutcome(els.downloadStatus)) setStatus(els.downloadStatus, blocked);

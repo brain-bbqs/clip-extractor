@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.1
+
+#### 🚀 Enhancement
+
+- The app's guidance copy now names the actions it is talking about: the empty stage reads "Load a video to extract a clip", and the caption shown while a snippet still needs a description names saving and uploading instead of "sending it on" ([#50](https://github.com/brain-bbqs/clip-extractor/pull/50))
+
+#### 🐛 Bug Fix
+
+- The dropzone no longer offers **Load the sample (mice)**: it fetched the file from a sibling site the app has not been served next to since it moved to its own domain, so the button only ever failed; **Browse EMBER** is the way to open a video without one of your own ([#50](https://github.com/brain-bbqs/clip-extractor/pull/50))
+
 ## 1.3.0
 
 #### 🚀 Enhancement
