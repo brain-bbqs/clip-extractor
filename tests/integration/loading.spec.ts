@@ -116,6 +116,67 @@ test("a local video is opened on a worker, leaving the page free to answer while
   await expect(page.locator("#view")).toBeVisible();
 });
 
+test("the loading card outlives the blank stage: it is up until the first frame is drawn", async ({ page }) => {
+  await page.goto("/");
+  await stageRecordedFile(page, "second-clip.webm");
+
+  const order = await page.evaluate(async () => {
+    const view = document.querySelector<HTMLCanvasElement>("#view")!;
+    const busy = document.querySelector<HTMLElement>("#dropzoneBusy")!;
+    const hand = (): void => {
+      const input = document.querySelector<HTMLInputElement>("#videoFile")!;
+      const transfer = new DataTransfer();
+      transfer.items.add(window.__recordedClip!);
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change"));
+    };
+    const drawn = (): boolean => {
+      if (view.style.display !== "block" || !view.width) return false;
+      const probe = document.createElement("canvas");
+      probe.width = 8;
+      probe.height = 8;
+      const ctx = probe.getContext("2d", { willReadFrequently: true })!;
+      ctx.drawImage(view, 0, 0, 8, 8);
+      // Anything but a bare canvas: the stage is cleared to transparent black on every load.
+      return ctx.getImageData(0, 0, 8, 8).data.some((value, i) => i % 4 !== 3 && value > 0);
+    };
+
+    // One video loaded and playing, so a seek is in flight when the next one is handed over — the
+    // case where the load's own seek is queued behind that one rather than drawing anything itself.
+    hand();
+    await new Promise<void>((resolve) => {
+      const settled = setInterval(() => {
+        if (!drawn()) return;
+        clearInterval(settled);
+        resolve();
+      }, 5);
+    });
+    document.querySelector<HTMLButtonElement>("#btnPlay")!.click();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    let hiddenAt: number | null = null;
+    let drawnAt: number | null = null;
+    let sawCard = false;
+    const watch = setInterval(() => {
+      if (!busy.hidden) sawCard = true;
+      if (sawCard && hiddenAt === null && busy.hidden) hiddenAt = performance.now();
+      if (drawnAt === null && sawCard && drawn()) drawnAt = performance.now();
+    }, 4);
+    hand();
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    clearInterval(watch);
+    return { hiddenAt, drawnAt };
+  });
+
+  expect(order.hiddenAt).not.toBeNull();
+  expect(order.drawnAt).not.toBeNull();
+  // The card is what stands in for the picture, so it may not come down before there is one. A guard
+  // on the order rather than a reproduction of a specific way of getting it wrong: the load waits on
+  // the seek it starts even where that seek is queued behind one already running (see main.ts's
+  // seekRun), and holds the card a frame past the draw so the two cannot land in either order.
+  expect(order.drawnAt!).toBeLessThanOrEqual(order.hiddenAt!);
+});
+
 test("the dropzone says it is waiting from the moment the picker opens, not the moment the file lands", async ({ page }) => {
   await page.goto("/");
   // The picker is opened for real; nothing is chosen in it here.

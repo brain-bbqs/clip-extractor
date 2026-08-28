@@ -700,6 +700,10 @@ async function loadVideo(
     // over — a key held down while a video loaded is not a gesture on the marks it arrives with.
     await seek(state.cur, true, false);
     updateSelUI();
+    // The card comes down a frame after the picture goes up, not in the same one. Drawing into the
+    // canvas and hiding the card land together otherwise, and whichever the compositor takes first
+    // decides whether the stage is briefly bare with nothing left on the page to say why.
+    await nextPaint();
   } catch (e) {
     log(`Video error: ${(e as Error).message}`, "err");
     console.error(e);
@@ -1227,6 +1231,9 @@ function schedulePrefetch(target: number): void {
 // player looks stuck on the frame it was already showing.
 const FRAME_WAIT_MS = 250;
 
+/** The seek in flight, for a call that queued its frame behind it to wait on. Null between runs. */
+let seekRun: Promise<void> | null = null;
+
 // Shift-held seeking extends the selection to cover the frames scrubbed over (video mode only).
 let shiftHeld = false;
 let shiftAnchor: number | null = null;
@@ -1242,6 +1249,11 @@ async function seek(frame: number, force = false, extend = true): Promise<void> 
   if (seeking) {
     pendingSeek = frame;
     updateSelUI();
+    // Handed to the run already going, which drains this before it ends (see the loop below) — and
+    // waited on rather than left to it, so that awaiting a seek always means the frame asked for is
+    // the one on screen. A load takes its indicator down on the strength of that; returning here
+    // while nothing had been drawn yet took the indicator down over a blank stage.
+    await seekRun;
     return;
   }
   seeking = true;
@@ -1250,7 +1262,7 @@ async function seek(frame: number, force = false, extend = true): Promise<void> 
   // between them. Rather than guess which this is, say so only once it has taken long enough to be
   // worth saying (see ui/busyStatus.ts), which leaves ordinary scrubbing untouched.
   stageStatus.showAfter(FRAME_WAIT_MS, "Loading frame…");
-  try {
+  const run = (async () => {
     do {
       const target = pendingSeek == null ? frame : pendingSeek;
       pendingSeek = null;
@@ -1271,9 +1283,14 @@ async function seek(frame: number, force = false, extend = true): Promise<void> 
       // while this iteration's getFrame() was in flight — TS's flow analysis only sees this
       // function's own literal assignments and can't account for that, hence the cast.
     } while ((pendingSeek as number | null) !== null);
+  })();
+  seekRun = run;
+  try {
+    await run;
   } finally {
     stageStatus.hide();
     seeking = false;
+    seekRun = null;
   }
   updateSelUI();
 }
