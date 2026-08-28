@@ -531,6 +531,9 @@ input[type="checkbox"].switch:checked::after {
 
 /* Dropzone (mirrors bbqs-uploader's file picker) */
 .dropzone {
+  /* Anchors the busy overlay below, which is laid over the invitation rather than put in its place
+     so that a file being opened does not shrink the card and shove the player up the page. */
+  position: relative;
   border: 2px dashed var(--border);
   border-radius: 12px;
   padding: 2rem 1rem;
@@ -620,12 +623,51 @@ input[type="checkbox"].switch:checked::after {
   }
 }
 
-/* A load in progress holds this thread — the container index is parsed on it — so the dropzone
-   stops inviting a second file it could not answer until the first one is open. Dimmed rather than
-   taken away, so the card reads as busy with the line above rather than as having lost a control. */
+/* A load in progress holds this thread — the container index is parsed on it — so the local pane
+   stops taking a second file it could not answer until the first one is open. Left at full strength
+   rather than dimmed: while a dropped file is opening, this pane is carrying the only word of it
+   that names the file, and a greyed-out acknowledgement is a poor one. */
 #loadCard[aria-busy="true"] #localPane {
-  opacity: 0.5;
   pointer-events: none;
+}
+
+/* The dropzone while it is opening a file: the invitation gives way to the file's own name, and the
+   dashes give way to a solid, accented edge — the same shape and size, visibly holding something. */
+.dz-busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 1rem;
+  text-align: center;
+}
+/* `display` above would otherwise override the hidden attribute. */
+.dz-busy[hidden] {
+  display: none;
+}
+.dz-busy-label {
+  font-weight: 600;
+  /* A long recording's name is a filename, and breaking it anywhere beats widening the card. */
+  overflow-wrap: anywhere;
+}
+.dz-busy-detail {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+#dropzone:has(.dz-busy:not([hidden])) {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  cursor: default;
+}
+/* Held in place rather than taken out of the flow: the dropzone keeps the height it had, so nothing
+   below it moves while a file opens. */
+#dropzone:has(.dz-busy:not([hidden])) .dz-inner {
+  visibility: hidden;
 }
 
 /* Stream-from-a-URL pane */

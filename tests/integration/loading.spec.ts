@@ -7,20 +7,23 @@ import { recordClipBytes, stageRecordedFile } from "./helpers";
 // that the announcement is drawn rather than merely set.
 
 interface LoadWatch {
-  /** Whether the line was up in the same tick the file was handed over, before anything awaited. */
-  upAtHandover: boolean;
+  /** What the dropzone said in the same tick the file was handed over, before anything awaited. */
   labelAtHandover: string;
+  detailAtHandover: string;
   busyAtHandover: string | null;
-  /** Whether an animation frame ever saw it up — that is, whether it was ever actually drawn. */
+  /** Whether the card's own line was raised as well — it should not be, the dropzone having
+   * answered for this one. */
+  cardLineAtHandover: boolean;
+  /** Whether an animation frame ever saw the dropzone's line up — that is, whether it was drawn. */
   painted: boolean;
 }
 
-test("a local video says it is loading on the card it was dropped on, and gets it onto the screen", async ({ page }) => {
+test("a local video is named by the dropzone it was handed to, drawn before the open blocks", async ({ page }) => {
   await page.goto("/");
   await stageRecordedFile(page, "dropped-clip.webm");
 
   const watch = await page.evaluate<LoadWatch>(() => {
-    const line = document.querySelector<HTMLElement>("#loadBusy")!;
+    const line = document.querySelector<HTMLElement>("#dropzoneBusy")!;
     const card = document.querySelector<HTMLElement>("#loadCard")!;
     let painted = false;
     let watching = true;
@@ -36,9 +39,10 @@ test("a local video says it is loading on the card it was dropped on, and gets i
     input.files = transfer.files;
     input.dispatchEvent(new Event("change"));
     const handover = {
-      upAtHandover: !line.hidden,
-      labelAtHandover: document.querySelector<HTMLElement>("#loadBusyLabel")!.textContent ?? "",
+      labelAtHandover: line.hidden ? "" : (document.querySelector<HTMLElement>("#dropzoneBusyLabel")!.textContent ?? ""),
+      detailAtHandover: document.querySelector<HTMLElement>("#dropzoneBusyDetail")!.textContent ?? "",
       busyAtHandover: card.getAttribute("aria-busy"),
+      cardLineAtHandover: !document.querySelector<HTMLElement>("#loadBusy")!.hidden,
     };
 
     return new Promise<LoadWatch>((resolve) => {
@@ -51,18 +55,22 @@ test("a local video says it is loading on the card it was dropped on, and gets i
     });
   });
 
-  expect(watch.upAtHandover).toBe(true);
-  expect(watch.labelAtHandover).toContain("dropped-clip.webm");
+  // The file that was chosen, named where it was chosen, before the open has had a chance to hold
+  // the thread — and with its size, which is what makes a long wait make sense.
+  expect(watch.labelAtHandover).toBe("dropped-clip.webm");
+  expect(watch.detailAtHandover).toMatch(/selected$/);
   expect(watch.busyAtHandover).toBe("true");
+  // One acknowledgement, not two: the card's line is for the sources that have no dropzone.
+  expect(watch.cardLineAtHandover).toBe(false);
   // The point of the whole exercise: the line is not merely set, it is drawn. A line set and then
   // buried under an open that holds this thread is a page that still looks seized up — which is why
   // loadVideo hands the browser a frame for it before starting one (see main.ts's nextPaint).
   expect(watch.painted).toBe(true);
 
-  // And it comes down again with the video on the stage, leaving the dropzone open for another.
-  await expect(page.locator("#loadBusy")).toBeHidden();
+  // And the dropzone goes back to inviting a video once one is on the stage.
+  await expect(page.locator("#dropzoneBusy")).toBeHidden();
   await expect(page.locator("#loadCard")).not.toHaveAttribute("aria-busy");
-  await expect(page.locator("#dropzone")).toBeVisible();
+  await expect(page.locator("#dropzone")).toContainText("Drop a video here");
 });
 
 const HELD_URL = "https://videos.test/held-clip.webm";
@@ -86,6 +94,7 @@ test("a streamed video says it is loading on the load card as well as over the s
   await page.locator("#emberUrl").fill(HELD_URL);
   await page.locator("#emberLoadBtn").click();
 
+  // No dropzone was involved in this one, so the card answers for it.
   await expect(page.locator("#loadBusy")).toBeVisible();
   await expect(page.locator("#loadBusyLabel")).toHaveText(/held-clip\.webm/);
   await expect(page.locator("#stageBusy")).toBeVisible();
@@ -103,9 +112,10 @@ test("a video that will not open leaves the load card free of the loading line",
   await page.locator("#emberUrl").fill(HELD_URL);
   await page.locator("#emberLoadBtn").click();
 
-  // The refusal is the stage's to report; the picker only ever says what is in progress, so a load
+  // The refusal is the stage's to report; a picker only ever says what is in progress, so a load
   // that ended — however it ended — takes the line with it rather than leaving it spinning.
   await expect(page.locator("#emptyStage")).toContainText("held-clip.webm");
   await expect(page.locator("#loadBusy")).toBeHidden();
+  await expect(page.locator("#dropzoneBusy")).toBeHidden();
   await expect(page.locator("#loadCard")).not.toHaveAttribute("aria-busy");
 });

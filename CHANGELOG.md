@@ -4,7 +4,7 @@
 
 #### 🚀 Enhancement
 
-- Loading a video now says so on the load card, with the bytes read so far, instead of leaving the picker looking unresponsive while the file is opened ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
+- A video being opened is now acknowledged where you picked it: the dropzone takes the name of the file you chose and counts the bytes read, and a streamed video says the same on the load card, instead of the picker sitting unresponsive with no sign it registered anything ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
 
 ## 1.3.0
 

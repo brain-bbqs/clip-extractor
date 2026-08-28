@@ -171,29 +171,59 @@ function log(msg: string, cls: LogClass = ""): void {
 const stageStatus = new BusyStatus({ root: els.stageBusy, label: els.stageBusyLabel, detail: els.stageBusyDetail });
 // The load card answers for the picker a video was asked from, which is where whoever asked is
 // looking — and on a short window the only one of the two on screen.
-const pickerStatus = new BusyStatus({ root: els.loadBusy, label: els.loadBusyLabel, detail: els.loadBusyDetail });
+const cardStatus = new BusyStatus({ root: els.loadBusy, label: els.loadBusyLabel, detail: els.loadBusyDetail });
+// Except for a file handed to the dropzone, which answers for itself: a card-wide line under a
+// dropzone still inviting a video is a poor acknowledgement of the one just chosen, and the dropzone
+// is the thing being looked at at that moment. It takes the file's name in place of its invitation.
+const dropzoneStatus = new BusyStatus({
+  root: els.dropzoneBusy,
+  label: els.dropzoneBusyLabel,
+  detail: els.dropzoneBusyDetail,
+});
 
 /**
- * Both of the above at once, for the one wait that belongs in both places: opening a video.
+ * The stage and the picker at once, for the one wait that belongs in both places: opening a video.
  *
- * The card also goes `aria-busy` while it is up, which is what takes the dropzone out of service
- * (see style.css). Opening a recording runs on this same thread — the container index is parsed
- * here, not in a worker — so a second file dropped on top of a load in progress lands in a page that
- * cannot answer it, and a picker that looks ready while nothing it is clicked for happens is exactly
- * what "the page froze" means.
+ * Which picker depends on where the video came from — see {@link pickedFrom}. Whichever it is, the
+ * card goes `aria-busy` while the wait is up, which is what stops the local pane taking a second
+ * file (see style.css). Opening a recording runs on this same thread — the container index is parsed
+ * here, not in a worker — so a second one started on top of it lands in a page that cannot answer,
+ * and a picker that looks ready while nothing it is clicked for happens is exactly what "the page
+ * froze" means.
  */
 const loadStatus = {
+  /** Where the load in progress is being reported, and what that surface calls it. Both set by
+   * {@link pickedFrom} as each load begins; an empty label means "whatever the stage is saying". */
+  picker: cardStatus,
+  pickerLabel: "",
   show(label: string, detail = ""): void {
     els.loadCard.setAttribute("aria-busy", "true");
     stageStatus.show(label, detail);
-    pickerStatus.show(label, detail);
+    this.picker.show(this.pickerLabel || label, detail);
   },
   hide(): void {
     els.loadCard.removeAttribute("aria-busy");
     stageStatus.hide();
-    pickerStatus.hide();
+    // Both, not just the one in use: a load that changed surfaces must not leave the surface the
+    // one before it used still spinning.
+    cardStatus.hide();
+    dropzoneStatus.hide();
   },
 };
+
+/** Points {@link loadStatus} at the picker `source` came from, and answers with what that picker
+ * should open with.
+ *
+ * The dropzone stands the file's own name where its invitation was, since nothing else on the page
+ * names what was just chosen, and opens on the size — which is what makes a long wait make sense
+ * before a single byte has been counted. A URL or an archive video keeps the card's plain "Loading
+ * …", its name having been typed or clicked a moment ago and still on screen beside it. */
+function pickedFrom(source: File | string, name: string): string {
+  const local = source instanceof File;
+  loadStatus.picker = local ? dropzoneStatus : cardStatus;
+  loadStatus.pickerLabel = local ? name : "";
+  return local ? `${bytes(source.size)} selected` : "";
+}
 
 /** Hands the browser a frame to draw in. Awaited where something just put on screen would otherwise
  * be raised and then buried under work that holds this thread: what is never painted is not a
@@ -393,7 +423,11 @@ const INDEX_PROGRESS_MS = 2000;
 // repainting both indicators on every chunk it receives.
 const LOAD_PROGRESS_MS = 250;
 
-/** A throttled reporter for how much of `name` has been read while it is being opened. */
+/** A throttled reporter for how much of `name` has been read while it is being opened.
+ *
+ * A running total only, never a fraction of the file, even where the file's own size is in hand: a
+ * container index is read by seeking around the file, and a stretch wanted twice is counted twice,
+ * so this passes the size of what is on the machine on the way to overtaking it. */
 function indexProgress(name: string): (bytesRead: number) => void {
   let lastLog = 0;
   let lastPaint = 0;
@@ -571,7 +605,7 @@ async function loadVideo(
   log(`Loading video: ${name}…`);
   // Raised before the first await, and lowered once there is a frame on the stage — or an error in
   // the console — so the wait is never unaccounted for.
-  loadStatus.show(`Loading ${name}…`);
+  loadStatus.show(`Loading ${name}…`, pickedFrom(source, name));
   // Opening a video is not all waiting on a network: a container index is parsed on this thread, and
   // for a large local file that is long enough to be noticed as the page not answering. The frame
   // handed back here is the one the line above is drawn in, so it is on screen before any of that
