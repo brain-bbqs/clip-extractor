@@ -192,14 +192,21 @@ const dropzoneStatus = new BusyStatus({
  * froze" means.
  */
 const loadStatus = {
-  /** Where the load in progress is being reported, and what that surface calls it. Both set by
-   * {@link pickedFrom} as each load begins; an empty label means "whatever the stage is saying". */
+  /** Where the load in progress is being reported, what that surface calls it, and what it names
+   * under that. All three set by {@link pickedFrom} as each load begins; an empty label means
+   * "whatever the stage is saying". */
   picker: cardStatus,
   pickerLabel: "",
+  pickerSubject: "",
   show(label: string, detail = ""): void {
     els.loadCard.setAttribute("aria-busy", "true");
     stageStatus.show(label, detail);
-    this.picker.show(this.pickerLabel || label, detail);
+    // The picker's own label is fixed for the whole load while the figure under it moves. The stage
+    // above rewrites its line as the load passes from one stage to the next, which is right over a
+    // player nobody is reading closely; on the picker, a line that keeps being replaced under the
+    // cursor that started it reads as the load restarting rather than progressing.
+    const under = [this.pickerSubject, detail].filter(Boolean).join("  ·  ");
+    this.picker.show(this.pickerLabel || label, under);
   },
   hide(): void {
     els.loadCard.removeAttribute("aria-busy");
@@ -214,16 +221,23 @@ const loadStatus = {
 /** Points {@link loadStatus} at the picker `source` came from, and answers with what that picker
  * should open with.
  *
- * The dropzone stands the file's own name where its invitation was, since nothing else on the page
- * names what was just chosen, and opens on the size — which is what makes a long wait make sense
- * before a single byte has been counted. A URL or an archive video keeps the card's plain "Loading
- * …", its name having been typed or clicked a moment ago and still on screen beside it. */
+ * The dropzone says the one thing that stays true from the moment the picker opens to the moment
+ * the video is on screen — {@link LOADING_VIDEO} — and names the file and its size underneath,
+ * since nothing else on the page says what was chosen, and a size is what makes a long wait make
+ * sense before a single byte has been counted. A URL or an archive video keeps the card's plain
+ * "Loading …", its name having been typed or clicked a moment ago and still on screen beside it. */
 function pickedFrom(source: File | string, name: string): string {
   const local = source instanceof File;
   loadStatus.picker = local ? dropzoneStatus : cardStatus;
-  loadStatus.pickerLabel = local ? name : "";
-  return local ? `${bytes(source.size)} selected` : "";
+  loadStatus.pickerLabel = local ? LOADING_VIDEO : "";
+  loadStatus.pickerSubject = local ? name : "";
+  return local ? `${bytes(source.size)}` : "";
 }
+
+/** What the dropzone says for as long as a video is on its way, from the picker opening to the first
+ * frame being drawn. One line for the whole wait, rather than a different one per phase: what the
+ * page is doing has not changed, and only the figure under it has anything new to say. */
+const LOADING_VIDEO = "Loading video…";
 
 /** Hands the browser a frame to draw in. Awaited where something just put on screen would otherwise
  * be raised and then buried under work that holds this thread: what is never painted is not a
@@ -2508,8 +2522,13 @@ function wireDropzone(dz: HTMLElement): void {
 wireDropzone(els.dropzone);
 wireDropzone(els.slpDropzone);
 
+/** Whether a picker opened by {@link pickVideoFile} has yet to answer, either way. Nothing below
+ * takes the line down unless this is still true: the same events fire around a load already in
+ * progress, and that one is not theirs to end. */
+let awaitingPick = false;
+
 /**
- * Opens the file picker, with the dropzone already saying it is waiting on one.
+ * Opens the file picker, with the dropzone already saying a video is on its way.
  *
  * The load itself is announced the moment the browser hands the file over, which is as early as any
  * page can manage — but that is not as early as the file was *chosen*. Between dismissing the
@@ -2518,14 +2537,9 @@ wireDropzone(els.slpDropzone);
  * only sit there looking like it missed the click. Saying so before the picker even opens puts
  * something in that gap that costs nothing to draw when the dialog comes down.
  */
-/** Whether a picker opened by {@link pickVideoFile} has yet to answer, either way. Nothing below
- * takes the line down unless this is still true: the same events fire around a load already in
- * progress, and that one is not theirs to end. */
-let awaitingPick = false;
-
 function pickVideoFile(): void {
   awaitingPick = true;
-  dropzoneStatus.show("Waiting for the file you choose…");
+  dropzoneStatus.show(LOADING_VIDEO);
   els.videoFile.click();
 }
 

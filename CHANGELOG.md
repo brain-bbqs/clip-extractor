@@ -4,7 +4,7 @@
 
 #### 🚀 Enhancement
 
-- A video being opened is now acknowledged where you picked it: the dropzone says it is waiting from the moment the file picker opens, then takes the name of the file you chose and counts the bytes read, and a streamed video says the same on the load card, instead of the picker sitting unresponsive with no sign it registered anything ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
+- A video being opened is now acknowledged where you picked it: the dropzone reads "Loading video…" from the moment the file picker opens until the first frame is drawn, naming the file and counting the bytes read underneath, and a streamed video says the same on the load card, instead of the picker sitting unresponsive with no sign it registered anything ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
 
 ## 1.3.0
 

@@ -56,9 +56,9 @@ test("a local video is named by the dropzone it was handed to, drawn before the 
   });
 
   // The file that was chosen, named where it was chosen, before the open has had a chance to hold
-  // the thread — and with its size, which is what makes a long wait make sense.
-  expect(watch.labelAtHandover).toBe("dropped-clip.webm");
-  expect(watch.detailAtHandover).toMatch(/selected$/);
+  // the thread.
+  expect(watch.labelAtHandover).toBe("Loading video…");
+  expect(watch.detailAtHandover).toContain("dropped-clip.webm");
   expect(watch.busyAtHandover).toBe("true");
   // One acknowledgement, not two: the card's line is for the sources that have no dropzone.
   expect(watch.cardLineAtHandover).toBe(false);
@@ -83,7 +83,7 @@ test("the dropzone says it is waiting from the moment the picker opens, not the 
   // Between dismissing a picker and the browser handing the file over there is a stretch no page
   // is told about. This is what stands in it.
   await expect(page.locator("#dropzoneBusy")).toBeVisible();
-  await expect(page.locator("#dropzoneBusyLabel")).toHaveText(/Waiting for the file/);
+  await expect(page.locator("#dropzoneBusyLabel")).toHaveText("Loading video…");
 
   // And it gives way to the file itself, rather than the two of them being separate states.
   await page.evaluate(() => {
@@ -93,7 +93,10 @@ test("the dropzone says it is waiting from the moment the picker opens, not the 
     input.files = transfer.files;
     input.dispatchEvent(new Event("change"));
   });
-  await expect(page.locator("#dropzoneBusyLabel")).toHaveText("chosen-clip.webm");
+  // The label does not change when the load starts — only the figure under it does, so the card
+  // reads as one wait rather than as having restarted.
+  await expect(page.locator("#dropzoneBusyLabel")).toHaveText("Loading video…");
+  await expect(page.locator("#dropzoneBusyDetail")).toContainText("chosen-clip.webm");
   await expect(page.locator("#view")).toBeVisible();
   await expect(page.locator("#dropzoneBusy")).toBeHidden();
 });
