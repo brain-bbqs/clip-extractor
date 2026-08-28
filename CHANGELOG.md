@@ -4,7 +4,7 @@
 
 #### 🚀 Enhancement
 
-- Loading a video now says so on the load card, with the bytes read so far, instead of leaving the picker looking unresponsive while the file is opened ([#48](https://github.com/brain-bbqs/clip-extractor/pull/48))
+- Loading a video now says so on the load card, with the bytes read so far, instead of leaving the picker looking unresponsive while the file is opened ([#49](https://github.com/brain-bbqs/clip-extractor/pull/49))
 
 ## 1.3.0
 
