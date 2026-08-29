@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.2
+
+#### 🏠 Internal
+
+- Removed code nothing reaches and folded repeated helpers together across the app; no change to what the page does or to any file it writes ([#53](https://github.com/brain-bbqs/clip-extractor/pull/53))
+
 ## 1.4.1
 
 #### 🐛 Bug Fix
