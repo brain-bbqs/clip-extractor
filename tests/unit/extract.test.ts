@@ -1,5 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { bundleFileName, clipFileName, extractClip, frameFileName, overlayFileName, sidecarFileName } from "../../src/lib/extract";
+import {
+  bundleFileName,
+  clipFileName,
+  extractClip,
+  extractFrame,
+  extractOverlay,
+  frameFileName,
+  overlayFileName,
+  sidecarFileName,
+} from "../../src/lib/extract";
+import { InterruptedError } from "../../src/lib/interrupt";
 import type { BehEntities } from "../../src/lib/bidsPath";
 import type { StreamingVideoBackend } from "../../src/lib/streaming";
 
@@ -100,6 +110,15 @@ describe("extractClip, on a streamed source", () => {
     expect(media.mime).toBe("video/mp4");
   });
 
+  it("hands the delivery's interrupt to the trim, so a long snippet can be stopped mid-cut", async () => {
+    const backend = streamingBackend();
+    const controller = new AbortController();
+    const media = await extractClip({ ...selection, sourceFile: null, backend, signal: controller.signal });
+    expect(backend.extractRange).toHaveBeenCalledWith(600, 749, expect.objectContaining({ signal: controller.signal }));
+    expect(media.filename).toBe("sub-mice_recording-20260810012356482_video.mp4");
+    expect(media.mime).toBe("video/mp4");
+  });
+
   it("records how the cut was made, for the sidecar", async () => {
     const media = await extractClip({ ...selection, sourceFile: null, backend: streamingBackend() });
     expect(media.encoding).toContain("20.000s–25.000s");
@@ -137,5 +156,61 @@ describe("extractClip, on a streamed source", () => {
     await expect(extractClip({ ...selection, sourceFile: new File(["bytes"], "v.mp4"), backend })).rejects.toThrow(/ffmpeg stub/);
     expect(ffmpeg.loaded).toBe(1);
     expect(backend.extractRange).not.toHaveBeenCalled();
+  });
+});
+
+// A delivery that was stopped (see lib/interrupt.ts) must not go on decoding, drawing or encoding
+// what it was asked for: every entry point reads the interrupt before it does any of that.
+describe("extraction after the delivery was stopped", () => {
+  const backend = { getFrame: vi.fn(() => Promise.resolve(null)) } as unknown as Parameters<typeof extractFrame>[0]["backend"];
+  const stopped = () => {
+    const controller = new AbortController();
+    controller.abort();
+    return controller.signal;
+  };
+
+  it("decodes no frame for a still image", async () => {
+    const signal = stopped();
+    await expect(extractFrame({ backend, frameOrder: null, frame: 5, width: 320, height: 240, beh, signal })).rejects.toThrow(
+      InterruptedError,
+    );
+    expect(backend.getFrame).not.toHaveBeenCalled();
+  });
+
+  it("draws no pose overlay", async () => {
+    const signal = stopped();
+    await expect(
+      extractOverlay({
+        backend,
+        frameOrder: null,
+        pose: { byFrame: new Map(), skeleton: [] } as unknown as Parameters<typeof extractOverlay>[0]["pose"],
+        mode: "frame",
+        inFrame: 5,
+        outFrame: 5,
+        fps: 30,
+        width: 320,
+        height: 240,
+        beh,
+        signal,
+      }),
+    ).rejects.toThrow(InterruptedError);
+    expect(backend.getFrame).not.toHaveBeenCalled();
+  });
+
+  it("never loads ffmpeg for a snippet", async () => {
+    ffmpeg.loaded = 0;
+    await expect(
+      extractClip({
+        sourceFile: new File(["v"], "v.mp4"),
+        sourceUrl: null,
+        sourceName: "v.mp4",
+        beh,
+        lo: 0,
+        hi: 10,
+        fps: 30,
+        signal: stopped(),
+      }),
+    ).rejects.toThrow(InterruptedError);
+    expect(ffmpeg.loaded).toBe(0);
   });
 });

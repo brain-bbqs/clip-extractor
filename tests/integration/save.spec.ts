@@ -36,7 +36,7 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
 
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
   expect(download.suggestedFilename()).toMatch(/^local-dataset\.tar\.gz$/);
-  await expect(page.locator("#downloadStatus")).toContainText("Saved");
+  await expect(page.locator("#downloadStatus")).toContainText("Exported");
 
   const entries = listTar(readFileSync((await download.path())!));
   // The same files, in the same order, an upload would have written: the extract under

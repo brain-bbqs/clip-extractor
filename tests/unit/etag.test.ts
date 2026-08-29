@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { combineDigests, computeDandiEtag, computeMd5, computeSha256, planParts } from "../../src/lib/etag";
+import { InterruptedError } from "../../src/lib/interrupt";
 import type { FilePart } from "../../src/lib/types";
 
 const MB = 2 ** 20;
@@ -113,5 +114,35 @@ describe("computeMd5 / computeSha256", () => {
     await computeSha256(new Blob([filled(40 * MB)]), (f) => seen.push(f));
     expect(seen.at(-1)).toBe(1);
     expect(seen).toEqual([...seen].sort((a, b) => a - b));
+  });
+});
+
+describe("stopping a hash partway through", () => {
+  // Hashing a multi-gigabyte source is the longest single step a delivery has (three passes over
+  // every byte, see checksumBlob), so the loop reads the interrupt at every 16MB chunk boundary
+  // rather than running to the end of the file whatever the visitor asked for.
+  it("gives up at the next chunk boundary once the delivery is stopped", async () => {
+    const controller = new AbortController();
+    const seen: number[] = [];
+    await expect(
+      computeSha256(
+        new Blob([filled(40 * MB)]),
+        (f) => {
+          seen.push(f);
+          controller.abort();
+        },
+        controller.signal,
+      ),
+    ).rejects.toThrow(InterruptedError);
+    // One chunk's worth of progress, and then nothing: the remaining 24MB were never read.
+    expect(seen).toHaveLength(1);
+  });
+
+  it("reads no bytes at all when the delivery was already stopped", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const bytes = new Blob([filled(2048)]);
+    await expect(computeMd5(bytes, undefined, controller.signal)).rejects.toThrow(InterruptedError);
+    await expect(computeDandiEtag(bytes, planParts(2048), undefined, controller.signal)).rejects.toThrow(InterruptedError);
   });
 });

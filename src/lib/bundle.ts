@@ -1,4 +1,4 @@
-// Packs the files an upload would have written into a single gzip-compressed tar, so the Save route
+// Packs the files an upload would have written into a single gzip-compressed tar, so the Export route
 // hands over exactly what the Upload route would have sent — unpacking a bundle reproduces the very
 // directory tree the archive would have held, provenance sidecar and all.
 //

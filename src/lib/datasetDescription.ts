@@ -76,7 +76,7 @@ export async function readExistingDatasetDescriptions(cfg: ArchiveConfig): Promi
  * real `URL` to name — one entry per distinct such video this tool version has ever run against,
  * accumulated across deliveries rather than fixed at whichever delivery created the file; null (a
  * locally dropped file) leaves `SourceDatasets` untouched. `username` credits the signed-in archive
- * account on all three too (see `mergeAuthor`) — null for a local Save or an anonymous upload, which
+ * account on all three too (see `mergeAuthor`) — null for a local Export or an anonymous upload, which
  * leaves `Authors` as it was found rather than inventing an entry. All three also get their own
  * `DatasetLinks` aliases (see `mergeDatasetLinks`) —
  * `clip` and `source` on the root, naming the derivatives directory and sourcedata/rawbids/ directly,

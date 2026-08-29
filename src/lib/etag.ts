@@ -1,5 +1,6 @@
 import { createSHA256 } from "hash-wasm";
 import SparkMD5 from "spark-md5";
+import { throwIfInterrupted } from "./interrupt";
 import type { FilePart } from "./types";
 
 // DANDI addresses blobs by a "dandi-etag" — the S3 multipart ETag (an MD5 of the concatenated
@@ -56,10 +57,20 @@ export function planParts(fileSize: number): FilePart[] {
  *
  * A short read means the file changed underneath the hash — a browser hands out a `File` as a live
  * handle on something the visitor can still edit or unmount — and a digest folded from part-old,
- * part-new bytes would name a blob that never existed. */
-async function eachChunk(blob: Blob, offset: number, length: number, take: (buf: ArrayBuffer, readSoFar: number) => void): Promise<void> {
+ * part-new bytes would name a blob that never existed.
+ *
+ * `signal` is read at every chunk boundary: hashing a multi-gigabyte source is the longest
+ * uninterruptible stretch a delivery has, and a chunk is 16MB of it. */
+async function eachChunk(
+  blob: Blob,
+  offset: number,
+  length: number,
+  take: (buf: ArrayBuffer, readSoFar: number) => void,
+  signal?: AbortSignal,
+): Promise<void> {
   let read = 0;
   while (read < length) {
+    throwIfInterrupted(signal);
     const n = Math.min(HASH_CHUNK, length - read);
     const start = offset + read;
     const buf = await blob.slice(start, start + n).arrayBuffer();
@@ -73,12 +84,23 @@ async function eachChunk(blob: Blob, offset: number, length: number, take: (buf:
 
 /** MD5 of one part of a blob, streamed in 16MB chunks so a large source video never lands in
  * memory whole. */
-export async function hashPart(blob: Blob, part: FilePart, onChunk: (bytesDoneInPart: number) => void): Promise<Uint8Array> {
+export async function hashPart(
+  blob: Blob,
+  part: FilePart,
+  onChunk: (bytesDoneInPart: number) => void,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
   const spark = new SparkMD5.ArrayBuffer();
-  await eachChunk(blob, part.offset, part.size, (buf, read) => {
-    spark.append(buf);
-    onChunk(read);
-  });
+  await eachChunk(
+    blob,
+    part.offset,
+    part.size,
+    (buf, read) => {
+      spark.append(buf);
+      onChunk(read);
+    },
+    signal,
+  );
   // end(true) yields the raw 16-byte digest as a binary string
   const raw = spark.end(true);
   const digest = new Uint8Array(16);
@@ -96,12 +118,17 @@ export function combineDigests(partDigests: Uint8Array, partCount: number): stri
 }
 
 /** Hashes every part of `blob` in order and returns its dandi-etag, reporting 0..1 progress. */
-export async function computeDandiEtag(blob: Blob, parts: FilePart[], onProgress: (fraction: number) => void = () => {}): Promise<string> {
+export async function computeDandiEtag(
+  blob: Blob,
+  parts: FilePart[],
+  onProgress: (fraction: number) => void = () => {},
+  signal?: AbortSignal,
+): Promise<string> {
   const total = parts.reduce((sum, p) => sum + p.size, 0);
   const digests = new Uint8Array(parts.length * 16);
   let done = 0;
   for (const part of parts) {
-    digests.set(await hashPart(blob, part, (n) => onProgress(total ? (done + n) / total : 1)), (part.number - 1) * 16);
+    digests.set(await hashPart(blob, part, (n) => onProgress(total ? (done + n) / total : 1), signal), (part.number - 1) * 16);
     done += part.size;
   }
   onProgress(1);
@@ -115,12 +142,18 @@ export async function computeDandiEtag(blob: Blob, parts: FilePart[], onProgress
  * same HASH_CHUNK-sized reads as `hashPart`, so a large source video never lands in memory whole; a
  * separate pass over the bytes rather than folded into `computeDandiEtag`'s, since that one resets its
  * digest at every part boundary and this one must not. */
-export async function computeMd5(blob: Blob, onProgress: (fraction: number) => void = () => {}): Promise<string> {
+export async function computeMd5(blob: Blob, onProgress: (fraction: number) => void = () => {}, signal?: AbortSignal): Promise<string> {
   const spark = new SparkMD5.ArrayBuffer();
-  await eachChunk(blob, 0, blob.size, (buf, read) => {
-    spark.append(buf);
-    onProgress(blob.size ? read / blob.size : 1);
-  });
+  await eachChunk(
+    blob,
+    0,
+    blob.size,
+    (buf, read) => {
+      spark.append(buf);
+      onProgress(blob.size ? read / blob.size : 1);
+    },
+    signal,
+  );
   onProgress(1);
   return spark.end();
 }
@@ -130,13 +163,19 @@ export async function computeMd5(blob: Blob, onProgress: (fraction: number) => v
  * this — it has no incremental API, so it would need the entire file buffered at once — hence
  * hash-wasm, whose hashers take the bytes a chunk at a time the way SparkMD5 does. A separate pass
  * over the bytes, for the same reason `computeMd5` is one. */
-export async function computeSha256(blob: Blob, onProgress: (fraction: number) => void = () => {}): Promise<string> {
+export async function computeSha256(blob: Blob, onProgress: (fraction: number) => void = () => {}, signal?: AbortSignal): Promise<string> {
   const hasher = await createSHA256();
   hasher.init();
-  await eachChunk(blob, 0, blob.size, (buf, read) => {
-    hasher.update(new Uint8Array(buf));
-    onProgress(blob.size ? read / blob.size : 1);
-  });
+  await eachChunk(
+    blob,
+    0,
+    blob.size,
+    (buf, read) => {
+      hasher.update(new Uint8Array(buf));
+      onProgress(blob.size ? read / blob.size : 1);
+    },
+    signal,
+  );
   onProgress(1);
   return hasher.digest("hex");
 }

@@ -170,7 +170,7 @@ test("the overlay switch comes and goes with the picture it draws on", async ({ 
   await expect(page.locator("#showPoseRow")).toBeHidden();
 });
 
-test("delivery card offers only Save while signed out", async ({ page }) => {
+test("delivery card offers only Export while signed out", async ({ page }) => {
   // The card waits for a recording, so this needs one open to look at the card at all.
   await page.goto("/?test&mock_video");
   await expect(page.locator("#deliverCard")).toBeVisible();
@@ -179,18 +179,18 @@ test("delivery card offers only Save while signed out", async ({ page }) => {
   await expect(page.locator("#deliverToggleRow")).toBeHidden();
   await expect(page.locator("#uploadPane")).toBeHidden();
   await expect(page.locator("#downloadPane")).toBeVisible();
-  await expect(page.locator("#btnDownload")).toHaveText("Save");
+  await expect(page.locator("#btnDownload")).toHaveText("Export");
   await expect(page.locator("#btnDownload")).toBeDisabled();
   await expect(page.locator("#downloadStatus")).toContainText("Describe the snippet");
 });
 
-test("delivery toggle appears once signed in and swaps between the save and upload panes", async ({ page }) => {
+test("delivery toggle appears once signed in and swaps between the export and upload panes", async ({ page }) => {
   // A fake, signed-in-looking destination — see lib/testInjection.ts — reaches the same UI as a real
   // sign-in for this test's purposes (toggling panes, nothing verified about an actual request).
   await page.goto("/?test&num_datasets=1&mock_video");
   await expect(page.locator("#deliverToggleRow")).toBeVisible();
-  // The stored setting is still "download"/"upload"; only one label reads "Save".
-  await expect(page.locator('#deliverSeg button[data-deliver="download"]')).toHaveText("Save");
+  // The stored setting is still "download"/"upload"; only one label reads "Export".
+  await expect(page.locator('#deliverSeg button[data-deliver="download"]')).toHaveText("Export");
 
   await page.locator('#deliverSeg button[data-deliver="upload"]').click();
   await expect(page.locator('#deliverSeg button[data-deliver="upload"]')).toHaveAttribute("aria-pressed", "true");
@@ -223,7 +223,7 @@ test("the chosen delivery side survives a refresh", async ({ page }) => {
   await expect(page.locator("#uploadPane")).toBeHidden();
 });
 
-test("signing out takes the delivery toggle away and falls back to Save", async ({ page }) => {
+test("signing out takes the delivery toggle away and falls back to Export", async ({ page }) => {
   await stubArchive(page);
   await page.goto("/?test&mock_video");
   await expect(page.locator("#uploadPane")).toBeVisible();

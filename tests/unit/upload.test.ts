@@ -3,6 +3,7 @@ import { createOrReplaceAsset, findExistingAsset, uploadAsset, uploadBlob } from
 import { apiFetch } from "../../src/lib/api";
 import { uploadPartWithRetry } from "../../src/lib/s3";
 import { ApiError } from "../../src/lib/errors";
+import { InterruptedError } from "../../src/lib/interrupt";
 import type { ArchiveConfig, Asset, FilePart } from "../../src/lib/types";
 
 vi.mock("../../src/lib/api");
@@ -204,5 +205,36 @@ describe("uploadAsset", () => {
       method: "POST",
       json: { blob_id: "b1", metadata: { path: "sourcedata/raw/clip-extractor/stamp/clip.mp4", encodingFormat: "video/mp4" } },
     });
+  });
+
+  // Stopping a delivery (see lib/interrupt.ts) has to reach the archive calls too, or a snippet the
+  // visitor pulled the plug on goes on being registered file by file after they asked it to stop.
+  it("sends nothing at all when the delivery was stopped before this file", async () => {
+    mockHappyPath();
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      uploadAsset(cfg, { blob, path: "derivatives/clip-extractor/clip.mp4", digest: { etag, md5, parts }, signal: controller.signal }),
+    ).rejects.toThrow(InterruptedError);
+
+    expect(apiFetchMock).not.toHaveBeenCalled();
+    expect(uploadPartMock).not.toHaveBeenCalled();
+  });
+
+  it("registers no asset when the stop lands after the bytes are already up", async () => {
+    mockHappyPath();
+    const controller = new AbortController();
+    // Stopped while the last part is in flight: the blob validates, but nothing points at it.
+    uploadPartMock.mockImplementation(() => {
+      controller.abort();
+      return Promise.resolve("etag-1");
+    });
+
+    await expect(
+      uploadAsset(cfg, { blob, path: "derivatives/clip-extractor/clip.mp4", digest: { etag, md5, parts }, signal: controller.signal }),
+    ).rejects.toThrow(InterruptedError);
+
+    expect(apiFetchMock.mock.calls.some(([, path]) => path === "/dandisets/000123/versions/draft/assets/")).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { InterruptedError } from "../../src/lib/interrupt";
 import { uploadPartWithRetry } from "../../src/lib/s3";
 
 /** One scripted outcome for the next FakeXHR send. */
@@ -120,7 +121,7 @@ describe("uploadPartWithRetry", () => {
     const controller = new AbortController();
     controller.abort();
 
-    await expect(uploadPartWithRetry("https://s3.example/part-1", blob, () => {}, controller.signal)).rejects.toThrow(/cancelled/i);
+    await expect(uploadPartWithRetry("https://s3.example/part-1", blob, () => {}, controller.signal)).rejects.toThrow(InterruptedError);
     expect(FakeXHR.sent).toHaveLength(0);
   });
 
@@ -132,7 +133,7 @@ describe("uploadPartWithRetry", () => {
     const settled = promise.catch((e: unknown) => e);
     controller.abort();
 
-    expect(await settled).toEqual(new Error("Upload cancelled."));
+    expect(await settled).toBeInstanceOf(InterruptedError);
     expect(FakeXHR.sent).toHaveLength(1);
   });
 });

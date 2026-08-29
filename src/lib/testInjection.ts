@@ -58,7 +58,7 @@ export interface TestInjection {
   /** Makes the synthesized pose deliberately describe a different recording than the mock video, so
    * the SLEAP card's mismatch refusal can be previewed instead of a clean overlay. */
   mismatch: boolean;
-  /** Skips the manual steps a human would otherwise take before Save/Upload enable — marking a real
+  /** Skips the manual steps a human would otherwise take before Export/Upload enable — marking a real
    * selection and typing a description — so a pasted `?test&mock_video&mock_ready` link lands
    * directly on a saveable state instead of the gated, "describe it first" one. Only meaningful
    * alongside `mockVideoFrames`/`mockVideoLongSeconds`; that gated state is itself worth previewing
@@ -157,7 +157,7 @@ export function readTestInjection(search: string): TestInjection | null {
 /** The first fake numeric identifier this module hands out. Six digits, like a real dandiset id —
  * `resolveConfig`'s own `dandisetId` regex only matches runs of six or more plain digits, and a fake
  * id has to survive the same parsing a real one does to drive a truthful preview of the
- * upload-destination UI (and, since a saved bundle is named after its dataset, of what Save writes).
+ * upload-destination UI (and, since a saved bundle is named after its dataset, of what Export writes).
  * EMBER assigns its ids sequentially from 1 and is nowhere near this far up the range, so nothing
  * here can collide with a real dataset. */
 const FAKE_DANDISET_ID_BASE = 214_000;
