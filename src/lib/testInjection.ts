@@ -135,8 +135,10 @@ export function readTestInjection(search: string): TestInjection | null {
     numDatasets: numDatasetsRaw !== null ? intParam(params, "num_datasets", 0) : null,
     embargoed: params.get("embargoed") !== "false",
     humanSubjects: params.has("human_subjects"),
-    mockVideoFrames: mockVideoRaw !== null && mockVideoRaw > 0 ? mockVideoRaw : mockVideoRaw !== null ? 30 : null,
-    mockVideoLongSeconds: mockVideoLongRaw !== null && mockVideoLongRaw > 0 ? mockVideoLongRaw : mockVideoLongRaw !== null ? 14400 : null,
+    // `|| <default>` rather than a second null test: intParam has already turned anything
+    // unparseable into the default, so the only value left to reject is a deliberate `=0`.
+    mockVideoFrames: mockVideoRaw === null ? null : mockVideoRaw || 30,
+    mockVideoLongSeconds: mockVideoLongRaw === null ? null : mockVideoLongRaw || 14400,
     mockAudio: params.has("mock_audio"),
     mockSlp: params.has("mock_slp"),
     mismatch: params.has("mismatch"),
@@ -185,7 +187,7 @@ function pad2(n: number): string {
  * fake video (`sub-01/ses-01`) — so `from_ember` previews the archive-sourced case with one fixed,
  * known-good path rather than a hand-typed subject/session, and with nothing to mistake for a bug
  * where the two entities happen to share a number. */
-const FROM_EMBER_PATH_PREFIX = `sub-${pad2(1)}/ses-${pad2(2)}`;
+const FROM_EMBER_PATH_PREFIX = "sub-01/ses-02";
 
 /** The fake dandiset an EMBER-sourced mock video reads as having come out of — deliberately NOT one
  * of the {@link FAKE_DANDISET_ID_BASE} destination datasets, so a preview keeps its source and its
@@ -256,6 +258,30 @@ export function fakeArchiveBrowse(n: number): { datasets: ArchiveDandiset[]; vid
 const MOCK_VIDEO_WIDTH = 320;
 const MOCK_VIDEO_HEIGHT = 240;
 
+/** The canvas all three synthesizers below draw into, at the one frame size they share. */
+function mockCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+  const canvas = document.createElement("canvas");
+  canvas.width = MOCK_VIDEO_WIDTH;
+  canvas.height = MOCK_VIDEO_HEIGHT;
+  return { canvas, ctx: canvas.getContext("2d")! };
+}
+
+/**
+ * One frame of a mock recording: a solid colour that advances with `i`, and `caption` burned into
+ * the picture so a screenshot of a mock video is recognizable as one rather than indistinguishable
+ * from any other solid-colour test clip.
+ *
+ * `hueStep` differs between the mocks — the long recording steps further per frame, its frames being
+ * far apart in time — so it is the caller's to pass rather than fixed here.
+ */
+function paintMockFrame(ctx: CanvasRenderingContext2D, i: number, hueStep: number, caption: string): void {
+  ctx.fillStyle = `hsl(${i * hueStep} 80% 50%)`;
+  ctx.fillRect(0, 0, MOCK_VIDEO_WIDTH, MOCK_VIDEO_HEIGHT);
+  ctx.fillStyle = "#000";
+  ctx.font = "20px sans-serif";
+  ctx.fillText(caption, 12, MOCK_VIDEO_HEIGHT - 16);
+}
+
 /**
  * Synthesizes a short VP8 clip with MediaRecorder and hands it back as a File, ready to be passed to
  * the app's own `loadVideo` — the same technique `tests/integration/helpers.ts`'s `recordClipBytes`
@@ -263,22 +289,13 @@ const MOCK_VIDEO_HEIGHT = 240;
  * local file and no Playwright driving it.
  */
 export async function synthesizeVideoFile(frames: number, filename = "test-injection-mock-video.mp4"): Promise<File> {
-  const canvas = document.createElement("canvas");
-  canvas.width = MOCK_VIDEO_WIDTH;
-  canvas.height = MOCK_VIDEO_HEIGHT;
-  const ctx = canvas.getContext("2d")!;
+  const { canvas, ctx } = mockCanvas();
   const chunks: Blob[] = [];
   const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: "video/webm;codecs=vp8" });
   recorder.ondataavailable = (e) => chunks.push(e.data);
   recorder.start();
   for (let i = 0; i < frames; i++) {
-    ctx.fillStyle = `hsl(${i * 10} 80% 50%)`;
-    ctx.fillRect(0, 0, MOCK_VIDEO_WIDTH, MOCK_VIDEO_HEIGHT);
-    // A frame number burned into the picture, so a screenshot of the mock video is recognizable as
-    // one rather than indistinguishable from any other solid-color test clip.
-    ctx.fillStyle = "#000";
-    ctx.font = "20px sans-serif";
-    ctx.fillText(`test frame ${i}`, 12, MOCK_VIDEO_HEIGHT - 16);
+    paintMockFrame(ctx, i, 10, `test frame ${i}`);
     await new Promise((r) => setTimeout(r, 33));
   }
   await new Promise<void>((resolve) => {
@@ -315,10 +332,7 @@ const MOCK_AUDIO_GAIN = 0.05;
  * and no real time.
  */
 export async function synthesizeAudioVideoFile(frames: number, filename = "test-injection-mock-audiovideo.mp4"): Promise<File> {
-  const canvas = document.createElement("canvas");
-  canvas.width = MOCK_VIDEO_WIDTH;
-  canvas.height = MOCK_VIDEO_HEIGHT;
-  const ctx = canvas.getContext("2d")!;
+  const { canvas, ctx } = mockCanvas();
   const target = new BufferTarget();
   const output = new Output({ format: new WebMOutputFormat(), target });
   const video = new CanvasSource(canvas, { codec: "vp8", quality: QUALITY_LOW });
@@ -330,11 +344,7 @@ export async function synthesizeAudioVideoFile(frames: number, filename = "test-
   for (let i = 0; i < frames; i++) {
     const timestamp = i * step;
     // The same picture `synthesizeVideoFile` records, so a screenshot of either mock reads the same.
-    ctx.fillStyle = `hsl(${i * 10} 80% 50%)`;
-    ctx.fillRect(0, 0, MOCK_VIDEO_WIDTH, MOCK_VIDEO_HEIGHT);
-    ctx.fillStyle = "#000";
-    ctx.font = "20px sans-serif";
-    ctx.fillText(`test frame ${i}`, 12, MOCK_VIDEO_HEIGHT - 16);
+    paintMockFrame(ctx, i, 10, `test frame ${i}`);
     await video.add(timestamp, step);
     await audio.add(toneSample(timestamp, step));
   }
@@ -377,10 +387,7 @@ const LONG_MOCK_SECONDS_PER_FRAME = 10;
  * span of container duration comes from frames encoded in a fraction of a second.
  */
 export async function synthesizeLongVideoFile(durationSeconds: number, filename = "test-injection-mock-long-video.mp4"): Promise<File> {
-  const canvas = document.createElement("canvas");
-  canvas.width = MOCK_VIDEO_WIDTH;
-  canvas.height = MOCK_VIDEO_HEIGHT;
-  const ctx = canvas.getContext("2d")!;
+  const { canvas, ctx } = mockCanvas();
   const target = new BufferTarget();
   const output = new Output({ format: new WebMOutputFormat(), target });
   // No `frameRate` metadata: that would snap these deliberately far-apart timestamps back together.
@@ -391,11 +398,7 @@ export async function synthesizeLongVideoFile(durationSeconds: number, filename 
   const step = durationSeconds / (frameCount - 1);
   for (let i = 0; i < frameCount; i++) {
     const timestamp = i * step;
-    ctx.fillStyle = `hsl(${i * 60} 80% 50%)`;
-    ctx.fillRect(0, 0, MOCK_VIDEO_WIDTH, MOCK_VIDEO_HEIGHT);
-    ctx.fillStyle = "#000";
-    ctx.font = "20px sans-serif";
-    ctx.fillText(`test frame ${i} @ ${Math.round(timestamp)}s`, 12, MOCK_VIDEO_HEIGHT - 16);
+    paintMockFrame(ctx, i, 60, `test frame ${i} @ ${Math.round(timestamp)}s`);
     await source.add(timestamp, step);
   }
   await output.finalize();
