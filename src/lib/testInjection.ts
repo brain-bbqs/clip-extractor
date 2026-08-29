@@ -101,25 +101,6 @@ export interface TestInjection {
 const MOCK_READY_FRAME = 12;
 const MOCK_READY_RANGE = { lo: 6, hi: 21 };
 
-/** Nothing to fake: every field is the value that leaves every real code path untouched. */
-const INERT: TestInjection = {
-  signedOut: false,
-  numDatasets: null,
-  embargoed: true,
-  humanSubjects: false,
-  mockVideoFrames: null,
-  mockVideoLongSeconds: null,
-  mockAudio: false,
-  mockSlp: false,
-  mismatch: false,
-  mockReady: false,
-  mockReadyMode: "frame",
-  mockReadyFrame: MOCK_READY_FRAME,
-  mockReadyRange: MOCK_READY_RANGE,
-  fromEmber: false,
-  remoteListing: null,
-};
-
 /** A small, non-negative integer out of a query param, or `fallback` for anything else — including
  * the bare flag (`&mock_video&`), whose value is the empty string. */
 function intParam(params: URLSearchParams, key: string, fallback: number): number {
@@ -169,12 +150,6 @@ export function readTestInjection(search: string): TestInjection | null {
     fromEmber: params.has("from_ember"),
     remoteListing: params.has("remote_listing") ? intParam(params, "remote_listing", 8) : null,
   };
-}
-
-/** Same as {@link readTestInjection}, for a caller that always wants a value rather than null —
- * every field reads as "off", so branching on it is always safe. */
-export function testInjectionOrInert(search: string): TestInjection {
-  return readTestInjection(search) ?? INERT;
 }
 
 /** The first fake numeric identifier this module hands out. Six digits, like a real dandiset id —

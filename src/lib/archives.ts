@@ -188,7 +188,6 @@ export async function fetchDandisetName(dandiset: ArchiveDandiset, signal?: Abor
   }
 }
 
-/** A video file in the archive, ready to be streamed. */
 /** Where in the archive a video came from — enough to name it again later without re-reading a
  * manifest. Built by {@link archiveSourceOf} from a listing entry, and recorded in a delivery's
  * derivatives `SourceDatasets` (see lib/provenance.ts's `buildSourceDatasetEntry`). */
@@ -216,6 +215,7 @@ export function archiveSourceOf(video: ArchiveVideo): ArchiveSource {
   return { dandisetId: video.dandisetId, path: video.path, blobId: blobIdFromBucketUrl(video.streamUrl) };
 }
 
+/** A video file in the archive, ready to be streamed. */
 export interface ArchiveVideo {
   dandisetId: string;
   /** Path within the dataset, e.g. `sub-1/mice.mp4`. */
