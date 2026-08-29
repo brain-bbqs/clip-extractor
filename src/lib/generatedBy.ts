@@ -137,7 +137,7 @@ export function mergeSourceDataset(doc: DatasetDescription, source: SourceDatase
 /** Credits the signed-in archive username on `doc`, alongside whoever is already listed there —
  * appended rather than replacing, and left alone (not even the field added) once it is already
  * present, since re-delivering the same selection is not a second contribution to credit. A local
- * Save, or an upload nobody signed in for by the time this runs, passes `username: null` and leaves
+ * Export, or an upload nobody signed in for by the time this runs, passes `username: null` and leaves
  * `doc` untouched: crediting no one is more honest than a placeholder. */
 export function mergeAuthor(doc: DatasetDescription, username: string | null): DatasetDescription {
   if (!username) return doc;

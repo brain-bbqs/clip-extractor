@@ -2139,7 +2139,7 @@ els.dandisetId.addEventListener("change", () => {
 // the selection currently on screen — there is no stale "extracted" artifact to invalidate.
 //
 // Both routes assemble the same set of files (see assembleSelection): Upload registers each one as
-// an asset in the destination dataset, Save packs the same tree into a single `.tar.gz`. So a saved
+// an asset in the destination dataset, Export packs the same tree into a single `.tar.gz`. So an exported
 // bundle is not a lesser copy of an upload — unpacked, it is the upload.
 
 // Guards both actions while an extraction or upload is in flight.
@@ -2149,7 +2149,7 @@ let deliveryBusy = false;
 // other until the encode is under way, so the way out of one has to be there while it runs.
 let deliveryAbort: AbortController | null = null;
 // The status line the running delivery is reporting on. Held rather than derived from `deliveryMode`:
-// the Save/Upload toggle stays live while a delivery runs, so the pane on screen is not necessarily
+// the Export/Upload toggle stays live while a delivery runs, so the pane on screen is not necessarily
 // the route that is running, and a "Stopping…" on the other one would be a line about nothing.
 let runningDeliveryStatus: HTMLElement | null = null;
 // Which side is on screen. Read by the human-subjects gate below, whose warning is about a
@@ -2358,7 +2358,7 @@ function hasSelection(): boolean {
 
 /** The copy in the delivery card that names whichever kind of selection the selector is on. */
 function updateDeliveryCopy(kind: SelectionKind): void {
-  els.downloadHint.textContent = `Saves the selected ${kind} to your computer, packed with everything an upload would have carried.`;
+  els.downloadHint.textContent = `Exports the selected ${kind} to your computer, packed with everything an upload would have carried.`;
   // A textarea honours line breaks in its placeholder, so the two sentences get a line each, with a
   // blank one between them.
   els.selectionDescription.placeholder = `What event does this ${kind} showcase?\n\nNote anything that went wrong in it, or any other details you want to share along with the clip.`;
@@ -2421,7 +2421,7 @@ function updateDeliveryGate(): void {
     : !selected
       ? "Drag the In and Out handles under the player to select a snippet."
       : !described
-        ? `Describe the ${kind} above before saving or uploading.`
+        ? `Describe the ${kind} above before exporting or uploading.`
         : "";
   // A finished delivery's own line outranks these captions until it is retired.
   if (!showsOutcome(els.downloadStatus)) setStatus(els.downloadStatus, blocked);
@@ -2445,11 +2445,11 @@ function currentEntities(now: Date): AssetEntities {
   return { sourceName: state.sourceName, mode, inFrame: lo, outFrame: hi, beh: behEntities(now, state.sourceArchive?.path ?? null) };
 }
 
-/** Names the file the Save button is about to produce — the name alone, since it already spells out
+/** Names the file the Export button is about to produce — the name alone, since it already spells out
  * the frame or the frame range. Refreshed on every seek too, frame mode's output following the
  * current frame, hence the long-lived child element rather than rebuilt markup. A preview only, so
  * its own `recording-<label>` stamp is whatever moment it happened to redraw at — the actual
- * delivery restamps it at the instant Save or Upload is pressed. */
+ * delivery restamps it at the instant Export or Upload is pressed. */
 function updateDeliveryPreview(): void {
   const show = state.backend !== null && hasSelection();
   els.downloadPreview.hidden = !show;
@@ -2893,7 +2893,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   const sourceDataset = buildSourceDatasetEntry(currentConfig().api, state.sourceArchive);
   // Read off the module-level identity rather than `provenanceInput.user` (which is only ever set on
   // the upload route, since that field also drives the sidecar's own `uploaded_by`): a visitor can be
-  // signed in while using Save, and deserves the same credit there.
+  // signed in while using Export, and deserves the same credit there.
   const descriptions = mergedDatasetDescriptions(existing, generatedByEntry, sourceDataset, kind, currentUser?.username ?? null);
   for (const [path, doc] of [
     [DATASET_DESCRIPTION_PATH, descriptions.root],
@@ -2906,7 +2906,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   return { entities, directories, createdAt };
 }
 
-/** Saves the selection as a `.tar.gz` holding the same files, at the same paths, an upload would
+/** Exports the selection as a `.tar.gz` holding the same files, at the same paths, an upload would
  * have written — so what is on disk can be unpacked, read, or handed to someone else without having
  * to reconstruct what the archive would have seen. */
 async function runDownload(): Promise<void> {
@@ -2944,19 +2944,19 @@ async function runDownload(): Promise<void> {
     const filename = bundleFileName(state.sourceArchive?.dandisetId ?? null);
     saveBlob(bundle, filename);
     setDeliveryBusy(false);
-    setStatusNaming(els.downloadStatus, "Saved ", filename, ` (${bundled.length} files, ${bytes(bundle.size)})`, "ok");
-    log(`Saved ${filename} (${bundled.length} files, ${bytes(bundle.size)})`, "ok");
+    setStatusNaming(els.downloadStatus, "Exported ", filename, ` (${bundled.length} files, ${bytes(bundle.size)})`, "ok");
+    log(`Exported ${filename} (${bundled.length} files, ${bytes(bundle.size)})`, "ok");
   } catch (e) {
     setDeliveryBusy(false);
-    // A stopped save is not a failed one: nothing was written anywhere, and the card goes back to
-    // where it was so the selection can be adjusted and saved again.
+    // A stopped export is not a failed one: nothing was written anywhere, and the card goes back to
+    // where it was so the selection can be adjusted and exported again.
     if (isInterruption(e)) {
-      setStatus(els.downloadStatus, "Save stopped — nothing was written. Adjust the selection and save again.", "stopped");
-      log("Save stopped.", "warn");
+      setStatus(els.downloadStatus, "Export stopped. Adjust the selection and try again.", "stopped");
+      log("Export stopped.", "warn");
       return;
     }
     setStatus(els.downloadStatus, friendlyError(e), "err");
-    log(`Save failed: ${friendlyError(e)}`, "err");
+    log(`Export failed: ${friendlyError(e)}`, "err");
     console.error(e);
   }
 }
@@ -3164,9 +3164,9 @@ async function initFromUrl(): Promise<void> {
 // The single highest-value injection: most of the others are only interesting once a video is on
 // screen, and this is the only one that puts one there without a local file or a real stream.
 
-/** `mock_ready`'s own step: marks a selection and types a description, the two things Save/Upload
+/** `mock_ready`'s own step: marks a selection and types a description, the two things Export/Upload
  * gate on (see updateDeliveryGate), so the mock video lands directly on a saveable state — the whole
- * point of the injection being to preview real Save/Upload *output* without doing that by hand each
+ * point of the injection being to preview real Export/Upload *output* without doing that by hand each
  * time. `&snippet` marks a real range instead of the default `&frame`'s still frame — frame mode
  * needs no ffmpeg.wasm (and so no CDN) to extract, which is why it is the default, but a snippet is
  * worth previewing live too (`extracted`'s own `VideoCodec`/etc, an overlay if `mock_slp` is given).

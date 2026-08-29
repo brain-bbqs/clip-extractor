@@ -38,7 +38,7 @@ test("delivering the same selection twice re-uses the extract and the overlay", 
   // Save first: one encode for the frame itself, one for the overlay drawn over it.
   await page.locator('#deliverSeg button[data-deliver="download"]').click();
   await Promise.all([page.waitForEvent("download", { timeout: 60_000 }), page.locator("#btnDownload").click()]);
-  await expect(page.locator("#downloadStatus")).toContainText("Saved");
+  await expect(page.locator("#downloadStatus")).toContainText("Exported");
   const afterSave = await countEncodes(page);
   expect(afterSave).toBe(2);
 

@@ -17,7 +17,7 @@
 | `?test&mock_video&mock_slp`                      | Loaded clip with a synthesized, matching pose overlay       | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp)                      |
 | `?test&mock_video&mock_slp&mismatch`             | Same, but refused: the SLEAP card's mismatch state          | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_slp&mismatch)             |
 | `?test&remote_listing=12`                        | Browse pane, 12 fake videos named `sub-01/ses-01/…` and up  | [Open](https://clip-extractor.brain-bbqs.org/?test&remote_listing=12)                        |
-| `?test&mock_video&mock_ready&from_local&frame`   | Selected, described, Save/Upload enabled — no clicking      | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_ready&from_local&frame)   |
+| `?test&mock_video&mock_ready&from_local&frame`   | Selected, described, Export/Upload enabled — no clicking    | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_ready&from_local&frame)   |
 | `?test&mock_video&mock_ready&from_local&snippet` | A marked range of a locally dropped video                   | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_ready&from_local&snippet) |
 | `?test&mock_video&mock_ready&from_ember&frame`   | A still frame of an archive-sourced `sub-01/ses-02` video   | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_ready&from_ember&frame)   |
 | `?test&mock_video&mock_ready&from_ember&snippet` | A marked range of that same archive-sourced video           | [Open](https://clip-extractor.brain-bbqs.org/?test&mock_video&mock_ready&from_ember&snippet) |
@@ -47,9 +47,9 @@ through the same overlay code a real `.slp` would be, or `mock_slp&mismatch` to 
 describe a different recording, previewing the SLEAP card's mismatch refusal. Add `mock_audio` to give
 the clip a (near-silent) audio track, which is what makes a saved bundle name its `sourcedata/` copy of
 the source `_audiovideo` rather than `_video` and describe the sound in that copy's sidecar; nothing
-extracted from it ever carries audio, so the derivative stays `_video`. Save works fully offline, so the
+extracted from it ever carries audio, so the derivative stays `_video`. Export works fully offline, so the
 resulting `.tar.gz` can be downloaded and unpacked to see the whole tree, without needing a real EMBER
-sign-in. Add `mock_ready` to skip the manual steps Save/Upload gate on entirely —
+sign-in. Add `mock_ready` to skip the manual steps Export/Upload gate on entirely —
 marking a selection and typing a description — so the link lands directly on a saveable state, ready
 for one click, rather than the gated "describe it first" state `mock_video` alone previews (itself
 worth trying, since it is what a real visitor sees too). Pair it with the two choices below, the way

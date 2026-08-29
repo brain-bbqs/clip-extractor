@@ -4,7 +4,7 @@
 
 #### 🚀 Enhancement
 
-- A save or an upload already under way can now be stopped: a **Stop** button stands beside **Save**/**Upload** while one runs, and pressing it hands the card back so an accidentally long selection can be adjusted and sent again ([#56](https://github.com/brain-bbqs/clip-extractor/pull/56))
+- The **Save** side of the delivery card is now called **Export**, and an export or an upload already under way can be stopped: a **Stop** button stands beside it while one runs, and pressing it hands the card back so an accidentally long selection can be adjusted and sent again ([#56](https://github.com/brain-bbqs/clip-extractor/pull/56))
 
 ## 1.4.1
 

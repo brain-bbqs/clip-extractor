@@ -212,7 +212,7 @@ header h1 {
 :root[data-signed-in="1"] #oauthSignedIn[hidden] {
   display: inline-flex !important;
 }
-/* Same pre-paint stand-in for the delivery card's Save/Upload toggle, which is only on screen while
+/* Same pre-paint stand-in for the delivery card's Export/Upload toggle, which is only on screen while
    signed in: a refresh with stored tokens keeps it in place rather than dropping it for a frame and
    sliding the card's contents up. */
 :root[data-signed-in="1"] #deliverToggleRow[hidden] {
@@ -1574,7 +1574,7 @@ textarea {
   gap: 0.5rem;
   margin-top: 1rem;
 }
-/* Save/Upload and the Stop that joins it while one is running, side by side on the bar's first row */
+/* Export/Upload and the Stop that joins it while one is running, side by side on the bar's first row */
 .action-buttons {
   display: flex;
   align-items: center;
