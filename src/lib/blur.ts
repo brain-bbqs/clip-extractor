@@ -53,14 +53,6 @@ export function clampRegion(region: BlurRegion, width: number, height: number): 
   };
 }
 
-/** Which region a point falls in, latest first (the one drawn on top), or -1 for none. */
-export function hitRegion(regions: BlurRegion[], x: number, y: number): number {
-  for (let i = regions.length - 1; i >= 0; i--) {
-    if (Math.hypot(x - regions[i].x, y - regions[i].y) <= regions[i].radius) return i;
-  }
-  return -1;
-}
-
 /** Where the frame sits inside the box the player draws it in: the scale it is drawn at, and the
  * letterbox margins left around it. */
 export interface FrameFit {

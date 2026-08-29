@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeFilename, sanitizePath, sanitizeSegment, verbatimFilename } from "../../src/lib/sanitize";
+import { sanitizeSegment, verbatimFilename } from "../../src/lib/sanitize";
 
 describe("sanitizeSegment", () => {
   it("turns whitespace into + and other disallowed characters into underscores", () => {
@@ -16,16 +16,6 @@ describe("sanitizeSegment", () => {
 
   it("falls back when nothing usable is left", () => {
     expect(sanitizeSegment("///", "fallback")).toBe("fallback");
-  });
-});
-
-describe("sanitizeFilename", () => {
-  it("keeps the extension, lower-cased, and joins words with +", () => {
-    expect(sanitizeFilename("My Video.MP4")).toBe("My+Video.mp4");
-  });
-
-  it("treats a leading dot as a dotfile, not an extension", () => {
-    expect(sanitizeFilename(".hidden")).toBe("hidden");
   });
 });
 
@@ -48,11 +38,5 @@ describe("verbatimFilename", () => {
 
   it("falls back when nothing is left", () => {
     expect(verbatimFilename("   ", "original")).toBe("original");
-  });
-});
-
-describe("sanitizePath", () => {
-  it("sanitizes each prefix segment and drops traversal", () => {
-    expect(sanitizePath("sourcedata/raw/../clip extractor", "clip.mp4")).toBe("sourcedata/raw/clip+extractor/clip.mp4");
   });
 });

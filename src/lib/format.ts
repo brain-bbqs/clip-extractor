@@ -62,8 +62,3 @@ export function initialsFrom(name: string): string {
   if (parts.length < 2) return "??";
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
-
-/** Formats a Blob's size via {@link bytes}. */
-export function blobSize(b: Blob): string {
-  return bytes(b.size);
-}

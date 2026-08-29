@@ -12,6 +12,7 @@ import {
   windowFor,
   windowHalfFrames,
   windowHalfSeconds,
+  clamp,
   DEFAULT_WINDOW_HALF_SECONDS,
   type TimelineView,
 } from "./lib/timeline";
@@ -41,32 +42,12 @@ import {
   type SlpSourceMeta,
 } from "./lib/match";
 import { alignDenseFrames, probeNwbSeriesLength } from "./lib/nwb";
-import { clampRegion, defaultBlurRadius, frameFit, maxBlurRadius, paintBlurRegions, MIN_BLUR_RADIUS, type BlurRegion } from "./lib/blur";
+import { paintBlurRegions, type BlurRegion } from "./lib/blur";
 import { containsHumanSubjects, fetchDraftMetadata } from "./lib/humanSubjects";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
-import {
-  canSweep,
-  dandisetWebUrl,
-  fetchDandisetVideos,
-  hydrateDandisetNames,
-  archiveSourceOf,
-  indexDandisets,
-  listManifestObjects,
-  mergeDandisets,
-  sweepArchiveVideos,
-  type ArchiveDandiset,
-  type ArchiveSource,
-  type ArchiveVideo,
-} from "./lib/archives";
-import {
-  isAssetDownloadUrl,
-  listEmbargoedVideos,
-  listOwnedEmbargoedDandisets,
-  listPublicDandisetIds,
-  resolveEmbargoedStreamUrl,
-} from "./lib/embargoed";
-import { loadCachedNames, saveCachedNames } from "./lib/archiveNames";
+import { type ArchiveSource } from "./lib/archives";
+import { isAssetDownloadUrl, resolveEmbargoedStreamUrl } from "./lib/embargoed";
 import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
 import {
   defaultDeliveryMode,
@@ -117,9 +98,10 @@ import { friendlyError } from "./lib/errors";
 import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
 import { StageStatus } from "./ui/stageStatus";
+import { createBlurTool } from "./ui/blurTool";
+import { createBrowsePane } from "./ui/browsePane";
 import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type UrlState } from "./lib/urlState";
 import {
-  fakeArchiveBrowse,
   fakeIncomingDatasets,
   fromEmberArchiveSource,
   fromEmberSourceUrl,
@@ -145,6 +127,18 @@ els.versionIndicator.textContent = `v${__APP_VERSION__}`;
 // paint rather than faking a state and then correcting it. Null on every ordinary load: `?test` is
 // never present outside of somebody deliberately pasting one of these URLs.
 const testInjection = readTestInjection(location.search);
+
+/** How many datasets `?test&num_datasets=` asks the destination picker to fake, or null when it was
+ * not given — which is every ordinary load. Read in place of the raw field so the "was it given?"
+ * question is asked one way rather than four. */
+function fakedDatasetCount(): number | null {
+  return testInjection?.numDatasets ?? null;
+}
+
+/** The same for `?test&remote_listing=`, which fakes the browse pane's whole listing. */
+function fakedListingCount(): number | null {
+  return testInjection?.remoteListing ?? null;
+}
 
 /** What the stage says with nothing loaded and nothing gone wrong, kept from the markup so a fresh
  * attempt can put it back over the last one's refusal. */
@@ -514,13 +508,13 @@ const stageFailure: LoadFailureReport = (name, message) => {
 
 /** Says so in the browse pane, for a video picked out of it. */
 const browseFailure: LoadFailureReport = (name, message) => {
-  browseSay(`${failureHeadline(name)}${PARAGRAPH}${message}`, "err");
+  browsePane.say(`${failureHeadline(name)}${PARAGRAPH}${message}`, "err");
 };
 
 /** Takes down whatever the last attempt left behind, on both surfaces. Called as an attempt
  * begins, so the two can never be on screen together. */
 function clearLoadMessages(): void {
-  browseSay("");
+  browsePane.say("");
   if (!state.backend) els.emptyStage.textContent = EMPTY_STAGE_DEFAULT;
 }
 
@@ -577,7 +571,7 @@ async function loadVideo(
     // Blur areas are placed in the pixels of the video that was on screen when they were drawn.
     // Another recording puts something else under them, so they are dropped rather than carried
     // over onto a frame nobody has looked at.
-    clearBlurRegions();
+    blurTool.clearRegions();
     prefetched = null;
     prefetchInFlight = false;
     els.view.width = state.width;
@@ -589,7 +583,7 @@ async function loadVideo(
     // The picker has done its job: from here the card is the player.
     syncVideoStep();
     // The radius controls are bounded by the frame, so they only mean anything once one is loaded.
-    resetBlurRadius();
+    blurTool.resetRadius();
     log(`Loaded ${state.width}×${state.height}, ${state.totalFrames} frames @ ${state.fps.toFixed(2)} fps`, "ok");
     recheckPose();
     // Forced, since resetSelection has already put state.cur where the playhead belongs and there is
@@ -664,7 +658,7 @@ function unloadVideo(): void {
   // Same reasoning as a load: anything derived from the bytes that were behind the player stops
   // describing what is on screen the moment they are gone.
   sourceGeneration++;
-  clearBlurRegions();
+  blurTool.clearRegions();
   prefetched = null;
   prefetchInFlight = false;
   els.view.style.display = "none";
@@ -893,276 +887,29 @@ function renderFrame(): void {
 // ============================================================
 // Blur tool
 // ============================================================
-// Circular areas placed over anything that identifies a subject. The blurred pixels themselves are
-// painted into the canvas by renderFrame above and into every file by lib/extract.ts; everything
-// here is the rings over the top of the picture, the controls beside it, and the bookkeeping that
-// keeps the two in step. The tool is revealed by the human-subjects gate further down — or by an
-// area already existing, which must stay removable however the destination changed underneath it.
+// Circular areas placed over anything that identifies a subject, wired up in ui/blurTool.ts. The
+// areas themselves stay in state.blurRegions, since the player draws them, the delivery card reads
+// them and every extraction carries them; the tool below owns the rings, the controls, and what
+// happens when either is used. Whether it is offered at all is the human-subjects gate's answer,
+// further down — or an area already placed, which must stay removable however the destination
+// changed underneath it.
 
-// Whether the next click on the picture places a new area, rather than landing on it and doing
-// nothing.
-let blurArmed = false;
-// Which area the radius control and Remove act on: an index into state.blurRegions, or null for
-// none. Focus and selection are the same thing, so tabbing between rings moves the controls with it.
-let selectedBlur: number | null = null;
-// The radius a newly placed area starts at, carried between placements so covering four faces at
-// one size is four clicks rather than four resizes.
-let newBlurRadius = MIN_BLUR_RADIUS;
-// The area being dragged, with the grab point's offset from its centre, so a ring picked up by its
-// edge does not jump its centre under the pointer.
-let blurDrag: { index: number; dx: number; dy: number } | null = null;
-
-/** The area at `index`, or null when the index no longer points at one: a ring reads its index back
- * out of the DOM, and the area behind it may have been removed since the event was bound. */
-function blurRegionAt(index: number | null): BlurRegion | null {
-  if (index === null || index < 0 || index >= state.blurRegions.length) return null;
-  return state.blurRegions[index];
-}
-
-/** How large an area is allowed to be, which only means anything once a video is loaded — the
- * bounds are the frame. The fallback matches the markup's own, for the disabled controls. */
-function blurRadiusBounds(): { min: number; max: number } {
-  return { min: MIN_BLUR_RADIUS, max: state.backend ? maxBlurRadius(state.width, state.height) : 100 };
-}
-
-/** Where a pointer is in source-video pixels. The canvas is drawn at whatever size the layout gives
- * it, and letterboxed inside that box when the two are different shapes, so every screen coordinate
- * the tool reads comes through the same fit the rings are placed by. */
-function sourcePoint(clientX: number, clientY: number): { x: number; y: number } {
-  const rect = els.view.getBoundingClientRect();
-  const fit = frameFit(rect.width, rect.height, state.width, state.height);
-  if (!fit.scale) return { x: 0, y: 0 };
-  return { x: (clientX - rect.left - fit.offsetX) / fit.scale, y: (clientY - rect.top - fit.offsetY) / fit.scale };
-}
-
-/** Sizes the controls to the video just loaded. */
-function resetBlurRadius(): void {
-  newBlurRadius = defaultBlurRadius(state.width, state.height);
-  renderBlurTools();
-}
-
-/** Every mutation of the areas funnels through here: the pixels change, so the picture is redrawn,
- * anything already extracted stops describing what is on screen, and the rings follow. */
-function blurChanged(): void {
-  blurGeneration++;
-  clearDeliveryOutcomes();
-  renderFrame();
-  renderBlurTools();
-  updateDeliveryGate();
-}
-
-/** Drops every area — because Clear all was pressed, or because a different video is now under
- * them and their coordinates no longer point at anything anybody has looked at. */
-function clearBlurRegions(): void {
-  setBlurArmed(false);
-  if (!state.blurRegions.length) return;
-  state.blurRegions = [];
-  selectedBlur = null;
-  blurChanged();
-}
-
-function setBlurArmed(armed: boolean): void {
-  blurArmed = armed && state.backend !== null && !deliveryBusy;
-  els.stage.classList.toggle("placing", blurArmed);
-  els.blurAddBtn.classList.toggle("armed", blurArmed);
-  els.blurAddBtn.setAttribute("aria-pressed", String(blurArmed));
-  renderBlurHint();
-}
-
-function addBlurRegion(x: number, y: number): void {
-  if (!state.backend) return;
-  state.blurRegions.push(clampRegion({ x, y, radius: newBlurRadius }, state.width, state.height));
-  selectedBlur = state.blurRegions.length - 1;
-  setBlurArmed(false);
-  blurChanged();
-  // Focus follows the new ring, so it can be nudged into place from the keyboard straight away.
-  (els.blurLayer.children[selectedBlur] as HTMLElement | undefined)?.focus();
-}
-
-function removeBlurRegion(index: number): void {
-  if (!blurRegionAt(index)) return;
-  state.blurRegions.splice(index, 1);
-  selectedBlur = state.blurRegions.length ? Math.min(index, state.blurRegions.length - 1) : null;
-  blurChanged();
-  // The ring that had focus is gone; hand it to its neighbour, or back to the button that makes new
-  // ones, rather than letting it fall to the top of the document.
-  const next = selectedBlur === null ? els.blurAddBtn : (els.blurLayer.children[selectedBlur] as HTMLElement);
-  next.focus();
-}
-
-/** Applies a radius to the selected area, and to the next one placed. */
-function setBlurRadius(radius: number): void {
-  const { min, max } = blurRadiusBounds();
-  newBlurRadius = Math.max(min, Math.min(max, Math.round(radius)));
-  const selected = blurRegionAt(selectedBlur);
-  if (selectedBlur === null || !selected) {
-    renderBlurTools();
-    return;
-  }
-  state.blurRegions[selectedBlur] = clampRegion({ ...selected, radius: newBlurRadius }, state.width, state.height);
-  blurChanged();
-}
-
-function moveBlurRegion(index: number, x: number, y: number): void {
-  const region = blurRegionAt(index);
-  if (!region) return;
-  const next = clampRegion({ ...region, x, y }, state.width, state.height);
-  if (next.x === region.x && next.y === region.y) return;
-  state.blurRegions[index] = next;
-  blurChanged();
-}
-
-/** True while the tool belongs on screen: the destination is a dataset flagged as holding
- * human-subjects data, or an area placed while it was is still there to be found and removed. */
-function blurToolAvailable(): boolean {
-  return state.backend !== null && (humanSubjectsFlagged() || state.blurRegions.length > 0);
-}
-
-function renderBlurHint(): void {
-  const count = state.blurRegions.length;
-  els.blurHint.textContent = blurArmed
-    ? "Click the picture to place a blur area there."
-    : count === 0
-      ? "Add a blur area and drag it over a face, a badge, or anything else identifying. Whatever it covers is blurred in every file this page produces."
-      : `${count} blur area${count === 1 ? "" : "s"} — drag to move, arrow keys to nudge, + and − to resize. The blur is burned into the snippet, the frame and the pose overlay alike.`;
-}
-
-function renderBlurTools(): void {
-  const available = blurToolAvailable();
-  els.blurTools.hidden = !available;
-  if (!available) setBlurArmed(false);
-  const { min, max } = blurRadiusBounds();
-  const radius = blurRegionAt(selectedBlur)?.radius ?? newBlurRadius;
-  for (const input of [els.blurRadiusRange, els.blurRadiusValue]) {
-    input.min = String(min);
-    input.max = String(max);
-    input.disabled = deliveryBusy;
-    // Never while it is the field being dragged or typed into: rewriting a half-entered number
-    // mid-keystroke makes it unusable, and the value is written back on commit anyway.
-    if (document.activeElement !== input) input.value = String(radius);
-  }
-  els.blurAddBtn.disabled = !state.backend || deliveryBusy;
-  els.blurRemoveBtn.disabled = selectedBlur === null || deliveryBusy;
-  els.blurClearBtn.disabled = state.blurRegions.length === 0 || deliveryBusy;
-  // An extraction reads the areas as it runs, so they are held still until it is done.
-  els.blurLayer.classList.toggle("locked", deliveryBusy);
-  syncBlurHandles();
-  renderBlurHint();
-}
-
-/** Which area a ring stands for. Read from the DOM rather than closed over, so removing an area does
- * not leave every later ring pointing one past itself. */
-function blurHandleIndex(handle: HTMLElement): number {
-  return Array.prototype.indexOf.call(els.blurLayer.children, handle);
-}
-
-function createBlurHandle(): HTMLElement {
-  const handle = document.createElement("div");
-  handle.className = "blur-handle";
-  handle.tabIndex = 0;
-  handle.setAttribute("role", "button");
-  handle.addEventListener("focus", () => {
-    selectedBlur = blurHandleIndex(handle);
-    renderBlurTools();
-  });
-  handle.addEventListener("pointerdown", (e) => {
-    const index = blurHandleIndex(handle);
-    const region = blurRegionAt(index);
-    if (!region || deliveryBusy) return;
-    e.preventDefault();
-    // Without this an armed click would also land on the picture and place a second area under the
-    // one being grabbed.
-    e.stopPropagation();
-    handle.setPointerCapture(e.pointerId);
-    handle.classList.add("dragging");
-    handle.focus();
-    const at = sourcePoint(e.clientX, e.clientY);
-    blurDrag = { index, dx: region.x - at.x, dy: region.y - at.y };
-  });
-  handle.addEventListener("pointermove", (e) => {
-    if (!blurDrag || !handle.hasPointerCapture(e.pointerId)) return;
-    const at = sourcePoint(e.clientX, e.clientY);
-    moveBlurRegion(blurDrag.index, at.x + blurDrag.dx, at.y + blurDrag.dy);
-  });
-  const release = (e: PointerEvent): void => {
-    if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
-    handle.classList.remove("dragging");
-    blurDrag = null;
-  };
-  handle.addEventListener("pointerup", release);
-  handle.addEventListener("pointercancel", release);
-  handle.addEventListener("keydown", (e) => {
-    const index = blurHandleIndex(handle);
-    const region = blurRegionAt(index);
-    if (!region || deliveryBusy) return;
-    const step = e.shiftKey ? 10 : 2;
-    if (e.key === "ArrowLeft") moveBlurRegion(index, region.x - step, region.y);
-    else if (e.key === "ArrowRight") moveBlurRegion(index, region.x + step, region.y);
-    else if (e.key === "ArrowUp") moveBlurRegion(index, region.x, region.y - step);
-    else if (e.key === "ArrowDown") moveBlurRegion(index, region.x, region.y + step);
-    else if (e.key === "+" || e.key === "=") setBlurRadius(region.radius + step);
-    else if (e.key === "-" || e.key === "_") setBlurRadius(region.radius - step);
-    else if (e.key === "Delete" || e.key === "Backspace") removeBlurRegion(index);
-    else return;
-    e.preventDefault();
-    // The window-level shortcut handler would otherwise read the same arrow key as a seek.
-    e.stopPropagation();
-  });
-  return handle;
-}
-
-/** Reconciles the rings with the areas, reusing the elements already there: rebuilding them all on
- * every change would drop focus out of the one being nudged, and out of the one being dragged. */
-function syncBlurHandles(): void {
-  while (els.blurLayer.children.length > state.blurRegions.length) els.blurLayer.lastElementChild!.remove();
-  while (els.blurLayer.children.length < state.blurRegions.length) els.blurLayer.append(createBlurHandle());
-  positionBlurHandles();
-}
-
-/** Lays the rings over the canvas. They are positioned against the stage in display pixels, through
- * the same fit that maps a pointer back to the frame — the canvas box is not always the video's
- * shape, and a ring placed by the box's width alone would sit off the circle it stands for, in a
- * shape the circle is not. This re-runs whenever the canvas is resized. */
-function positionBlurHandles(): void {
-  els.blurLayer.hidden = state.blurRegions.length === 0;
-  const fit = frameFit(els.view.clientWidth, els.view.clientHeight, state.width, state.height);
-  const left = els.view.offsetLeft + fit.offsetX;
-  const top = els.view.offsetTop + fit.offsetY;
-  state.blurRegions.forEach((region, i) => {
-    const handle = els.blurLayer.children[i] as HTMLElement | undefined;
-    if (!handle) return;
-    handle.style.left = `${left + (region.x - region.radius) * fit.scale}px`;
-    handle.style.top = `${top + (region.y - region.radius) * fit.scale}px`;
-    handle.style.width = `${region.radius * 2 * fit.scale}px`;
-    handle.style.height = `${region.radius * 2 * fit.scale}px`;
-    handle.classList.toggle("selected", selectedBlur === i);
-    handle.setAttribute("aria-label", `Blur area ${i + 1} of ${state.blurRegions.length}, radius ${region.radius} pixels`);
-  });
-}
-
-els.blurAddBtn.addEventListener("click", () => setBlurArmed(!blurArmed));
-els.view.addEventListener("click", (e) => {
-  if (!blurArmed) return;
-  const at = sourcePoint(e.clientX, e.clientY);
-  addBlurRegion(at.x, at.y);
-});
-els.blurRemoveBtn.addEventListener("click", () => {
-  if (selectedBlur !== null) removeBlurRegion(selectedBlur);
-});
-els.blurClearBtn.addEventListener("click", clearBlurRegions);
-// The slider and the number field are two views of one radius: the slider for finding a size against
-// the picture, the field for saying one exactly.
-for (const input of [els.blurRadiusRange, els.blurRadiusValue]) {
-  input.addEventListener("input", () => {
-    const typed = parseInt(input.value, 10);
-    if (Number.isFinite(typed)) setBlurRadius(typed);
-  });
-  // Writes back whatever was clamped, once the entry has landed.
-  input.addEventListener("change", renderBlurTools);
-}
-new ResizeObserver(positionBlurHandles).observe(els.view);
-window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && blurArmed) setBlurArmed(false);
+const blurTool = createBlurTool(els, {
+  regions: () => state.blurRegions,
+  setRegions: (regions) => {
+    state.blurRegions = regions;
+  },
+  frame: () => ({ loaded: state.backend !== null, width: state.width, height: state.height }),
+  busy: () => deliveryBusy,
+  offered: () => humanSubjectsFlagged(),
+  // Moving, resizing or removing an area changes every pixel an extraction would write, so anything
+  // already extracted has to be re-made rather than re-used.
+  markChanged: () => {
+    blurGeneration++;
+    clearDeliveryOutcomes();
+  },
+  renderFrame: () => renderFrame(),
+  updateDeliveryGate: () => updateDeliveryGate(),
 });
 
 // ============================================================
@@ -1219,7 +966,7 @@ let shiftAnchor: number | null = null;
 /** `extend` is what makes a shift-held seek grow the range; a seek the app makes on its own behalf
  * (settling a panned window) passes false, since nothing was scrubbed over to include. */
 async function seek(frame: number, force = false, extend = true): Promise<void> {
-  frame = Math.max(0, Math.min(state.totalFrames - 1, frame | 0));
+  frame = clamp(frame | 0, 0, state.totalFrames - 1);
   if (extend && shiftHeld && state.mode === "video") growSelection(frame);
   if (frame === state.cur && !force && state.curBitmap) return;
   state.cur = frame;
@@ -1374,7 +1121,7 @@ function view(): TimelineView {
  * when the drag ends. */
 function setViewCenter(frame: number): void {
   const from = view().start;
-  state.viewCenter = Math.max(0, Math.min(Math.max(0, state.totalFrames - 1), Math.round(frame)));
+  state.viewCenter = clamp(Math.round(frame), 0, Math.max(0, state.totalFrames - 1));
   const travel = view().start - from;
   if (travel !== 0) shiftMarkers(travel);
   buildRuler();
@@ -1395,7 +1142,7 @@ function setViewCenter(frame: number): void {
  * that kept moving, and the two drawings of it would then disagree. */
 function shiftMarkers(travel: number): void {
   const last = Math.max(0, state.totalFrames - 1);
-  const slide = (frame: number): number => Math.max(0, Math.min(last, frame + travel));
+  const slide = (frame: number): number => clamp(frame + travel, 0, last);
   state.cur = slide(state.cur);
   if (state.inF != null) state.inF = slide(state.inF);
   if (state.outF != null) state.outF = slide(state.outF);
@@ -1469,7 +1216,7 @@ function setFrameField(input: HTMLInputElement, value: number | null): void {
 function positionHandle(handle: HTMLElement, frame: number, at: TimelineView, unset: boolean): void {
   const t = fractionOf(at, frame);
   const outside = t < 0 || t > 1;
-  handle.style.left = `${Math.max(0, Math.min(1, t)) * 100}%`;
+  handle.style.left = `${clamp(t, 0, 1) * 100}%`;
   handle.classList.toggle("unset", unset);
   handle.classList.toggle("outside", outside);
   handle.setAttribute("aria-valuemax", String(Math.max(0, state.totalFrames - 1)));
@@ -1493,8 +1240,8 @@ function updateSelUI(): void {
   // Clipped to the track, since either end may sit outside the stretch it covers. The border on a
   // clipped side comes off with it (see #selfill.clip-l/-r): the band stops at the edge of the
   // window there, not at the end of the snippet.
-  const a = Math.max(0, Math.min(1, fractionOf(at, lo)));
-  const b = Math.max(0, Math.min(1, fractionOf(at, hi)));
+  const a = clamp(fractionOf(at, lo), 0, 1);
+  const b = clamp(fractionOf(at, hi), 0, 1);
   els.selfill.style.left = `${a * 100}%`;
   els.selfill.style.width = `${(b - a) * 100}%`;
   els.selfill.classList.toggle("clip-l", fractionOf(at, lo) < 0);
@@ -1523,26 +1270,51 @@ function updateSelUI(): void {
 /** Lays out the time gradations under the track. Rebuilt whenever the stretch it covers changes,
  * since the spacing that suits a thirty-second clip is unreadable on a ten-minute one: the step is
  * chosen to land near six labelled divisions whatever the duration, then subdivided into fifths. */
+/** How a ruler draws one gradation: which classes its tick and label take, and how close to the
+ * right-hand end a label has to be before it aligns inwards rather than centring on its tick.
+ *
+ * The two rulers below pass different `atEnd` values (0.96 and 0.97). That is preserved rather than
+ * unified — see brain-bbqs/clip-extractor#54, which is where the question of whether the difference
+ * is deliberate belongs; this only stops the loop from being written twice. */
+interface RulerStyle {
+  tickClass: string;
+  labelClass: string;
+  atEnd: number;
+}
+
+/** Appends one gradation — always a tick, and a label too when `text` is given — placed at `t`
+ * across the ruler.
+ *
+ * `edgeAt` is the fraction the inward-alignment decision is made on, which is not always `t`: the
+ * overview caps its ticks at the right-hand end but still asks whether the mark was past it, so an
+ * hour landing beyond the recording reads as an end label rather than a centred one. It defaults to
+ * `t`, which is what the trim track wants. */
+function appendTick(marks: DocumentFragment, style: RulerStyle, t: number, major: boolean, text: string | null, edgeAt: number = t): void {
+  const position = `${t * 100}%`;
+  const tick = document.createElement("div");
+  tick.className = major ? `${style.tickClass} major` : style.tickClass;
+  tick.style.left = position;
+  marks.append(tick);
+  if (text === null) return;
+  const label = document.createElement("span");
+  // The outermost labels align inwards; centred, they would hang off the ends of the track.
+  const edge = edgeAt < 0.02 ? " at-start" : edgeAt > style.atEnd ? " at-end" : "";
+  label.className = `${style.labelClass}${edge}`;
+  label.style.left = position;
+  label.textContent = text;
+  marks.append(label);
+}
+
+const SEL_RULER_STYLE: RulerStyle = { tickClass: "sel-tick", labelClass: "sel-tick-label", atEnd: 0.96 };
+const OVER_RULER_STYLE: RulerStyle = { tickClass: "over-tick", labelClass: "over-tick-label", atEnd: 0.97 };
+
 function buildRuler(): void {
   els.selRuler.replaceChildren();
   if (!state.backend || state.totalFrames <= 1 || !state.fps) return;
   const at = view();
   const marks = document.createDocumentFragment();
   for (const { frame, seconds, major } of rulerMarks(at, state.fps)) {
-    const t = fractionOf(at, frame);
-    const position = `${t * 100}%`;
-    const tick = document.createElement("div");
-    tick.className = major ? "sel-tick major" : "sel-tick";
-    tick.style.left = position;
-    marks.append(tick);
-    if (!major) continue;
-    const label = document.createElement("span");
-    // The outermost labels align inwards; centred, they would hang off the ends of the track.
-    const edge = t < 0.02 ? " at-start" : t > 0.96 ? " at-end" : "";
-    label.className = `sel-tick-label${edge}`;
-    label.style.left = position;
-    label.textContent = rulerLabel(seconds);
-    marks.append(label);
+    appendTick(marks, SEL_RULER_STYLE, fractionOf(at, frame), major, major ? rulerLabel(seconds) : null);
   }
   els.selRuler.append(marks);
 }
@@ -1569,18 +1341,7 @@ function buildOverviewRuler(): void {
   const marks = document.createDocumentFragment();
   for (const { frame, hour, labelled } of hourMarks(state.totalFrames, state.fps, els.overBar.clientWidth)) {
     const t = frame / Math.max(1, state.totalFrames - 1);
-    const position = `${Math.min(1, t) * 100}%`;
-    const tick = document.createElement("div");
-    tick.className = labelled ? "over-tick major" : "over-tick";
-    tick.style.left = position;
-    marks.append(tick);
-    if (!labelled) continue;
-    const label = document.createElement("span");
-    const edge = t < 0.02 ? " at-start" : t > 0.97 ? " at-end" : "";
-    label.className = `over-tick-label${edge}`;
-    label.style.left = position;
-    label.textContent = `${hour}:00`;
-    marks.append(label);
+    appendTick(marks, OVER_RULER_STYLE, Math.min(1, t), labelled, labelled ? `${hour}:00` : null, t);
   }
   els.overRuler.append(marks);
 }
@@ -1589,7 +1350,7 @@ function buildOverviewRuler(): void {
 function updateOverview(at: TimelineView): void {
   if (els.overviewWrap.hidden) return;
   const den = Math.max(1, state.totalFrames - 1);
-  const pos = (frame: number) => `${Math.max(0, Math.min(1, frame / den)) * 100}%`;
+  const pos = (frame: number) => `${clamp(frame / den, 0, 1) * 100}%`;
   els.overWin.style.left = pos(at.start);
   // Spans the frames it covers, first to last, on the same scale the marks below are placed on: a
   // width taken over the frame count rather than the span between them would leave the band and the
@@ -1612,7 +1373,7 @@ function updateOverview(at: TimelineView): void {
 function overFrameAtClientX(clientX: number): number {
   const rect = els.overBar.getBoundingClientRect();
   if (rect.width <= 0) return 0;
-  const t = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const t = clamp((clientX - rect.left) / rect.width, 0, 1);
   return Math.round(t * Math.max(0, state.totalFrames - 1));
 }
 
@@ -1696,9 +1457,9 @@ function frameAtClientX(clientX: number): number {
  * dragged the range is a real one, and a band with a "—" at one end of it reads as a bug. */
 function setSelection(lo: number, hi: number): void {
   const last = Math.max(0, state.totalFrames - 1);
-  const clamp = (frame: number) => Math.max(0, Math.min(last, Math.round(frame)));
-  const nextIn = clamp(Math.min(lo, hi));
-  const nextOut = clamp(Math.max(lo, hi));
+  const held = (frame: number) => clamp(Math.round(frame), 0, last);
+  const nextIn = held(Math.min(lo, hi));
+  const nextOut = held(Math.max(lo, hi));
   if (nextIn === state.inF && nextOut === state.outF) return;
   state.inF = nextIn;
   state.outF = nextOut;
@@ -1764,7 +1525,7 @@ function wireHandle(handle: HTMLElement, read: () => number, move: (frame: numbe
     e.preventDefault();
     // The window-level shortcut handler would otherwise read the same arrow key as a seek too.
     e.stopPropagation();
-    move(Math.max(0, Math.min(last, next)));
+    move(clamp(next, 0, last));
   });
 }
 wireHandle(
@@ -1807,7 +1568,7 @@ els.selfill.addEventListener("pointermove", (e) => {
   const last = Math.max(0, state.totalFrames - 1);
   // Clamp the shift rather than either end, so sliding into a boundary stops the band there instead
   // of squashing it against the edge.
-  const shift = Math.max(-bandDrag.lo, Math.min(last - bandDrag.hi, frameAtClientX(e.clientX) - bandDrag.grabbedAt));
+  const shift = clamp(frameAtClientX(e.clientX) - bandDrag.grabbedAt, -bandDrag.lo, last - bandDrag.hi);
   if (shift !== 0) bandDrag.moved = true;
   setSelection(bandDrag.lo + shift, bandDrag.hi + shift);
 });
@@ -1835,7 +1596,7 @@ function wireFrameField(input: HTMLInputElement, read: () => number | null, appl
   };
   const commit = (): void => {
     const typed = parseInt(input.value.trim(), 10);
-    if (Number.isFinite(typed)) apply(Math.max(0, Math.min(Math.max(0, state.totalFrames - 1), typed)));
+    if (Number.isFinite(typed)) apply(clamp(typed, 0, Math.max(0, state.totalFrames - 1)));
     refresh();
   };
   input.addEventListener("change", commit);
@@ -1908,8 +1669,8 @@ function enablePlayer(on: boolean): void {
 function wireSeg(segEl: HTMLElement, apply: (value: string) => void): void {
   segEl.querySelectorAll("button").forEach((b) => {
     b.addEventListener("click", () => {
-      selectSeg(segEl, Object.values(b.dataset)[0]);
       const value = Object.values(b.dataset)[0];
+      selectSeg(segEl, value);
       if (value != null) apply(value);
     });
   });
@@ -1936,7 +1697,7 @@ function setSrcPane(src: SourceKind): void {
   els.emberPane.hidden = src !== "ember";
   // Reading the archive costs a bucket listing and a manifest per dataset, so nothing is read until
   // somebody actually opens the pane.
-  if (src === "browse" && !browse) void refreshBrowse();
+  if (src === "browse" && !browsePane.opened()) void browsePane.refresh();
 }
 wireSeg(els.srcSeg, (v) => setSrcPane(v as SourceKind));
 
@@ -1954,502 +1715,30 @@ els.emberUrl.addEventListener("keydown", (e) => {
 // ============================================================
 // Browsing EMBER
 // ============================================================
-// Two halves, because an archive answers for a public dataset and an embargoed one in completely
-// different ways. What is public is read straight out of EMBER's public S3 bucket (lib/archives.ts):
-// one listing to learn which datasets exist, then the small `.jsonld` manifests each one publishes,
-// with no sign-in and no call to the API. What is embargoed cannot be read that way at all — its
-// manifests are listed in the bucket but refuse anonymous reads, which is the point — so a signed-in
-// visitor's own datasets are asked of the API instead (lib/embargoed.ts) and merged into the same
-// list.
+// The pane itself is ui/browsePane.ts; what it needs from the rest of the page is below. It reads
+// the archive two ways — the public S3 bucket for what is public, the API for what a signed-in
+// visitor owns — and neither of those is this file's business; what is, is the sign-in state it
+// reads, the player a picked video opens in, and the stage that answers for a video asked for
+// anywhere else.
 
-/** Dataset rows put on the page at once, so a filter that matches everything cannot flood it. */
-const BROWSE_ROW_LIMIT = 200;
-
-interface BrowseState {
-  datasets: ArchiveDandiset[];
-  /** Titles of the *public* datasets, read from their manifests. An embargoed dataset carries its
-   * own title from the API listing that found it. */
-  names: Map<string, string>;
-  /** Videos per dataset id. A dataset missing from the map has not had its file list read yet. */
-  videos: Map<string, ArchiveVideo[]>;
-  /** Whether this pass reads every dataset's file list, and so gets to say which datasets hold
-   * video. True from the moment the sweep is known to be affordable, not from the moment it
-   * finishes: the list then fills in with the datasets the sweep has confirmed, instead of painting
-   * every candidate up front and taking most of them back once it lands. False on an archive too
-   * large to sweep at all (see SWEEP_BUDGET_BYTES), where nothing is confirmable and every
-   * candidate is listed. */
-  sweeping: boolean;
-  /** True once every dataset's file list has been read, which is what "with video only" needs. */
-  swept: boolean;
-  selected: string | null;
-  /** The asset URL of the video last picked out of the list, so its row can be marked the way the
-   * open dataset's is. Held by asset URL rather than by path, which only identifies a file within
-   * its own dataset. */
-  selectedVideo: string | null;
-  /** Cancels this pass's outstanding reads when the pane is rebuilt (a sign-in, say). */
-  abort: AbortController;
-}
-
-let browse: BrowseState | null = null;
-/** Bumped on every rebuild, so a slow pass that has been superseded cannot paint over the one that
- * replaced it. */
-let browseGeneration = 0;
-/** Whether the list on screen was built signed in. What the pane can see changes with that and
- * with nothing else about the upload side, so it is the only thing that forces a rebuild. */
-let browseSignedIn = false;
-let browseFilterTimer: ReturnType<typeof setTimeout> | undefined;
-/** The label and trailing-detail nodes of the rows currently on the page, so a name or a video
- * count arriving mid-sweep updates one row instead of rebuilding the list. */
-const browseRowLabels = new Map<string, HTMLElement>();
-const browseRowMeta = new Map<string, HTMLElement>();
-/** The row buttons of the videos currently listed, by asset URL, so picking one can mark it where
- * it sits instead of rebuilding the list around it. */
-const browseVideoRows = new Map<string, HTMLElement>();
-
-/** The archive config the browse pane's API calls run under. Unlike currentConfig(), it is not
- * tied to the upload destination picker: which dataset is being read is passed per call. */
-function browseConfig(): ArchiveConfig {
-  return resolveConfig({ dandisetId: "", oauthAccessToken: oauthTokens?.accessToken });
-}
-
-function browseSay(message: string, cls: "" | "err" = ""): void {
-  setMessage(els.browseStatus, message, APP_LINKS);
-  els.browseStatus.classList.toggle("err", cls === "err");
-}
-
-/** Empties a list and replaces it with a single explanatory line. */
-function browseEmpty(list: HTMLUListElement, message: string): void {
-  list.replaceChildren();
-  const li = document.createElement("li");
-  const p = document.createElement("p");
-  p.className = "browse-empty";
-  p.textContent = message;
-  li.append(p);
-  list.append(li);
-}
-
-/** Empties the video list and says why, dropping the rows the selection mark tracks along with it. */
-function browseVideosEmpty(message: string): void {
-  browseVideoRows.clear();
-  browseEmpty(els.browseVideos, message);
-}
-
-/** The title to show for a dataset, wherever it came from. */
-function browseName(current: BrowseState, dandiset: ArchiveDandiset): string {
-  return dandiset.name || current.names.get(dandiset.id) || "";
-}
-
-/** Reads the archive from scratch. Run when the pane is first opened and again whenever signing in
- * or out changes which datasets there are to see. */
-async function refreshBrowse(): Promise<void> {
-  const reopen = browse?.selected ?? null;
-  // A rebuild changes what the pane can see, not what is on the stage, so the video picked out of it
-  // stays picked and its row is marked again as soon as the list holding it is drawn.
-  const picked = browse?.selectedVideo ?? null;
-  browse?.abort.abort();
-  browseSignedIn = isSignedIn();
-  const generation = ++browseGeneration;
-  const current: BrowseState = {
-    datasets: [],
-    names: loadCachedNames(),
-    videos: new Map(),
-    sweeping: false,
-    swept: false,
-    selected: null,
-    selectedVideo: picked,
-    abort: new AbortController(),
-  };
-  browse = current;
-  const signal = current.abort.signal;
-  els.browseDandisetLink.hidden = true;
-  els.browseVideoHeading.textContent = "Videos";
-  browseVideosEmpty("Choose a dataset to see the videos in it.");
-  els.browseDandisets.replaceChildren();
-
-  // `?test&remote_listing=N` fakes the whole pane — the bucket listing, the manifests, and the
-  // embargoed API listing all at once — so a live smoketest never reads the real archive. Marked
-  // swept immediately, since there is nothing left to sweep: every dataset's video list is already
-  // in hand.
-  if (testInjection?.remoteListing !== null && testInjection?.remoteListing !== undefined) {
-    const { datasets, videos } = fakeArchiveBrowse(testInjection.remoteListing);
-    current.datasets = datasets;
-    current.videos = videos;
-    current.sweeping = true;
-    current.swept = true;
-    renderDandisetList();
-    browseSay("");
-    return;
-  }
-
-  browseSay("Reading the EMBER archive listing…");
-
-  try {
-    if (oauthTokens) await ensureFreshOAuth();
-    // Three independent reads, run together; only the bucket listing is allowed to fail the whole
-    // pane. `publicIds` is what actually decides which bucket candidates are shown — see
-    // lib/embargoed.ts's listPublicDandisetIds for why the bucket listing alone cannot be trusted
-    // with that.
-    const [candidates, owned, publicIds] = await Promise.all([
-      listManifestObjects(signal).then(indexDandisets),
-      listOwnedEmbargoed(signal),
-      listPublicDandisetIds(browseConfig(), signal),
-    ]);
-    if (generation !== browseGeneration) return;
-    const pub = candidates.filter((d) => publicIds.has(d.id));
-    current.datasets = mergeDandisets(pub, owned);
-    // Settled before the first paint, because it decides what that paint is allowed to show: a
-    // sweep that is going to run makes every candidate row provisional, and a provisional row is
-    // one the pane would have to take back.
-    current.sweeping = canSweep(current.datasets);
-    renderDandisetList();
-    browseSay(browseCountLine(current));
-    // A rebuild is a change of what can be seen, not a change of mind: whatever dataset was open
-    // before is opened again, so signing in does not close it.
-    const previous = reopen ? current.datasets.find((d) => d.id === reopen) : undefined;
-    if (previous) void selectDandiset(previous);
-    // Titles first, so the list is readable while the longer scan below runs against it.
-    await hydrateNames(current, generation);
-    await sweepVideos(current, generation);
-  } catch (e) {
-    if (signal.aborted) return;
-    log(`Could not read the EMBER archive: ${(e as Error).message}`, "err");
-    browseSay(`Could not read the EMBER archive: ${friendlyError(e)}`, "err");
-  }
-}
-
-/** The datasets the signed-in visitor owns and nobody else can see. Signed out, there are none; a
- * failed lookup is reported and the public half of the pane carries on without them. */
-async function listOwnedEmbargoed(signal: AbortSignal): Promise<ArchiveDandiset[]> {
-  if (!oauthTokens) return [];
-  const cfg = browseConfig();
-  try {
-    // Which datasets are the visitor's own is settled against their username, not against the
-    // archive's `?user=me` filter — see listOwnedEmbargoedDandisets.
+const browsePane = createBrowsePane(els, {
+  appLinks: APP_LINKS,
+  log,
+  // Not tied to the upload destination picker: which dataset is being read is passed per call.
+  config: () => resolveConfig({ dandisetId: "", oauthAccessToken: oauthTokens?.accessToken }),
+  signedIn: () => isSignedIn(),
+  hasToken: () => oauthTokens !== null,
+  ensureFreshToken: () => ensureFreshOAuth(),
+  // Resolved once and held here, since the header's avatar and each upload's provenance record want
+  // the same account the pane does.
+  username: async (cfg) => {
     currentUser ??= await fetchArchiveUser(cfg);
-    return await listOwnedEmbargoedDandisets(cfg, currentUser?.username ?? "");
-  } catch (e) {
-    if (signal.aborted) throw e;
-    log(`Could not list your embargoed datasets: ${(e as Error).message}`, "warn");
-    return [];
-  }
-}
-
-function browseCountLine(current: BrowseState): string {
-  const mine = current.datasets.filter((d) => d.embargoed).length;
-  const suffix = mine ? `, ${mine} of them embargoed and yours` : "";
-  return `${current.datasets.length} EMBER datasets${suffix}.`;
-}
-
-/** Fills in public dataset titles, which is what makes the filter box match anything but a number. */
-async function hydrateNames(current: BrowseState, generation: number): Promise<void> {
-  const missing = current.datasets.filter((d) => !d.embargoed && !current.names.has(d.id));
-  if (!missing.length) return;
-  let done = 0;
-  await hydrateDandisetNames(
-    missing,
-    (dandiset, name) => {
-      if (generation !== browseGeneration) return;
-      done++;
-      if (name) {
-        current.names.set(dandiset.id, name);
-        const label = browseRowLabels.get(dandiset.id);
-        if (label) label.textContent = name;
-      }
-      browseSay(`Naming datasets, ${done} of ${missing.length}…`);
-    },
-    current.abort.signal,
-  );
-  if (generation !== browseGeneration) return;
-  saveCachedNames(current.names);
-  browseSay(browseCountLine(current));
-}
-
-/** Every video in one dataset, asked of whichever side can answer for it. */
-function readDandisetVideos(dandiset: ArchiveDandiset, signal?: AbortSignal): Promise<ArchiveVideo[]> {
-  if (dandiset.embargoed) return listEmbargoedVideos(browseConfig(), dandiset.id, signal);
-  return fetchDandisetVideos(dandiset, signal);
-}
-
-/**
- * Reads every dataset's file list, so the pane can show only the datasets that actually hold video.
- * Skipped when the public manifests are too large to read wholesale (see SWEEP_BUDGET_BYTES): a
- * dataset's file list is then read when it is opened instead.
- */
-async function sweepVideos(current: BrowseState, generation: number): Promise<void> {
-  if (!current.sweeping) return;
-  let done = 0;
-  await sweepArchiveVideos(
-    current.datasets,
-    readDandisetVideos,
-    (dandiset, videos) => {
-      if (generation !== browseGeneration) return;
-      done++;
-      current.videos.set(dandiset.id, videos);
-      // A dataset holding video is a row the list does not have yet; one holding none was never
-      // drawn, so it needs no redraw at all. Either way a row's video count is drawn correct the
-      // first time rather than filled in afterwards.
-      if (videos.length) scheduleDandisetRender();
-      browseSay(`Looking for video, ${done} of ${current.datasets.length} datasets…`);
-    },
-    current.abort.signal,
-  );
-  if (generation !== browseGeneration) return;
-  current.swept = true;
-  // Nothing left to report: the list itself is now the answer, and it holds only what can be
-  // opened. The line stays clear until something is loading or has gone wrong.
-  browseSay("");
-  renderDandisetList();
-}
-
-function videoCountLabel(count: number): string {
-  if (count === 0) return "no video";
-  return count === 1 ? "1 video" : `${count} videos`;
-}
-
-/**
- * The datasets left visible. A dataset holding no video is never shown: this pane exists to pick a
- * video out of one, and a dataset that cannot offer one is a dead end. Whether it holds any is only
- * known once its file list has been read, so wherever a sweep is reading them (see
- * SWEEP_BUDGET_BYTES) a dataset waits its turn out of the list rather than sitting in it unconfirmed
- * — the pane fills in as the sweep lands instead of showing every candidate and then dropping most
- * of them. On an archive too large to sweep, no file list is read up front, so every dataset is
- * listed and a video-less one answers for itself when it is opened. Which datasets are candidates at
- * all (public vs. embargoed) is settled earlier, in refreshBrowse, before any of this ever runs.
- */
-function visibleDandisets(current: BrowseState): ArchiveDandiset[] {
-  const query = els.browseFilter.value.trim().toLowerCase();
-  return current.datasets.filter((d) => {
-    const videos = current.videos.get(d.id);
-    if (current.sweeping && !videos?.length) return false;
-    if (!query) return true;
-    if (d.id.includes(query)) return true;
-    if (browseName(current, d).toLowerCase().includes(query)) return true;
-    return (videos ?? []).some((v) => v.path.toLowerCase().includes(query));
-  });
-}
-
-interface BrowseRowParts {
-  li: HTMLLIElement;
-  labelEl: HTMLElement;
-  metaEl: HTMLElement;
-}
-
-/** One clickable row: an optional leading identifier, a wrapping label, an optional badge, and a
- * trailing detail. */
-function browseRow(id: string, label: string, meta: string, onClick: () => void, badge?: string): BrowseRowParts {
-  const li = document.createElement("li");
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "browse-item";
-  const labelEl = document.createElement("span");
-  labelEl.className = "browse-label";
-  labelEl.textContent = label;
-  const metaEl = document.createElement("span");
-  metaEl.className = "browse-meta";
-  metaEl.textContent = meta;
-  // A row with nothing to identify it beyond its label leads with the label itself, rather than
-  // with a decorative stand-in for the identifier other rows carry.
-  if (id || badge) {
-    // The identifier and the badge share the row's leading column, stacked: a badge set between
-    // the identifier and the title pushes every title across by a different amount, so a column of
-    // them no longer lines up to be read down.
-    const idCol = document.createElement("span");
-    idCol.className = "browse-idcol";
-    if (id) {
-      const idEl = document.createElement("span");
-      idEl.className = "browse-id";
-      idEl.textContent = id;
-      idCol.append(idEl);
-    }
-    if (badge) {
-      const badgeEl = document.createElement("span");
-      badgeEl.className = "badge restricted";
-      badgeEl.textContent = badge;
-      idCol.append(badgeEl);
-    }
-    button.append(idCol);
-  }
-  button.append(labelEl, metaEl);
-  button.addEventListener("click", onClick);
-  li.append(button);
-  return { li, labelEl, metaEl };
-}
-
-/** Appends a line of explanatory text as the last row of a list. */
-function browseNote(list: HTMLUListElement, message: string): void {
-  const li = document.createElement("li");
-  const p = document.createElement("p");
-  p.className = "browse-empty";
-  p.textContent = message;
-  li.append(p);
-  list.append(li);
-}
-
-/** A redraw asked for by the sweep, held to one a frame: the scan lands a dataset at a time and
- * each new row would otherwise rebuild the whole list on its own. */
-let browseRenderFrame: number | null = null;
-
-function scheduleDandisetRender(): void {
-  if (browseRenderFrame === null) browseRenderFrame = requestAnimationFrame(renderDandisetList);
-}
-
-/** What an empty list has to say for itself, which during a sweep is "not yet" rather than "none". */
-function browseEmptyReason(current: BrowseState): string {
-  if (current.sweeping && !current.swept) return "Looking for the datasets that hold video…";
-  return current.datasets.length ? "No dataset matches that filter." : "No datasets found.";
-}
-
-function renderDandisetList(): void {
-  if (browseRenderFrame !== null) cancelAnimationFrame(browseRenderFrame);
-  browseRenderFrame = null;
-  const current = browse;
-  browseRowLabels.clear();
-  browseRowMeta.clear();
-  if (!current) return;
-  const matches = visibleDandisets(current);
-  if (!matches.length) {
-    browseEmpty(els.browseDandisets, browseEmptyReason(current));
-    return;
-  }
-  const shown = matches.slice(0, BROWSE_ROW_LIMIT);
-  els.browseDandisets.replaceChildren();
-  for (const dandiset of shown) {
-    const videos = current.videos.get(dandiset.id);
-    const { li, labelEl, metaEl } = browseRow(
-      dandiset.id,
-      browseName(current, dandiset),
-      videos ? videoCountLabel(videos.length) : dandiset.embargoed ? "" : bytes(dandiset.manifestBytes),
-      () => void selectDandiset(dandiset),
-      dandiset.embargoed ? "embargoed" : undefined,
-    );
-    if (dandiset.id === current.selected) li.firstElementChild?.setAttribute("aria-current", "true");
-    browseRowLabels.set(dandiset.id, labelEl);
-    browseRowMeta.set(dandiset.id, metaEl);
-    els.browseDandisets.append(li);
-  }
-  if (matches.length > shown.length) {
-    browseNote(els.browseDandisets, `Showing ${shown.length} of ${matches.length} matches — narrow the filter to see the rest.`);
-  }
-}
-
-/** Opens one dataset, reading its file list first if the sweep has not already done so. */
-async function selectDandiset(dandiset: ArchiveDandiset): Promise<void> {
-  const current = browse;
-  if (!current) return;
-  const generation = browseGeneration;
-  current.selected = dandiset.id;
-  renderDandisetList();
-  els.browseVideoHeading.textContent = `Videos in ${dandiset.id}`;
-  els.browseDandisetLink.href = dandisetWebUrl(dandiset);
-  els.browseDandisetLink.hidden = false;
-  const known = current.videos.get(dandiset.id);
-  if (known) {
-    renderVideoList(known);
-    return;
-  }
-  const cost = dandiset.embargoed ? "" : ` (${bytes(dandiset.manifestBytes)})`;
-  browseVideosEmpty(`Reading the file list for ${dandiset.id}${cost}…`);
-  try {
-    const videos = await readDandisetVideos(dandiset, current.abort.signal);
-    if (generation !== browseGeneration || browse?.selected !== dandiset.id) return;
-    current.videos.set(dandiset.id, videos);
-    const meta = browseRowMeta.get(dandiset.id);
-    if (meta) meta.textContent = videoCountLabel(videos.length);
-    renderVideoList(videos);
-  } catch (e) {
-    if (current.abort.signal.aborted || generation !== browseGeneration) return;
-    log(`Could not read the file list for ${dandiset.id}: ${(e as Error).message}`, "err");
-    browseVideosEmpty(`The file list for ${dandiset.id} could not be read: ${friendlyError(e)}`);
-  }
-}
-
-/** Marks the row of the video the pane last picked, the same way the open dataset's row is marked.
- * Rows in another dataset's list never match, since the mark is held by asset URL: opening a second
- * dataset leaves nothing highlighted, which is the truth about that list. */
-function markSelectedVideo(): void {
-  for (const [assetUrl, button] of browseVideoRows) {
-    if (assetUrl === browse?.selectedVideo) button.setAttribute("aria-current", "true");
-    else button.removeAttribute("aria-current");
-  }
-}
-
-function renderVideoList(videos: readonly ArchiveVideo[]): void {
-  if (!videos.length) {
-    browseVideosEmpty("This dataset holds no video files.");
-    return;
-  }
-  browseVideoRows.clear();
-  els.browseVideos.replaceChildren();
-  for (const video of videos) {
-    // The manifest reports every asset's size, so a file the player would refuse is marked as one
-    // in the listing rather than only when it is picked. The mark rides in the trailing detail
-    // beside the size that decided it, so a row carrying it still lines its path up with the rest.
-    const refusal = unstreamableRefusal(video.path, video.size);
-    const meta = refusal ? `${bytes(video.size)} · no streaming` : bytes(video.size);
-    const { li } = browseRow("", video.path, meta, () => void streamArchiveVideo(video));
-    const button = li.firstElementChild as HTMLElement | null;
-    if (refusal) {
-      button?.classList.add("blocked");
-      button?.setAttribute("title", refusal);
-    }
-    if (button) browseVideoRows.set(video.assetUrl, button);
-    els.browseVideos.append(li);
-  }
-  markSelectedVideo();
-}
-
-async function streamArchiveVideo(video: ArchiveVideo): Promise<void> {
-  const name = video.path.split("/").pop() || video.path;
-  // Marked before anything is attempted, a refusal included: the highlight says which row was
-  // picked, the way the dataset list's does, and a file that will not open is one whose row most
-  // needs pairing with the reason written out below it.
-  if (browse) browse.selectedVideo = video.assetUrl;
-  markSelectedVideo();
-  // Settled against the size the archive reports, so an embargoed file is refused without a signed
-  // link being asked for on its behalf.
-  const refusal = unstreamableRefusal(video.path, video.size);
-  // Refused or not, this is an attempt: whatever the last one left on the stage comes down first.
-  clearLoadMessages();
-  if (refusal) {
-    log(`${name} will not be opened: ${refusal}`, "err");
-    browseFailure(name, refusal);
-    return;
-  }
-  let streamUrl = video.streamUrl;
-  if (!streamUrl) {
-    // Embargoed: the bytes sit behind a signature the archive has to issue, and it is only good for
-    // a while, so it is asked for at the moment the video is opened rather than when it was listed.
-    browseSay(`Asking EMBER for a link to ${name}…`);
-    try {
-      await ensureFreshOAuth();
-      streamUrl = await resolveEmbargoedStreamUrl(browseConfig(), video.assetUrl);
-    } catch (e) {
-      log(`Could not open the embargoed file ${video.path}: ${(e as Error).message}`, "err");
-      browseFailure(name, friendlyError(e));
-      return;
-    }
-    browseSay("");
-  }
-  // Streamed from the bucket, which answers range requests cross-origin without a redirect, but
-  // recorded against the archive's own asset URL: that is the one naming the file rather than its
-  // content hash — and for an embargoed file, the only one that will still resolve tomorrow.
-  // Reported in the pane, like the refusals above it: a video picked out of a list is answered for
-  // where the list is, whether or not another one is already playing on the stage.
-  void loadVideo(streamUrl, name, video.assetUrl, browseFailure, archiveSourceOf(video));
-}
-
-/**
- * Re-reads the archive when signing in or out has changed what the pane can see. Only then: the
- * auth path this hangs off runs on every load and on every change of upload destination, and
- * rebuilding the list underneath somebody who is reading it is not a free thing to do.
- */
-function syncBrowseToAuth(): void {
-  if (browse && browseSignedIn !== isSignedIn()) void refreshBrowse();
-}
-
-els.browseFilter.addEventListener("input", () => {
-  clearTimeout(browseFilterTimer);
-  browseFilterTimer = setTimeout(renderDandisetList, 150);
+    return currentUser?.username ?? "";
+  },
+  fakedListingCount,
+  clearLoadMessages: () => clearLoadMessages(),
+  reportFailure: browseFailure,
+  openVideo: (streamUrl, name, assetUrl, archive) => void loadVideo(streamUrl, name, assetUrl, browseFailure, archive),
 });
 
 // SLEAP annotations step: hidden until the toggle in the card below is switched on. The overlay
@@ -2659,7 +1948,7 @@ function currentConfig(): ArchiveConfig {
  */
 function isSignedIn(): boolean {
   if (testInjection?.signedOut) return false;
-  if (testInjection?.numDatasets !== null && testInjection?.numDatasets !== undefined) return true;
+  if (fakedDatasetCount() !== null) return true;
   return oauthTokens !== null;
 }
 
@@ -2754,21 +2043,22 @@ async function refreshDandisetOptions(): Promise<void> {
     setDandisetPlaceholder("Please sign in to see your incoming datasets.");
     updateViewDatasetLink();
     applyDeliveryMode();
-    syncBrowseToAuth();
+    browsePane.syncToAuth();
     return;
   }
   // `?test&num_datasets=` fakes the destination list in place of the real listIncomingDandisets
   // call — the one EMBER API round trip a live smoketest must never make, since there is no real
   // sign-in behind it. Everything downstream of applyDatasetList (the embargo warning, the
   // human-subjects gate, the delivery toggle) is real code reading these fakes like any other list.
-  if (testInjection?.numDatasets !== null && testInjection?.numDatasets !== undefined) {
+  const fakedDatasets = fakedDatasetCount();
+  if (fakedDatasets !== null && testInjection) {
     currentUser = { username: "test-user", name: "Live Smoketest" };
     els.oauthUsername.textContent = currentUser.name;
-    applyDatasetList(fakeIncomingDatasets(testInjection.numDatasets, testInjection.embargoed, testInjection.humanSubjects));
+    applyDatasetList(fakeIncomingDatasets(fakedDatasets, testInjection.embargoed, testInjection.humanSubjects));
     updateViewDatasetLink();
     applyDeliveryMode();
     void refreshHumanSubjectsGate();
-    syncBrowseToAuth();
+    browsePane.syncToAuth();
     return;
   }
   await ensureFreshOAuth();
@@ -2790,7 +2080,7 @@ async function refreshDandisetOptions(): Promise<void> {
   updateViewDatasetLink();
   applyDeliveryMode();
   void refreshHumanSubjectsGate();
-  syncBrowseToAuth();
+  browsePane.syncToAuth();
 }
 
 /** Finishes a sign-in that is landing on this load: the redirect back from the archive's authorize
@@ -2941,7 +2231,7 @@ function renderHumanSubjectsBanner(): void {
   els.humanSubjectsUnconfirmed.hidden = confirmed;
   els.humanSubjectsConfirmed.hidden = !confirmed;
   // The blur tool arrives with the warning, and leaves with it unless something has been blurred.
-  renderBlurTools();
+  blurTool.render();
   updateDeliveryGate();
 }
 
@@ -2959,7 +2249,7 @@ async function refreshHumanSubjectsGate(): Promise<void> {
   // The fake datasets from `?test&num_datasets=&human_subjects` have no real draft description to
   // read the marker phrase out of, so the flag they were built with is applied directly instead of
   // asking fetchDraftMetadata about an id that does not exist.
-  if (testInjection?.numDatasets !== null && testInjection?.numDatasets !== undefined) {
+  if (fakedDatasetCount() !== null && testInjection) {
     humanSubjectsRequired = testInjection.humanSubjects;
     renderHumanSubjectsBanner();
     return;
@@ -2982,9 +2272,15 @@ els.humanSubjectsConfirmBtn.addEventListener("click", () => {
   renderHumanSubjectsBanner();
 });
 
+/** The class every status line carries, plus whichever outcome class it is showing. `showsOutcome`
+ * below reads these back, so all three setters have to spell them the same way. */
+function applyHintClass(el: HTMLElement, cls: "" | "ok" | "err"): void {
+  el.className = cls ? `hint ${cls}` : "hint";
+}
+
 function setStatus(el: HTMLElement, message: string, cls: "" | "ok" | "err" = ""): void {
   el.textContent = message;
-  el.className = cls ? `hint ${cls}` : "hint";
+  applyHintClass(el, cls);
 }
 
 /** Same, followed by a link — so an outcome can hand over somewhere to go next. */
@@ -3000,7 +2296,7 @@ function setStatusLink(el: HTMLElement, message: string, href: string, linkText:
   link.rel = "noopener";
   link.textContent = linkText;
   el.replaceChildren(message, link);
-  el.className = cls ? `hint ${cls}` : "hint";
+  applyHintClass(el, cls);
 }
 
 /** True while a status line is showing a finished delivery's outcome — where the bundle was saved,
@@ -3029,13 +2325,13 @@ function setStatusNaming(el: HTMLElement, before: string, filename: string, afte
   const code = document.createElement("code");
   code.textContent = filename;
   el.replaceChildren(before, code, after);
-  el.className = cls ? `hint ${cls}` : "hint";
+  applyHintClass(el, cls);
 }
 
 /** Drives the single progress bar in the upload pane; null hides it. */
 function setUploadProgress(fraction: number | null, done = false): void {
   els.uploadProgress.hidden = fraction === null;
-  els.uploadProgressFill.style.width = `${Math.min(100, Math.max(0, (fraction ?? 0) * 100)).toFixed(1)}%`;
+  els.uploadProgressFill.style.width = `${clamp((fraction ?? 0) * 100, 0, 100).toFixed(1)}%`;
   els.uploadProgressFill.className = done ? "progress-fill ok" : "progress-fill";
 }
 
@@ -3142,7 +2438,7 @@ function setDeliveryBusy(busy: boolean): void {
   if (busy) clearDeliveryOutcomes();
   updateDeliveryGate();
   // An extraction reads the blur areas as it runs, so the tool is held still until it is finished.
-  renderBlurTools();
+  blurTool.render();
 }
 
 /** Extracts the selection `entities` names: an MP4 snippet, or a single PNG frame. Driven by the
@@ -3162,7 +2458,6 @@ async function extractSelection(
       frame: entities.inFrame,
       width: state.width,
       height: state.height,
-      sourceName: entities.sourceName,
       beh: entities.beh,
       blur,
     });
@@ -3199,6 +2494,15 @@ interface DeliverableFile {
 
 /** Hands one assembled file to whichever route asked for it. */
 type DeliverFile = (file: DeliverableFile) => Promise<void>;
+
+/** BEP047's own picture keys for whichever of a snippet or a still frame is being described — a
+ * frame has no duration or frame rate to report, so it takes the shorter set (see
+ * lib/provenance.ts). `detail` is whatever was read off the file itself. */
+function pictureTechnicalFields(kind: SelectionKind, frameCount: number, detail: TechnicalDetail) {
+  return kind === "frame"
+    ? imageTechnicalFields(state.width, state.height, detail)
+    : videoTechnicalFields(state.fps, state.width, state.height, frameCount, detail);
+}
 
 /** An extracted file together with the digest it will be stored under — cached as a pair, since
  * whatever is worth not encoding twice is worth not hashing twice either. */
@@ -3286,7 +2590,6 @@ async function deliverOverlay(
       fps: state.fps,
       width: state.width,
       height: state.height,
-      sourceName: entities.sourceName,
       beh: entities.beh,
       blur,
       onProgress,
@@ -3299,26 +2602,15 @@ async function deliverOverlay(
   // Its own light BEP047 sidecar (see lib/provenance.ts's buildCompanionSidecar) rather than the
   // plain clip's full record: it is a rendering of that clip, not a second source of truth about it,
   // so `Sources` is enough to tie the two together.
-  const technical =
-    entities.mode === "frame"
-      ? imageTechnicalFields(state.width, state.height, media.technical)
-      : videoTechnicalFields(state.fps, state.width, state.height, entities.outFrame - entities.inFrame + 1, media.technical);
+  const technical = pictureTechnicalFields(entities.mode, entities.outFrame - entities.inFrame + 1, media.technical);
   const sidecar = buildCompanionSidecar({
     description: "The selection with the pose overlay drawn into the pixels.",
     technical,
     sources: [mediaPath],
     checksum: { md5: digest.md5, sha256: digest.sha256, dandiEtag: digest.etag },
   });
-  const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
   const sidecarPath = uploadAssetPath(directory, sidecarFileName(entities.beh, entities.mode, "overlay"));
-  const sidecarLabel = "the pose overlay's sidecar";
-  await deliver({
-    blob: sidecarBlob,
-    path: sidecarPath,
-    contentType: "application/json",
-    label: sidecarLabel,
-    digest: await checksumFor(sidecarBlob, sidecarLabel, onProgress),
-  });
+  await deliverJson(deliver, sidecarPath, "the pose overlay's sidecar", sidecar, onProgress);
   return { media, path, digest };
 }
 
@@ -3412,18 +2704,18 @@ async function deliverSidecar(
   onProgress: ExtractProgress,
   input: Parameters<typeof buildCompanionSidecar>[0],
 ): Promise<void> {
-  const sidecar = buildCompanionSidecar(input);
-  const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
   const sidecarName = `${verbatimFilename(filename).replace(/\.[^./]+$/, "")}.json`;
   const sidecarPath = uploadAssetPath(directory, sidecarName);
-  const label = `${filename}'s sidecar`;
-  await deliver({
-    blob: sidecarBlob,
-    path: sidecarPath,
-    contentType: "application/json",
-    label,
-    digest: await checksumFor(sidecarBlob, label, onProgress),
-  });
+  await deliverJson(deliver, sidecarPath, `${filename}'s sidecar`, buildCompanionSidecar(input), onProgress);
+}
+
+/** Serializes `doc` and hands it to `deliver` as a JSON asset at `path`, hashing it on the way like
+ * every other file. Every JSON a delivery writes — the extract's own sidecar, the companions', and
+ * the three `dataset_description.json` files — goes out through here, so all of them are written
+ * with the same two-space indentation and the same content type. */
+async function deliverJson(deliver: DeliverFile, path: string, label: string, doc: unknown, onProgress: ExtractProgress): Promise<void> {
+  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+  await deliver({ blob, path, contentType: "application/json", label, digest: await checksumFor(blob, label, onProgress) });
 }
 
 /** Hashes one file for delivery, reporting progress on whichever route's status line is listening. */
@@ -3492,27 +2784,16 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
 
   // The sidecar the extracted clip/frame itself carries: BEP047's own technical keys, a BEP028
   // `GeneratedBy` entry, and the description typed for this delivery — see lib/provenance.ts.
-  const technical =
-    kind === "frame"
-      ? imageTechnicalFields(state.width, state.height, media.technical)
-      : videoTechnicalFields(state.fps, state.width, state.height, hi - lo + 1, media.technical);
+  const technical = pictureTechnicalFields(kind, hi - lo + 1, media.technical);
   const sidecar = buildBehSidecar(provenanceInput, technical, {
     md5: mediaDigest.md5,
     sha256: mediaDigest.sha256,
     dandiEtag: mediaDigest.etag,
   });
-  const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
   const sidecarPath = uploadAssetPath(directories.derivatives, sidecarFileName(beh, kind));
-  const sidecarLabel = "the sidecar record";
   // The one file that is never re-used: it names this delivery's own instant, so it differs even
   // when everything it describes was carried over from the last one.
-  await deliver({
-    blob: sidecarBlob,
-    path: sidecarPath,
-    contentType: "application/json",
-    label: sidecarLabel,
-    digest: await checksumFor(sidecarBlob, sidecarLabel, onProgress),
-  });
+  await deliverJson(deliver, sidecarPath, "the sidecar record", sidecar, onProgress);
 
   // Every `dataset_description.json` this delivery's tool identity belongs in — the dataset root's
   // own, the derivatives pipeline's, and sourcedata/rawbids's own (so that subtree validates as a
@@ -3532,8 +2813,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
     [DERIVATIVES_DESCRIPTION_PATH, descriptions.derivatives],
     [SOURCEDATA_DESCRIPTION_PATH, descriptions.sourcedata],
   ] as const) {
-    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
-    await deliver({ blob, path, contentType: "application/json", label: path, digest: await checksumFor(blob, path, onProgress) });
+    await deliverJson(deliver, path, path, doc, onProgress);
   }
 
   return { entities, directories, createdAt };
@@ -3681,7 +2961,7 @@ function nameFromUrl(url: string, fallback: string): string {
 async function applyUrlMarks(link: UrlState): Promise<void> {
   if (!state.backend) return;
   const last = Math.max(0, state.totalFrames - 1);
-  const held = (frame: number | null): number | null => (frame === null ? null : Math.max(0, Math.min(last, frame)));
+  const held = (frame: number | null): number | null => (frame === null ? null : clamp(frame, 0, last));
   const lo = held(link.inF);
   const hi = held(link.outF);
   // A link naming no marks at all is a link to the video and nothing more — the older `?url=`
@@ -3769,7 +3049,7 @@ async function initFromUrl(): Promise<void> {
  * whatever `state.cur` points at (see `currentEntities`). */
 async function applyMockReady(injection: TestInjection): Promise<void> {
   const last = Math.max(0, state.totalFrames - 1);
-  const held = (frame: number): number => Math.max(0, Math.min(last, frame));
+  const held = (frame: number): number => clamp(frame, 0, last);
   if (injection.mockReadyMode === "snippet") {
     state.inF = held(injection.mockReadyRange.lo);
     state.outF = held(injection.mockReadyRange.hi);
@@ -3909,7 +3189,7 @@ function applyMockSlp(): void {
 // `?test&remote_listing=N` fakes what the browse pane would show, but the pane itself is only ever
 // opened by hand — so on its own the fake listing would sit unseen behind the local-file dropzone.
 // Switching to it here is what makes the URL alone the whole smoketest.
-if (testInjection?.remoteListing !== null && testInjection?.remoteListing !== undefined) {
+if (fakedListingCount() !== null) {
   selectSeg(els.srcSeg, "browse");
   setSrcPane("browse");
 }

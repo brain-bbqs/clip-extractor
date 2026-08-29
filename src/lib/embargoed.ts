@@ -1,7 +1,7 @@
 import type { ArchiveConfig } from "./types";
 import type { ArchiveDandiset, ArchiveVideo } from "./archives";
 import { isVideoAsset } from "./archives";
-import { apiFetch } from "./api";
+import { apiFetch, listedTitle, nextPagePath, type DandisetListResponse } from "./api";
 
 // The half of the browse pane that the public S3 bucket cannot answer.
 //
@@ -10,18 +10,6 @@ import { apiFetch } from "./api";
 // public dataset. What a signed-in visitor owns is asked of the archive's API instead, against the
 // same OAuth token the upload side already holds: which datasets they own, what is in one, and a
 // signed URL for the bytes of a chosen video.
-
-interface DandisetListItem {
-  identifier: string;
-  embargo_status?: string;
-  draft_version?: { name?: string };
-  most_recent_published_version?: { name?: string };
-}
-
-interface DandisetListResponse {
-  results?: DandisetListItem[];
-  next?: string | null;
-}
 
 interface DandisetOwner {
   username?: string;
@@ -48,7 +36,7 @@ export async function listPublicDandisetIds(cfg: ArchiveConfig, signal?: AbortSi
     if (signal?.aborted) throw new Error("Listing cancelled.");
     const body: DandisetListResponse = (await apiFetch<DandisetListResponse>(anonymous, path)) ?? {};
     for (const d of body.results ?? []) ids.add(d.identifier);
-    path = body.next && body.next.startsWith(cfg.api) ? body.next.slice(cfg.api.length) : null;
+    path = nextPagePath(cfg, body.next);
   }
   return ids;
 }
@@ -90,7 +78,7 @@ export async function listOwnedEmbargoedDandisets(cfg: ArchiveConfig, username: 
       // No manifest is read for it, so there is no manifest size to report.
       manifestBytes: 0,
       embargoed: true,
-      name: d.most_recent_published_version?.name ?? d.draft_version?.name ?? "",
+      name: listedTitle(d),
     }));
 
   const owned = await Promise.all(
@@ -146,9 +134,7 @@ export async function listEmbargoedVideos(cfg: ArchiveConfig, dandisetId: string
         embargoed: true,
       });
     }
-    // The archive returns absolute `next` URLs; apiFetch takes paths, and a next page pointing at
-    // another host is not this archive's to follow.
-    path = body.next && body.next.startsWith(cfg.api) ? body.next.slice(cfg.api.length) : null;
+    path = nextPagePath(cfg, body.next);
   }
   return videos.sort((a, b) => a.path.localeCompare(b.path));
 }

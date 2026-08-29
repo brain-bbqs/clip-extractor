@@ -6,11 +6,9 @@ import {
   clampRegion,
   defaultBlurRadius,
   frameFit,
-  hitRegion,
   maxBlurRadius,
   radiusSigma,
   MIN_BLUR_RADIUS,
-  type BlurRegion,
 } from "../../src/lib/blur";
 
 describe("blur radii", () => {
@@ -65,25 +63,6 @@ describe("clampRegion", () => {
   it("bounds the radius and rounds to whole pixels", () => {
     expect(clampRegion({ x: 10.4, y: 20.6, radius: 9999 }, 640, 480)).toEqual({ x: 10, y: 21, radius: 240 });
     expect(clampRegion({ x: 10, y: 20, radius: 1 }, 640, 480).radius).toBe(MIN_BLUR_RADIUS);
-  });
-});
-
-describe("hitRegion", () => {
-  const regions: BlurRegion[] = [
-    { x: 100, y: 100, radius: 50 },
-    { x: 120, y: 100, radius: 50 },
-  ];
-
-  it("finds the area a point falls in", () => {
-    expect(hitRegion(regions, 60, 100)).toBe(0);
-  });
-
-  it("prefers the latest area where two overlap, which is the one drawn on top", () => {
-    expect(hitRegion(regions, 110, 100)).toBe(1);
-  });
-
-  it("reports -1 for a point outside every area", () => {
-    expect(hitRegion(regions, 400, 400)).toBe(-1);
   });
 });
 

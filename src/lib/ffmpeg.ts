@@ -20,9 +20,14 @@ let currentHandlers: EnsureFfmpegHandlers = {};
  * depends on this browser being able to decode H.264 at all (see lib/videoFormat.ts). */
 export const ENCODED_PIXEL_FORMAT: PixelFormatInfo = { pixelFormat: "yuv420p", bitDepth: 8 };
 
-// Shared by every re-encoding path here: H.264 in a faststart MP4, no audio.
-const ENCODE_ARGS = [
-  "-an",
+/** The encoder settings every H.264 file this app writes is produced with: a faststart MP4 at the
+ * pixel format above. Exported because lib/extract.ts encodes the pose overlay's PNG sequence with
+ * the same settings, and the two drifting apart would leave one output subtly unlike the other.
+ *
+ * Deliberately without `-an`: the overlay's input is a PNG sequence, which has no audio to drop, and
+ * the command string built around these args is quoted verbatim as the file's own `encoding` in its
+ * sidecar. The paths that do have audio to drop add it themselves (see ENCODE_ARGS below). */
+export const X264_MP4_ARGS = [
   "-c:v",
   "libx264",
   "-preset",
@@ -34,6 +39,9 @@ const ENCODE_ARGS = [
   "-movflags",
   "+faststart",
 ];
+
+// Shared by every re-encoding path here: H.264 in a faststart MP4, no audio.
+const ENCODE_ARGS = ["-an", ...X264_MP4_ARGS];
 
 // Nothing this app writes carries audio. A recording it exists to de-identify should not send
 // voices to the archive in a track nobody was shown, and the player never offered one to review.

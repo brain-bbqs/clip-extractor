@@ -1,5 +1,5 @@
 import { VideoSample } from "mediabunny";
-import { ENCODED_PIXEL_FORMAT, encodedFraction, ensureFfmpeg, ffmpegArgs, streamCopies } from "./ffmpeg";
+import { ENCODED_PIXEL_FORMAT, X264_MP4_ARGS, encodedFraction, ensureFfmpeg, ffmpegArgs, streamCopies } from "./ffmpeg";
 import { decodeIndex, drawVideoFrame } from "./video";
 import { drawPose } from "./pose";
 import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
@@ -255,7 +255,6 @@ export interface ExtractFrameParams {
   frame: number;
   width: number;
   height: number;
-  sourceName: string;
   beh: BehEntities;
   /** Areas blurred into the image, in source pixels. */
   blur?: BlurRegion[];
@@ -296,7 +295,6 @@ export interface ExtractOverlayParams {
   fps: number;
   width: number;
   height: number;
-  sourceName: string;
   beh: BehEntities;
   /** Areas blurred into every frame, in source pixels. */
   blur?: BlurRegion[];
@@ -366,25 +364,7 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
     }
     // A PNG sequence rather than a filter over the source: the overlay only exists on these canvases,
     // and image2 input keeps the cut frame-exact without re-deriving the range.
-    const args = [
-      "-framerate",
-      fps.toFixed(4),
-      "-start_number",
-      "0",
-      "-i",
-      "ov%06d.png",
-      "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
-      "-crf",
-      "23",
-      "-pix_fmt",
-      ENCODED_PIXEL_FORMAT.pixelFormat,
-      "-movflags",
-      "+faststart",
-      outName,
-    ];
+    const args = ["-framerate", fps.toFixed(4), "-start_number", "0", "-i", "ov%06d.png", ...X264_MP4_ARGS, outName];
     const command = `ffmpeg ${args.join(" ")}`;
     console.info(`$ ${command}`);
     onProgress?.("Encoding the overlay snippet…", 0);
