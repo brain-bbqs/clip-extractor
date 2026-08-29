@@ -42,7 +42,7 @@ import {
   type SlpSourceMeta,
 } from "./lib/match";
 import { alignDenseFrames, probeNwbSeriesLength } from "./lib/nwb";
-import { clampRegion, defaultBlurRadius, frameFit, maxBlurRadius, paintBlurRegions, MIN_BLUR_RADIUS, type BlurRegion } from "./lib/blur";
+import { paintBlurRegions, type BlurRegion } from "./lib/blur";
 import { containsHumanSubjects, fetchDraftMetadata } from "./lib/humanSubjects";
 import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
@@ -118,6 +118,7 @@ import { friendlyError } from "./lib/errors";
 import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
 import { StageStatus } from "./ui/stageStatus";
+import { createBlurTool } from "./ui/blurTool";
 import { readUrlState, stashUrlState, takeStashedUrlState, writeUrlState, type UrlState } from "./lib/urlState";
 import {
   fakeArchiveBrowse,
@@ -590,7 +591,7 @@ async function loadVideo(
     // Blur areas are placed in the pixels of the video that was on screen when they were drawn.
     // Another recording puts something else under them, so they are dropped rather than carried
     // over onto a frame nobody has looked at.
-    clearBlurRegions();
+    blurTool.clearRegions();
     prefetched = null;
     prefetchInFlight = false;
     els.view.width = state.width;
@@ -602,7 +603,7 @@ async function loadVideo(
     // The picker has done its job: from here the card is the player.
     syncVideoStep();
     // The radius controls are bounded by the frame, so they only mean anything once one is loaded.
-    resetBlurRadius();
+    blurTool.resetRadius();
     log(`Loaded ${state.width}×${state.height}, ${state.totalFrames} frames @ ${state.fps.toFixed(2)} fps`, "ok");
     recheckPose();
     // Forced, since resetSelection has already put state.cur where the playhead belongs and there is
@@ -677,7 +678,7 @@ function unloadVideo(): void {
   // Same reasoning as a load: anything derived from the bytes that were behind the player stops
   // describing what is on screen the moment they are gone.
   sourceGeneration++;
-  clearBlurRegions();
+  blurTool.clearRegions();
   prefetched = null;
   prefetchInFlight = false;
   els.view.style.display = "none";
@@ -906,276 +907,29 @@ function renderFrame(): void {
 // ============================================================
 // Blur tool
 // ============================================================
-// Circular areas placed over anything that identifies a subject. The blurred pixels themselves are
-// painted into the canvas by renderFrame above and into every file by lib/extract.ts; everything
-// here is the rings over the top of the picture, the controls beside it, and the bookkeeping that
-// keeps the two in step. The tool is revealed by the human-subjects gate further down — or by an
-// area already existing, which must stay removable however the destination changed underneath it.
+// Circular areas placed over anything that identifies a subject, wired up in ui/blurTool.ts. The
+// areas themselves stay in state.blurRegions, since the player draws them, the delivery card reads
+// them and every extraction carries them; the tool below owns the rings, the controls, and what
+// happens when either is used. Whether it is offered at all is the human-subjects gate's answer,
+// further down — or an area already placed, which must stay removable however the destination
+// changed underneath it.
 
-// Whether the next click on the picture places a new area, rather than landing on it and doing
-// nothing.
-let blurArmed = false;
-// Which area the radius control and Remove act on: an index into state.blurRegions, or null for
-// none. Focus and selection are the same thing, so tabbing between rings moves the controls with it.
-let selectedBlur: number | null = null;
-// The radius a newly placed area starts at, carried between placements so covering four faces at
-// one size is four clicks rather than four resizes.
-let newBlurRadius = MIN_BLUR_RADIUS;
-// The area being dragged, with the grab point's offset from its centre, so a ring picked up by its
-// edge does not jump its centre under the pointer.
-let blurDrag: { index: number; dx: number; dy: number } | null = null;
-
-/** The area at `index`, or null when the index no longer points at one: a ring reads its index back
- * out of the DOM, and the area behind it may have been removed since the event was bound. */
-function blurRegionAt(index: number | null): BlurRegion | null {
-  if (index === null || index < 0 || index >= state.blurRegions.length) return null;
-  return state.blurRegions[index];
-}
-
-/** How large an area is allowed to be, which only means anything once a video is loaded — the
- * bounds are the frame. The fallback matches the markup's own, for the disabled controls. */
-function blurRadiusBounds(): { min: number; max: number } {
-  return { min: MIN_BLUR_RADIUS, max: state.backend ? maxBlurRadius(state.width, state.height) : 100 };
-}
-
-/** Where a pointer is in source-video pixels. The canvas is drawn at whatever size the layout gives
- * it, and letterboxed inside that box when the two are different shapes, so every screen coordinate
- * the tool reads comes through the same fit the rings are placed by. */
-function sourcePoint(clientX: number, clientY: number): { x: number; y: number } {
-  const rect = els.view.getBoundingClientRect();
-  const fit = frameFit(rect.width, rect.height, state.width, state.height);
-  if (!fit.scale) return { x: 0, y: 0 };
-  return { x: (clientX - rect.left - fit.offsetX) / fit.scale, y: (clientY - rect.top - fit.offsetY) / fit.scale };
-}
-
-/** Sizes the controls to the video just loaded. */
-function resetBlurRadius(): void {
-  newBlurRadius = defaultBlurRadius(state.width, state.height);
-  renderBlurTools();
-}
-
-/** Every mutation of the areas funnels through here: the pixels change, so the picture is redrawn,
- * anything already extracted stops describing what is on screen, and the rings follow. */
-function blurChanged(): void {
-  blurGeneration++;
-  clearDeliveryOutcomes();
-  renderFrame();
-  renderBlurTools();
-  updateDeliveryGate();
-}
-
-/** Drops every area — because Clear all was pressed, or because a different video is now under
- * them and their coordinates no longer point at anything anybody has looked at. */
-function clearBlurRegions(): void {
-  setBlurArmed(false);
-  if (!state.blurRegions.length) return;
-  state.blurRegions = [];
-  selectedBlur = null;
-  blurChanged();
-}
-
-function setBlurArmed(armed: boolean): void {
-  blurArmed = armed && state.backend !== null && !deliveryBusy;
-  els.stage.classList.toggle("placing", blurArmed);
-  els.blurAddBtn.classList.toggle("armed", blurArmed);
-  els.blurAddBtn.setAttribute("aria-pressed", String(blurArmed));
-  renderBlurHint();
-}
-
-function addBlurRegion(x: number, y: number): void {
-  if (!state.backend) return;
-  state.blurRegions.push(clampRegion({ x, y, radius: newBlurRadius }, state.width, state.height));
-  selectedBlur = state.blurRegions.length - 1;
-  setBlurArmed(false);
-  blurChanged();
-  // Focus follows the new ring, so it can be nudged into place from the keyboard straight away.
-  (els.blurLayer.children[selectedBlur] as HTMLElement | undefined)?.focus();
-}
-
-function removeBlurRegion(index: number): void {
-  if (!blurRegionAt(index)) return;
-  state.blurRegions.splice(index, 1);
-  selectedBlur = state.blurRegions.length ? Math.min(index, state.blurRegions.length - 1) : null;
-  blurChanged();
-  // The ring that had focus is gone; hand it to its neighbour, or back to the button that makes new
-  // ones, rather than letting it fall to the top of the document.
-  const next = selectedBlur === null ? els.blurAddBtn : (els.blurLayer.children[selectedBlur] as HTMLElement);
-  next.focus();
-}
-
-/** Applies a radius to the selected area, and to the next one placed. */
-function setBlurRadius(radius: number): void {
-  const { min, max } = blurRadiusBounds();
-  newBlurRadius = Math.max(min, Math.min(max, Math.round(radius)));
-  const selected = blurRegionAt(selectedBlur);
-  if (selectedBlur === null || !selected) {
-    renderBlurTools();
-    return;
-  }
-  state.blurRegions[selectedBlur] = clampRegion({ ...selected, radius: newBlurRadius }, state.width, state.height);
-  blurChanged();
-}
-
-function moveBlurRegion(index: number, x: number, y: number): void {
-  const region = blurRegionAt(index);
-  if (!region) return;
-  const next = clampRegion({ ...region, x, y }, state.width, state.height);
-  if (next.x === region.x && next.y === region.y) return;
-  state.blurRegions[index] = next;
-  blurChanged();
-}
-
-/** True while the tool belongs on screen: the destination is a dataset flagged as holding
- * human-subjects data, or an area placed while it was is still there to be found and removed. */
-function blurToolAvailable(): boolean {
-  return state.backend !== null && (humanSubjectsFlagged() || state.blurRegions.length > 0);
-}
-
-function renderBlurHint(): void {
-  const count = state.blurRegions.length;
-  els.blurHint.textContent = blurArmed
-    ? "Click the picture to place a blur area there."
-    : count === 0
-      ? "Add a blur area and drag it over a face, a badge, or anything else identifying. Whatever it covers is blurred in every file this page produces."
-      : `${count} blur area${count === 1 ? "" : "s"} — drag to move, arrow keys to nudge, + and − to resize. The blur is burned into the snippet, the frame and the pose overlay alike.`;
-}
-
-function renderBlurTools(): void {
-  const available = blurToolAvailable();
-  els.blurTools.hidden = !available;
-  if (!available) setBlurArmed(false);
-  const { min, max } = blurRadiusBounds();
-  const radius = blurRegionAt(selectedBlur)?.radius ?? newBlurRadius;
-  for (const input of [els.blurRadiusRange, els.blurRadiusValue]) {
-    input.min = String(min);
-    input.max = String(max);
-    input.disabled = deliveryBusy;
-    // Never while it is the field being dragged or typed into: rewriting a half-entered number
-    // mid-keystroke makes it unusable, and the value is written back on commit anyway.
-    if (document.activeElement !== input) input.value = String(radius);
-  }
-  els.blurAddBtn.disabled = !state.backend || deliveryBusy;
-  els.blurRemoveBtn.disabled = selectedBlur === null || deliveryBusy;
-  els.blurClearBtn.disabled = state.blurRegions.length === 0 || deliveryBusy;
-  // An extraction reads the areas as it runs, so they are held still until it is done.
-  els.blurLayer.classList.toggle("locked", deliveryBusy);
-  syncBlurHandles();
-  renderBlurHint();
-}
-
-/** Which area a ring stands for. Read from the DOM rather than closed over, so removing an area does
- * not leave every later ring pointing one past itself. */
-function blurHandleIndex(handle: HTMLElement): number {
-  return Array.prototype.indexOf.call(els.blurLayer.children, handle);
-}
-
-function createBlurHandle(): HTMLElement {
-  const handle = document.createElement("div");
-  handle.className = "blur-handle";
-  handle.tabIndex = 0;
-  handle.setAttribute("role", "button");
-  handle.addEventListener("focus", () => {
-    selectedBlur = blurHandleIndex(handle);
-    renderBlurTools();
-  });
-  handle.addEventListener("pointerdown", (e) => {
-    const index = blurHandleIndex(handle);
-    const region = blurRegionAt(index);
-    if (!region || deliveryBusy) return;
-    e.preventDefault();
-    // Without this an armed click would also land on the picture and place a second area under the
-    // one being grabbed.
-    e.stopPropagation();
-    handle.setPointerCapture(e.pointerId);
-    handle.classList.add("dragging");
-    handle.focus();
-    const at = sourcePoint(e.clientX, e.clientY);
-    blurDrag = { index, dx: region.x - at.x, dy: region.y - at.y };
-  });
-  handle.addEventListener("pointermove", (e) => {
-    if (!blurDrag || !handle.hasPointerCapture(e.pointerId)) return;
-    const at = sourcePoint(e.clientX, e.clientY);
-    moveBlurRegion(blurDrag.index, at.x + blurDrag.dx, at.y + blurDrag.dy);
-  });
-  const release = (e: PointerEvent): void => {
-    if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
-    handle.classList.remove("dragging");
-    blurDrag = null;
-  };
-  handle.addEventListener("pointerup", release);
-  handle.addEventListener("pointercancel", release);
-  handle.addEventListener("keydown", (e) => {
-    const index = blurHandleIndex(handle);
-    const region = blurRegionAt(index);
-    if (!region || deliveryBusy) return;
-    const step = e.shiftKey ? 10 : 2;
-    if (e.key === "ArrowLeft") moveBlurRegion(index, region.x - step, region.y);
-    else if (e.key === "ArrowRight") moveBlurRegion(index, region.x + step, region.y);
-    else if (e.key === "ArrowUp") moveBlurRegion(index, region.x, region.y - step);
-    else if (e.key === "ArrowDown") moveBlurRegion(index, region.x, region.y + step);
-    else if (e.key === "+" || e.key === "=") setBlurRadius(region.radius + step);
-    else if (e.key === "-" || e.key === "_") setBlurRadius(region.radius - step);
-    else if (e.key === "Delete" || e.key === "Backspace") removeBlurRegion(index);
-    else return;
-    e.preventDefault();
-    // The window-level shortcut handler would otherwise read the same arrow key as a seek.
-    e.stopPropagation();
-  });
-  return handle;
-}
-
-/** Reconciles the rings with the areas, reusing the elements already there: rebuilding them all on
- * every change would drop focus out of the one being nudged, and out of the one being dragged. */
-function syncBlurHandles(): void {
-  while (els.blurLayer.children.length > state.blurRegions.length) els.blurLayer.lastElementChild!.remove();
-  while (els.blurLayer.children.length < state.blurRegions.length) els.blurLayer.append(createBlurHandle());
-  positionBlurHandles();
-}
-
-/** Lays the rings over the canvas. They are positioned against the stage in display pixels, through
- * the same fit that maps a pointer back to the frame — the canvas box is not always the video's
- * shape, and a ring placed by the box's width alone would sit off the circle it stands for, in a
- * shape the circle is not. This re-runs whenever the canvas is resized. */
-function positionBlurHandles(): void {
-  els.blurLayer.hidden = state.blurRegions.length === 0;
-  const fit = frameFit(els.view.clientWidth, els.view.clientHeight, state.width, state.height);
-  const left = els.view.offsetLeft + fit.offsetX;
-  const top = els.view.offsetTop + fit.offsetY;
-  state.blurRegions.forEach((region, i) => {
-    const handle = els.blurLayer.children[i] as HTMLElement | undefined;
-    if (!handle) return;
-    handle.style.left = `${left + (region.x - region.radius) * fit.scale}px`;
-    handle.style.top = `${top + (region.y - region.radius) * fit.scale}px`;
-    handle.style.width = `${region.radius * 2 * fit.scale}px`;
-    handle.style.height = `${region.radius * 2 * fit.scale}px`;
-    handle.classList.toggle("selected", selectedBlur === i);
-    handle.setAttribute("aria-label", `Blur area ${i + 1} of ${state.blurRegions.length}, radius ${region.radius} pixels`);
-  });
-}
-
-els.blurAddBtn.addEventListener("click", () => setBlurArmed(!blurArmed));
-els.view.addEventListener("click", (e) => {
-  if (!blurArmed) return;
-  const at = sourcePoint(e.clientX, e.clientY);
-  addBlurRegion(at.x, at.y);
-});
-els.blurRemoveBtn.addEventListener("click", () => {
-  if (selectedBlur !== null) removeBlurRegion(selectedBlur);
-});
-els.blurClearBtn.addEventListener("click", clearBlurRegions);
-// The slider and the number field are two views of one radius: the slider for finding a size against
-// the picture, the field for saying one exactly.
-for (const input of [els.blurRadiusRange, els.blurRadiusValue]) {
-  input.addEventListener("input", () => {
-    const typed = parseInt(input.value, 10);
-    if (Number.isFinite(typed)) setBlurRadius(typed);
-  });
-  // Writes back whatever was clamped, once the entry has landed.
-  input.addEventListener("change", renderBlurTools);
-}
-new ResizeObserver(positionBlurHandles).observe(els.view);
-window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && blurArmed) setBlurArmed(false);
+const blurTool = createBlurTool(els, {
+  regions: () => state.blurRegions,
+  setRegions: (regions) => {
+    state.blurRegions = regions;
+  },
+  frame: () => ({ loaded: state.backend !== null, width: state.width, height: state.height }),
+  busy: () => deliveryBusy,
+  offered: () => humanSubjectsFlagged(),
+  // Moving, resizing or removing an area changes every pixel an extraction would write, so anything
+  // already extracted has to be re-made rather than re-used.
+  markChanged: () => {
+    blurGeneration++;
+    clearDeliveryOutcomes();
+  },
+  renderFrame: () => renderFrame(),
+  updateDeliveryGate: () => updateDeliveryGate(),
 });
 
 // ============================================================
@@ -2965,7 +2719,7 @@ function renderHumanSubjectsBanner(): void {
   els.humanSubjectsUnconfirmed.hidden = confirmed;
   els.humanSubjectsConfirmed.hidden = !confirmed;
   // The blur tool arrives with the warning, and leaves with it unless something has been blurred.
-  renderBlurTools();
+  blurTool.render();
   updateDeliveryGate();
 }
 
@@ -3172,7 +2926,7 @@ function setDeliveryBusy(busy: boolean): void {
   if (busy) clearDeliveryOutcomes();
   updateDeliveryGate();
   // An extraction reads the blur areas as it runs, so the tool is held still until it is finished.
-  renderBlurTools();
+  blurTool.render();
 }
 
 /** Extracts the selection `entities` names: an MP4 snippet, or a single PNG frame. Driven by the
