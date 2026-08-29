@@ -3162,7 +3162,6 @@ async function extractSelection(
       frame: entities.inFrame,
       width: state.width,
       height: state.height,
-      sourceName: entities.sourceName,
       beh: entities.beh,
       blur,
     });
@@ -3286,7 +3285,6 @@ async function deliverOverlay(
       fps: state.fps,
       width: state.width,
       height: state.height,
-      sourceName: entities.sourceName,
       beh: entities.beh,
       blur,
       onProgress,

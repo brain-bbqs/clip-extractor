@@ -17,15 +17,6 @@ export function sanitizeSegment(segment: string, fallback: string): string {
   return s || fallback;
 }
 
-/** Sanitizes a file name while preserving (and lower-casing) its extension. */
-export function sanitizeFilename(originalName: string): string {
-  const dot = originalName.lastIndexOf(".");
-  const hasExt = dot > 0; // a dot at index 0 is a dotfile, not an extension
-  const base = hasExt ? originalName.slice(0, dot) : originalName;
-  const ext = hasExt ? originalName.slice(dot).toLowerCase() : "";
-  return `${sanitizeSegment(base, "file")}${ext}`;
-}
-
 /**
  * Keeps a file name as it arrived — punctuation, parentheses and case all intact — removing only
  * spaces, plus whatever could escape the directory or break the path (separators, control
@@ -42,14 +33,4 @@ export function verbatimFilename(originalName: string, fallback = "original"): s
     .replace(/[/\\]+/g, "_")
     .replace(/^\.+/, "");
   return flattened || fallback;
-}
-
-/** Joins a (sanitized) directory prefix and an already-sanitized filename into an asset path. */
-export function sanitizePath(prefix: string, filename: string): string {
-  const segments = prefix
-    .split("/")
-    .map((s) => s.trim())
-    .filter((s) => s && s !== "." && s !== "..")
-    .map((s) => sanitizeSegment(s, "_"));
-  return [...segments, filename].join("/");
 }

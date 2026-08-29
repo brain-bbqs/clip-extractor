@@ -255,7 +255,6 @@ export interface ExtractFrameParams {
   frame: number;
   width: number;
   height: number;
-  sourceName: string;
   beh: BehEntities;
   /** Areas blurred into the image, in source pixels. */
   blur?: BlurRegion[];
@@ -296,7 +295,6 @@ export interface ExtractOverlayParams {
   fps: number;
   width: number;
   height: number;
-  sourceName: string;
   beh: BehEntities;
   /** Areas blurred into every frame, in source pixels. */
   blur?: BlurRegion[];
