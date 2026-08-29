@@ -30,7 +30,10 @@ export interface TimelineView {
   len: number;
 }
 
-function clamp(value: number, lo: number, hi: number): number {
+/** Holds `value` within [lo, hi]. Exported because main.ts bounds frame indices against the
+ * recording, and fractions against the track, in a dozen places, and spelling each one out as a
+ * nested Math.max/Math.min buries which of the three numbers is the value being held. */
+export function clamp(value: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, value));
 }
 

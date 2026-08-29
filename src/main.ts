@@ -12,6 +12,7 @@ import {
   windowFor,
   windowHalfFrames,
   windowHalfSeconds,
+  clamp,
   DEFAULT_WINDOW_HALF_SECONDS,
   type TimelineView,
 } from "./lib/timeline";
@@ -145,6 +146,18 @@ els.versionIndicator.textContent = `v${__APP_VERSION__}`;
 // paint rather than faking a state and then correcting it. Null on every ordinary load: `?test` is
 // never present outside of somebody deliberately pasting one of these URLs.
 const testInjection = readTestInjection(location.search);
+
+/** How many datasets `?test&num_datasets=` asks the destination picker to fake, or null when it was
+ * not given — which is every ordinary load. Read in place of the raw field so the "was it given?"
+ * question is asked one way rather than four. */
+function fakedDatasetCount(): number | null {
+  return testInjection?.numDatasets ?? null;
+}
+
+/** The same for `?test&remote_listing=`, which fakes the browse pane's whole listing. */
+function fakedListingCount(): number | null {
+  return testInjection?.remoteListing ?? null;
+}
 
 /** What the stage says with nothing loaded and nothing gone wrong, kept from the markup so a fresh
  * attempt can put it back over the last one's refusal. */
@@ -1219,7 +1232,7 @@ let shiftAnchor: number | null = null;
 /** `extend` is what makes a shift-held seek grow the range; a seek the app makes on its own behalf
  * (settling a panned window) passes false, since nothing was scrubbed over to include. */
 async function seek(frame: number, force = false, extend = true): Promise<void> {
-  frame = Math.max(0, Math.min(state.totalFrames - 1, frame | 0));
+  frame = clamp(frame | 0, 0, state.totalFrames - 1);
   if (extend && shiftHeld && state.mode === "video") growSelection(frame);
   if (frame === state.cur && !force && state.curBitmap) return;
   state.cur = frame;
@@ -1374,7 +1387,7 @@ function view(): TimelineView {
  * when the drag ends. */
 function setViewCenter(frame: number): void {
   const from = view().start;
-  state.viewCenter = Math.max(0, Math.min(Math.max(0, state.totalFrames - 1), Math.round(frame)));
+  state.viewCenter = clamp(Math.round(frame), 0, Math.max(0, state.totalFrames - 1));
   const travel = view().start - from;
   if (travel !== 0) shiftMarkers(travel);
   buildRuler();
@@ -1395,7 +1408,7 @@ function setViewCenter(frame: number): void {
  * that kept moving, and the two drawings of it would then disagree. */
 function shiftMarkers(travel: number): void {
   const last = Math.max(0, state.totalFrames - 1);
-  const slide = (frame: number): number => Math.max(0, Math.min(last, frame + travel));
+  const slide = (frame: number): number => clamp(frame + travel, 0, last);
   state.cur = slide(state.cur);
   if (state.inF != null) state.inF = slide(state.inF);
   if (state.outF != null) state.outF = slide(state.outF);
@@ -1469,7 +1482,7 @@ function setFrameField(input: HTMLInputElement, value: number | null): void {
 function positionHandle(handle: HTMLElement, frame: number, at: TimelineView, unset: boolean): void {
   const t = fractionOf(at, frame);
   const outside = t < 0 || t > 1;
-  handle.style.left = `${Math.max(0, Math.min(1, t)) * 100}%`;
+  handle.style.left = `${clamp(t, 0, 1) * 100}%`;
   handle.classList.toggle("unset", unset);
   handle.classList.toggle("outside", outside);
   handle.setAttribute("aria-valuemax", String(Math.max(0, state.totalFrames - 1)));
@@ -1493,8 +1506,8 @@ function updateSelUI(): void {
   // Clipped to the track, since either end may sit outside the stretch it covers. The border on a
   // clipped side comes off with it (see #selfill.clip-l/-r): the band stops at the edge of the
   // window there, not at the end of the snippet.
-  const a = Math.max(0, Math.min(1, fractionOf(at, lo)));
-  const b = Math.max(0, Math.min(1, fractionOf(at, hi)));
+  const a = clamp(fractionOf(at, lo), 0, 1);
+  const b = clamp(fractionOf(at, hi), 0, 1);
   els.selfill.style.left = `${a * 100}%`;
   els.selfill.style.width = `${(b - a) * 100}%`;
   els.selfill.classList.toggle("clip-l", fractionOf(at, lo) < 0);
@@ -1523,26 +1536,51 @@ function updateSelUI(): void {
 /** Lays out the time gradations under the track. Rebuilt whenever the stretch it covers changes,
  * since the spacing that suits a thirty-second clip is unreadable on a ten-minute one: the step is
  * chosen to land near six labelled divisions whatever the duration, then subdivided into fifths. */
+/** How a ruler draws one gradation: which classes its tick and label take, and how close to the
+ * right-hand end a label has to be before it aligns inwards rather than centring on its tick.
+ *
+ * The two rulers below pass different `atEnd` values (0.96 and 0.97). That is preserved rather than
+ * unified — see brain-bbqs/clip-extractor#54, which is where the question of whether the difference
+ * is deliberate belongs; this only stops the loop from being written twice. */
+interface RulerStyle {
+  tickClass: string;
+  labelClass: string;
+  atEnd: number;
+}
+
+/** Appends one gradation — always a tick, and a label too when `text` is given — placed at `t`
+ * across the ruler.
+ *
+ * `edgeAt` is the fraction the inward-alignment decision is made on, which is not always `t`: the
+ * overview caps its ticks at the right-hand end but still asks whether the mark was past it, so an
+ * hour landing beyond the recording reads as an end label rather than a centred one. It defaults to
+ * `t`, which is what the trim track wants. */
+function appendTick(marks: DocumentFragment, style: RulerStyle, t: number, major: boolean, text: string | null, edgeAt: number = t): void {
+  const position = `${t * 100}%`;
+  const tick = document.createElement("div");
+  tick.className = major ? `${style.tickClass} major` : style.tickClass;
+  tick.style.left = position;
+  marks.append(tick);
+  if (text === null) return;
+  const label = document.createElement("span");
+  // The outermost labels align inwards; centred, they would hang off the ends of the track.
+  const edge = edgeAt < 0.02 ? " at-start" : edgeAt > style.atEnd ? " at-end" : "";
+  label.className = `${style.labelClass}${edge}`;
+  label.style.left = position;
+  label.textContent = text;
+  marks.append(label);
+}
+
+const SEL_RULER_STYLE: RulerStyle = { tickClass: "sel-tick", labelClass: "sel-tick-label", atEnd: 0.96 };
+const OVER_RULER_STYLE: RulerStyle = { tickClass: "over-tick", labelClass: "over-tick-label", atEnd: 0.97 };
+
 function buildRuler(): void {
   els.selRuler.replaceChildren();
   if (!state.backend || state.totalFrames <= 1 || !state.fps) return;
   const at = view();
   const marks = document.createDocumentFragment();
   for (const { frame, seconds, major } of rulerMarks(at, state.fps)) {
-    const t = fractionOf(at, frame);
-    const position = `${t * 100}%`;
-    const tick = document.createElement("div");
-    tick.className = major ? "sel-tick major" : "sel-tick";
-    tick.style.left = position;
-    marks.append(tick);
-    if (!major) continue;
-    const label = document.createElement("span");
-    // The outermost labels align inwards; centred, they would hang off the ends of the track.
-    const edge = t < 0.02 ? " at-start" : t > 0.96 ? " at-end" : "";
-    label.className = `sel-tick-label${edge}`;
-    label.style.left = position;
-    label.textContent = rulerLabel(seconds);
-    marks.append(label);
+    appendTick(marks, SEL_RULER_STYLE, fractionOf(at, frame), major, major ? rulerLabel(seconds) : null);
   }
   els.selRuler.append(marks);
 }
@@ -1569,18 +1607,7 @@ function buildOverviewRuler(): void {
   const marks = document.createDocumentFragment();
   for (const { frame, hour, labelled } of hourMarks(state.totalFrames, state.fps, els.overBar.clientWidth)) {
     const t = frame / Math.max(1, state.totalFrames - 1);
-    const position = `${Math.min(1, t) * 100}%`;
-    const tick = document.createElement("div");
-    tick.className = labelled ? "over-tick major" : "over-tick";
-    tick.style.left = position;
-    marks.append(tick);
-    if (!labelled) continue;
-    const label = document.createElement("span");
-    const edge = t < 0.02 ? " at-start" : t > 0.97 ? " at-end" : "";
-    label.className = `over-tick-label${edge}`;
-    label.style.left = position;
-    label.textContent = `${hour}:00`;
-    marks.append(label);
+    appendTick(marks, OVER_RULER_STYLE, Math.min(1, t), labelled, labelled ? `${hour}:00` : null, t);
   }
   els.overRuler.append(marks);
 }
@@ -1589,7 +1616,7 @@ function buildOverviewRuler(): void {
 function updateOverview(at: TimelineView): void {
   if (els.overviewWrap.hidden) return;
   const den = Math.max(1, state.totalFrames - 1);
-  const pos = (frame: number) => `${Math.max(0, Math.min(1, frame / den)) * 100}%`;
+  const pos = (frame: number) => `${clamp(frame / den, 0, 1) * 100}%`;
   els.overWin.style.left = pos(at.start);
   // Spans the frames it covers, first to last, on the same scale the marks below are placed on: a
   // width taken over the frame count rather than the span between them would leave the band and the
@@ -1612,7 +1639,7 @@ function updateOverview(at: TimelineView): void {
 function overFrameAtClientX(clientX: number): number {
   const rect = els.overBar.getBoundingClientRect();
   if (rect.width <= 0) return 0;
-  const t = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const t = clamp((clientX - rect.left) / rect.width, 0, 1);
   return Math.round(t * Math.max(0, state.totalFrames - 1));
 }
 
@@ -1696,9 +1723,9 @@ function frameAtClientX(clientX: number): number {
  * dragged the range is a real one, and a band with a "—" at one end of it reads as a bug. */
 function setSelection(lo: number, hi: number): void {
   const last = Math.max(0, state.totalFrames - 1);
-  const clamp = (frame: number) => Math.max(0, Math.min(last, Math.round(frame)));
-  const nextIn = clamp(Math.min(lo, hi));
-  const nextOut = clamp(Math.max(lo, hi));
+  const held = (frame: number) => clamp(Math.round(frame), 0, last);
+  const nextIn = held(Math.min(lo, hi));
+  const nextOut = held(Math.max(lo, hi));
   if (nextIn === state.inF && nextOut === state.outF) return;
   state.inF = nextIn;
   state.outF = nextOut;
@@ -1764,7 +1791,7 @@ function wireHandle(handle: HTMLElement, read: () => number, move: (frame: numbe
     e.preventDefault();
     // The window-level shortcut handler would otherwise read the same arrow key as a seek too.
     e.stopPropagation();
-    move(Math.max(0, Math.min(last, next)));
+    move(clamp(next, 0, last));
   });
 }
 wireHandle(
@@ -1807,7 +1834,7 @@ els.selfill.addEventListener("pointermove", (e) => {
   const last = Math.max(0, state.totalFrames - 1);
   // Clamp the shift rather than either end, so sliding into a boundary stops the band there instead
   // of squashing it against the edge.
-  const shift = Math.max(-bandDrag.lo, Math.min(last - bandDrag.hi, frameAtClientX(e.clientX) - bandDrag.grabbedAt));
+  const shift = clamp(frameAtClientX(e.clientX) - bandDrag.grabbedAt, -bandDrag.lo, last - bandDrag.hi);
   if (shift !== 0) bandDrag.moved = true;
   setSelection(bandDrag.lo + shift, bandDrag.hi + shift);
 });
@@ -1835,7 +1862,7 @@ function wireFrameField(input: HTMLInputElement, read: () => number | null, appl
   };
   const commit = (): void => {
     const typed = parseInt(input.value.trim(), 10);
-    if (Number.isFinite(typed)) apply(Math.max(0, Math.min(Math.max(0, state.totalFrames - 1), typed)));
+    if (Number.isFinite(typed)) apply(clamp(typed, 0, Math.max(0, state.totalFrames - 1)));
     refresh();
   };
   input.addEventListener("change", commit);
@@ -1908,8 +1935,8 @@ function enablePlayer(on: boolean): void {
 function wireSeg(segEl: HTMLElement, apply: (value: string) => void): void {
   segEl.querySelectorAll("button").forEach((b) => {
     b.addEventListener("click", () => {
-      selectSeg(segEl, Object.values(b.dataset)[0]);
       const value = Object.values(b.dataset)[0];
+      selectSeg(segEl, value);
       if (value != null) apply(value);
     });
   });
@@ -2017,15 +2044,20 @@ function browseSay(message: string, cls: "" | "err" = ""): void {
   els.browseStatus.classList.toggle("err", cls === "err");
 }
 
-/** Empties a list and replaces it with a single explanatory line. */
-function browseEmpty(list: HTMLUListElement, message: string): void {
-  list.replaceChildren();
+/** Appends a line of explanatory text as the last row of a list. */
+function browseNote(list: HTMLUListElement, message: string): void {
   const li = document.createElement("li");
   const p = document.createElement("p");
   p.className = "browse-empty";
   p.textContent = message;
   li.append(p);
   list.append(li);
+}
+
+/** Empties a list and replaces it with a single explanatory line. */
+function browseEmpty(list: HTMLUListElement, message: string): void {
+  list.replaceChildren();
+  browseNote(list, message);
 }
 
 /** Empties the video list and says why, dropping the rows the selection mark tracks along with it. */
@@ -2070,8 +2102,9 @@ async function refreshBrowse(): Promise<void> {
   // embargoed API listing all at once — so a live smoketest never reads the real archive. Marked
   // swept immediately, since there is nothing left to sweep: every dataset's video list is already
   // in hand.
-  if (testInjection?.remoteListing !== null && testInjection?.remoteListing !== undefined) {
-    const { datasets, videos } = fakeArchiveBrowse(testInjection.remoteListing);
+  const fakedListing = fakedListingCount();
+  if (fakedListing !== null) {
+    const { datasets, videos } = fakeArchiveBrowse(fakedListing);
     current.datasets = datasets;
     current.videos = videos;
     current.sweeping = true;
@@ -2273,16 +2306,6 @@ function browseRow(id: string, label: string, meta: string, onClick: () => void,
   button.addEventListener("click", onClick);
   li.append(button);
   return { li, labelEl, metaEl };
-}
-
-/** Appends a line of explanatory text as the last row of a list. */
-function browseNote(list: HTMLUListElement, message: string): void {
-  const li = document.createElement("li");
-  const p = document.createElement("p");
-  p.className = "browse-empty";
-  p.textContent = message;
-  li.append(p);
-  list.append(li);
 }
 
 /** A redraw asked for by the sweep, held to one a frame: the scan lands a dataset at a time and
@@ -2659,7 +2682,7 @@ function currentConfig(): ArchiveConfig {
  */
 function isSignedIn(): boolean {
   if (testInjection?.signedOut) return false;
-  if (testInjection?.numDatasets !== null && testInjection?.numDatasets !== undefined) return true;
+  if (fakedDatasetCount() !== null) return true;
   return oauthTokens !== null;
 }
 
@@ -2761,10 +2784,11 @@ async function refreshDandisetOptions(): Promise<void> {
   // call — the one EMBER API round trip a live smoketest must never make, since there is no real
   // sign-in behind it. Everything downstream of applyDatasetList (the embargo warning, the
   // human-subjects gate, the delivery toggle) is real code reading these fakes like any other list.
-  if (testInjection?.numDatasets !== null && testInjection?.numDatasets !== undefined) {
+  const fakedDatasets = fakedDatasetCount();
+  if (fakedDatasets !== null && testInjection) {
     currentUser = { username: "test-user", name: "Live Smoketest" };
     els.oauthUsername.textContent = currentUser.name;
-    applyDatasetList(fakeIncomingDatasets(testInjection.numDatasets, testInjection.embargoed, testInjection.humanSubjects));
+    applyDatasetList(fakeIncomingDatasets(fakedDatasets, testInjection.embargoed, testInjection.humanSubjects));
     updateViewDatasetLink();
     applyDeliveryMode();
     void refreshHumanSubjectsGate();
@@ -2959,7 +2983,7 @@ async function refreshHumanSubjectsGate(): Promise<void> {
   // The fake datasets from `?test&num_datasets=&human_subjects` have no real draft description to
   // read the marker phrase out of, so the flag they were built with is applied directly instead of
   // asking fetchDraftMetadata about an id that does not exist.
-  if (testInjection?.numDatasets !== null && testInjection?.numDatasets !== undefined) {
+  if (fakedDatasetCount() !== null && testInjection) {
     humanSubjectsRequired = testInjection.humanSubjects;
     renderHumanSubjectsBanner();
     return;
@@ -2982,9 +3006,15 @@ els.humanSubjectsConfirmBtn.addEventListener("click", () => {
   renderHumanSubjectsBanner();
 });
 
+/** The class every status line carries, plus whichever outcome class it is showing. `showsOutcome`
+ * below reads these back, so all three setters have to spell them the same way. */
+function applyHintClass(el: HTMLElement, cls: "" | "ok" | "err"): void {
+  el.className = cls ? `hint ${cls}` : "hint";
+}
+
 function setStatus(el: HTMLElement, message: string, cls: "" | "ok" | "err" = ""): void {
   el.textContent = message;
-  el.className = cls ? `hint ${cls}` : "hint";
+  applyHintClass(el, cls);
 }
 
 /** Same, followed by a link — so an outcome can hand over somewhere to go next. */
@@ -3000,7 +3030,7 @@ function setStatusLink(el: HTMLElement, message: string, href: string, linkText:
   link.rel = "noopener";
   link.textContent = linkText;
   el.replaceChildren(message, link);
-  el.className = cls ? `hint ${cls}` : "hint";
+  applyHintClass(el, cls);
 }
 
 /** True while a status line is showing a finished delivery's outcome — where the bundle was saved,
@@ -3029,13 +3059,13 @@ function setStatusNaming(el: HTMLElement, before: string, filename: string, afte
   const code = document.createElement("code");
   code.textContent = filename;
   el.replaceChildren(before, code, after);
-  el.className = cls ? `hint ${cls}` : "hint";
+  applyHintClass(el, cls);
 }
 
 /** Drives the single progress bar in the upload pane; null hides it. */
 function setUploadProgress(fraction: number | null, done = false): void {
   els.uploadProgress.hidden = fraction === null;
-  els.uploadProgressFill.style.width = `${Math.min(100, Math.max(0, (fraction ?? 0) * 100)).toFixed(1)}%`;
+  els.uploadProgressFill.style.width = `${clamp((fraction ?? 0) * 100, 0, 100).toFixed(1)}%`;
   els.uploadProgressFill.className = done ? "progress-fill ok" : "progress-fill";
 }
 
@@ -3199,6 +3229,15 @@ interface DeliverableFile {
 /** Hands one assembled file to whichever route asked for it. */
 type DeliverFile = (file: DeliverableFile) => Promise<void>;
 
+/** BEP047's own picture keys for whichever of a snippet or a still frame is being described — a
+ * frame has no duration or frame rate to report, so it takes the shorter set (see
+ * lib/provenance.ts). `detail` is whatever was read off the file itself. */
+function pictureTechnicalFields(kind: SelectionKind, frameCount: number, detail: TechnicalDetail) {
+  return kind === "frame"
+    ? imageTechnicalFields(state.width, state.height, detail)
+    : videoTechnicalFields(state.fps, state.width, state.height, frameCount, detail);
+}
+
 /** An extracted file together with the digest it will be stored under — cached as a pair, since
  * whatever is worth not encoding twice is worth not hashing twice either. */
 interface ChecksummedMedia {
@@ -3297,26 +3336,15 @@ async function deliverOverlay(
   // Its own light BEP047 sidecar (see lib/provenance.ts's buildCompanionSidecar) rather than the
   // plain clip's full record: it is a rendering of that clip, not a second source of truth about it,
   // so `Sources` is enough to tie the two together.
-  const technical =
-    entities.mode === "frame"
-      ? imageTechnicalFields(state.width, state.height, media.technical)
-      : videoTechnicalFields(state.fps, state.width, state.height, entities.outFrame - entities.inFrame + 1, media.technical);
+  const technical = pictureTechnicalFields(entities.mode, entities.outFrame - entities.inFrame + 1, media.technical);
   const sidecar = buildCompanionSidecar({
     description: "The selection with the pose overlay drawn into the pixels.",
     technical,
     sources: [mediaPath],
     checksum: { md5: digest.md5, sha256: digest.sha256, dandiEtag: digest.etag },
   });
-  const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
   const sidecarPath = uploadAssetPath(directory, sidecarFileName(entities.beh, entities.mode, "overlay"));
-  const sidecarLabel = "the pose overlay's sidecar";
-  await deliver({
-    blob: sidecarBlob,
-    path: sidecarPath,
-    contentType: "application/json",
-    label: sidecarLabel,
-    digest: await checksumFor(sidecarBlob, sidecarLabel, onProgress),
-  });
+  await deliverJson(deliver, sidecarPath, "the pose overlay's sidecar", sidecar, onProgress);
   return { media, path, digest };
 }
 
@@ -3410,18 +3438,18 @@ async function deliverSidecar(
   onProgress: ExtractProgress,
   input: Parameters<typeof buildCompanionSidecar>[0],
 ): Promise<void> {
-  const sidecar = buildCompanionSidecar(input);
-  const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
   const sidecarName = `${verbatimFilename(filename).replace(/\.[^./]+$/, "")}.json`;
   const sidecarPath = uploadAssetPath(directory, sidecarName);
-  const label = `${filename}'s sidecar`;
-  await deliver({
-    blob: sidecarBlob,
-    path: sidecarPath,
-    contentType: "application/json",
-    label,
-    digest: await checksumFor(sidecarBlob, label, onProgress),
-  });
+  await deliverJson(deliver, sidecarPath, `${filename}'s sidecar`, buildCompanionSidecar(input), onProgress);
+}
+
+/** Serializes `doc` and hands it to `deliver` as a JSON asset at `path`, hashing it on the way like
+ * every other file. Every JSON a delivery writes — the extract's own sidecar, the companions', and
+ * the three `dataset_description.json` files — goes out through here, so all of them are written
+ * with the same two-space indentation and the same content type. */
+async function deliverJson(deliver: DeliverFile, path: string, label: string, doc: unknown, onProgress: ExtractProgress): Promise<void> {
+  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+  await deliver({ blob, path, contentType: "application/json", label, digest: await checksumFor(blob, label, onProgress) });
 }
 
 /** Hashes one file for delivery, reporting progress on whichever route's status line is listening. */
@@ -3490,27 +3518,16 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
 
   // The sidecar the extracted clip/frame itself carries: BEP047's own technical keys, a BEP028
   // `GeneratedBy` entry, and the description typed for this delivery — see lib/provenance.ts.
-  const technical =
-    kind === "frame"
-      ? imageTechnicalFields(state.width, state.height, media.technical)
-      : videoTechnicalFields(state.fps, state.width, state.height, hi - lo + 1, media.technical);
+  const technical = pictureTechnicalFields(kind, hi - lo + 1, media.technical);
   const sidecar = buildBehSidecar(provenanceInput, technical, {
     md5: mediaDigest.md5,
     sha256: mediaDigest.sha256,
     dandiEtag: mediaDigest.etag,
   });
-  const sidecarBlob = new Blob([JSON.stringify(sidecar, null, 2)], { type: "application/json" });
   const sidecarPath = uploadAssetPath(directories.derivatives, sidecarFileName(beh, kind));
-  const sidecarLabel = "the sidecar record";
   // The one file that is never re-used: it names this delivery's own instant, so it differs even
   // when everything it describes was carried over from the last one.
-  await deliver({
-    blob: sidecarBlob,
-    path: sidecarPath,
-    contentType: "application/json",
-    label: sidecarLabel,
-    digest: await checksumFor(sidecarBlob, sidecarLabel, onProgress),
-  });
+  await deliverJson(deliver, sidecarPath, "the sidecar record", sidecar, onProgress);
 
   // Every `dataset_description.json` this delivery's tool identity belongs in — the dataset root's
   // own, the derivatives pipeline's, and sourcedata/rawbids's own (so that subtree validates as a
@@ -3530,8 +3547,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
     [DERIVATIVES_DESCRIPTION_PATH, descriptions.derivatives],
     [SOURCEDATA_DESCRIPTION_PATH, descriptions.sourcedata],
   ] as const) {
-    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
-    await deliver({ blob, path, contentType: "application/json", label: path, digest: await checksumFor(blob, path, onProgress) });
+    await deliverJson(deliver, path, path, doc, onProgress);
   }
 
   return { entities, directories, createdAt };
@@ -3679,7 +3695,7 @@ function nameFromUrl(url: string, fallback: string): string {
 async function applyUrlMarks(link: UrlState): Promise<void> {
   if (!state.backend) return;
   const last = Math.max(0, state.totalFrames - 1);
-  const held = (frame: number | null): number | null => (frame === null ? null : Math.max(0, Math.min(last, frame)));
+  const held = (frame: number | null): number | null => (frame === null ? null : clamp(frame, 0, last));
   const lo = held(link.inF);
   const hi = held(link.outF);
   // A link naming no marks at all is a link to the video and nothing more — the older `?url=`
@@ -3767,7 +3783,7 @@ async function initFromUrl(): Promise<void> {
  * whatever `state.cur` points at (see `currentEntities`). */
 async function applyMockReady(injection: TestInjection): Promise<void> {
   const last = Math.max(0, state.totalFrames - 1);
-  const held = (frame: number): number => Math.max(0, Math.min(last, frame));
+  const held = (frame: number): number => clamp(frame, 0, last);
   if (injection.mockReadyMode === "snippet") {
     state.inF = held(injection.mockReadyRange.lo);
     state.outF = held(injection.mockReadyRange.hi);
@@ -3907,7 +3923,7 @@ function applyMockSlp(): void {
 // `?test&remote_listing=N` fakes what the browse pane would show, but the pane itself is only ever
 // opened by hand — so on its own the fake listing would sit unseen behind the local-file dropzone.
 // Switching to it here is what makes the URL alone the whole smoketest.
-if (testInjection?.remoteListing !== null && testInjection?.remoteListing !== undefined) {
+if (fakedListingCount() !== null) {
   selectSeg(els.srcSeg, "browse");
   setSrcPane("browse");
 }
