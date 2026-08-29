@@ -16,6 +16,6 @@ A web app for selecting a clip (a snippet range or a single frame) from a video 
 
 ---
 
-Built by the [Center for Open Neuroscience](https://centerforopenneuroscience.org).
+Built & maintained by the [Center for Open Neuroscience](https://centerforopenneuroscience.org).
 
 [^1]: Powered by the [BBQS Uploader](https://github.com/brain-bbqs/bbqs-uploader).
