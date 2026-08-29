@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { webcrypto } from "node:crypto";
-import { ensureFreshToken, handleRedirectCallback, startLogin } from "../../src/lib/oauth";
+import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "../../src/lib/oauth";
 import { EMBER_INSTANCE, OAUTH_CLIENT_ID } from "../../src/lib/instances";
 
 // jsdom's Crypto has getRandomValues but no SubtleCrypto, which the PKCE challenge needs.
@@ -66,6 +66,17 @@ describe("handleRedirectCallback", () => {
     expect(new URLSearchParams(body).get("code_verifier")).toBeTruthy();
   });
 
+  it("treats a corrupted pending-login stash as no pending login at all", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(tokenResponse({ access_token: "at", expires_in: 3600 })));
+    vi.stubGlobal("fetch", fetchMock);
+    sessionStorage.setItem("clip-extractor.oauth-pkce.v1", "{not json");
+    window.history.replaceState({}, "", "/?code=the-code&state=some-state");
+    expect(await handleRedirectCallback()).toBe(null);
+    expect(fetchMock).not.toHaveBeenCalled();
+    // Consumed either way: a corrupted stash is not left around to confuse the next callback.
+    expect(sessionStorage.getItem("clip-extractor.oauth-pkce.v1")).toBe(null);
+  });
+
   it("refuses a callback whose state doesn't match the one it sent (CSRF guard)", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(tokenResponse({ access_token: "at", expires_in: 3600 })));
     vi.stubGlobal("fetch", fetchMock);
@@ -102,5 +113,27 @@ describe("ensureFreshToken", () => {
       vi.fn(() => Promise.resolve(tokenResponse({}, false, 400))),
     );
     await expect(ensureFreshToken({ accessToken: "at", refreshToken: "rt", expiresAt: 0 })).rejects.toThrow(/HTTP 400/);
+  });
+});
+
+describe("revokeToken", () => {
+  it("asks the archive to revoke the access token", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(tokenResponse({})));
+    vi.stubGlobal("fetch", fetchMock);
+    await revokeToken({ accessToken: "at", expiresAt: Date.now() });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe(`${EMBER_INSTANCE.oauth}/revoke_token/`);
+    const body = new URLSearchParams(String(init.body));
+    expect(body.get("token")).toBe("at");
+    expect(body.get("token_type_hint")).toBe("access_token");
+    expect(body.get("client_id")).toBe(OAUTH_CLIENT_ID);
+  });
+
+  it("swallows a failure, the local state being cleared regardless", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new Error("network down"))),
+    );
+    await expect(revokeToken({ accessToken: "at", expiresAt: Date.now() })).resolves.toBeUndefined();
   });
 });

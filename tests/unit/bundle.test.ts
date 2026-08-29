@@ -2,7 +2,7 @@
 // Blob.slice().arrayBuffer() — how the tar is streamed out — is unimplemented in jsdom, so these
 // run against node's own Blob instead of this suite's default DOM environment (as etag.test.ts
 // does, for the same reason).
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { splitUstarPath, tarGzip, type BundleEntry } from "../../src/lib/bundle";
 
 // The saved bundle is the only artifact that leaves the page whole, so these unpack it the way a
@@ -119,6 +119,32 @@ describe("tarGzip", () => {
 
   it("packs an empty selection into a valid, empty archive", async () => {
     expect(await unpack(await tarGzip([], modified))).toEqual([]);
+  });
+});
+
+describe("tarGzip, when the machinery underneath gives out", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("names the missing piece on a browser without CompressionStream", async () => {
+    vi.stubGlobal("CompressionStream", undefined);
+    await expect(tarGzip([entry("a.txt", "a")], modified)).rejects.toThrow(
+      /cannot compress a saved bundle \(CompressionStream is unavailable\)/,
+    );
+  });
+
+  it("surfaces a file that cannot be read as the failure, not as an unhandled rejection", async () => {
+    const unreadable: BundleEntry = {
+      path: "dir/broken.mp4",
+      blob: {
+        size: 10,
+        slice: () => {
+          throw new Error("unreadable source blob");
+        },
+      } as unknown as Blob,
+    };
+    await expect(tarGzip([entry("a.txt", "a"), unreadable], modified)).rejects.toThrow("unreadable source blob");
   });
 });
 

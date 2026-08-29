@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { fakeArchiveBrowse, fromEmberArchiveSource, fromEmberSourceUrl, readTestInjection } from "../../src/lib/testInjection";
+import {
+  fakeArchiveBrowse,
+  fakeIncomingDatasets,
+  fromEmberArchiveSource,
+  fromEmberSourceUrl,
+  readTestInjection,
+} from "../../src/lib/testInjection";
 
 describe("readTestInjection", () => {
   it("returns null when the page was not asked to fake anything", () => {
@@ -109,5 +115,22 @@ describe("fakeArchiveBrowse", () => {
     const [video] = [...videos.values()].flat();
     expect(video.assetUrl).toMatch(/^https:\/\/test-injection\.invalid\//);
     expect(video.streamUrl).toBe(video.assetUrl);
+  });
+});
+
+describe("fakeIncomingDatasets", () => {
+  it("hands out sequential six-digit ids from the range no real EMBER dandiset occupies", () => {
+    const datasets = fakeIncomingDatasets(2, true, false);
+    expect(datasets.map((d) => d.identifier)).toEqual(["214000", "214001"]);
+    expect(datasets.map((d) => d.title)).toEqual(["Incoming: Test Lab 1", "Incoming: Test Lab 2"]);
+    expect(datasets.every((d) => d.embargoed)).toBe(true);
+  });
+
+  it("previews the not-embargoed error state when asked", () => {
+    expect(fakeIncomingDatasets(1, false, false)[0].embargoed).toBe(false);
+  });
+
+  it("labels the human-subjects preview in each title", () => {
+    expect(fakeIncomingDatasets(1, true, true)[0].title).toBe("Incoming: Test Lab 1 (human subjects)");
   });
 });
