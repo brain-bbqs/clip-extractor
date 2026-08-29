@@ -42,7 +42,7 @@
 // BEP047's own vocabulary has no entity for. The plain extracted clip carries no `desc-` of its own:
 // it is the delivery's primary output, so there is nothing it needs setting apart from.
 
-import { sanitizeSegment } from "./sanitize";
+import { foldDiacritics, sanitizeSegment } from "./sanitize";
 
 /** Every asset this app writes into a dandiset's derivatives sits under this pipeline name. */
 export const DERIVATIVES_PIPELINE = "clip-extractor";
@@ -51,10 +51,7 @@ export const DERIVATIVES_PIPELINE = "clip-extractor";
  * segment (see lib/sanitize.ts's `sanitizeSegment`, which keeps `._+-`). Accents fold to their base
  * letter first, so "café" reads as "cafe" rather than losing the character outright. */
 export function bidsLabel(value: string, fallback: string): string {
-  const collapsed = value
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^A-Za-z0-9]+/g, "");
+  const collapsed = foldDiacritics(value).replace(/[^A-Za-z0-9]+/g, "");
   return collapsed || fallback;
 }
 

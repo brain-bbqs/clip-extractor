@@ -44,3 +44,32 @@ export async function apiFetch<T = unknown>(
   if (resp.status === 204) return null;
   return (await resp.json()) as T;
 }
+
+/** The slice of the archive's dandiset-listing response both lib/dandisets.ts (upload destinations)
+ * and lib/embargoed.ts (what a signed-in visitor may browse) read. They ask for different sets and
+ * do different things with the answer, but the archive describes a dandiset the same way to both. */
+export interface DandisetListItem {
+  identifier: string;
+  embargo_status?: string;
+  draft_version?: { name?: string };
+  most_recent_published_version?: { name?: string };
+}
+
+export interface DandisetListResponse {
+  results?: DandisetListItem[];
+  next?: string | null;
+}
+
+/** A listed dandiset's title: the published name where there is one, else the draft's, else nothing.
+ * Every dandiset has a draft; only some have been published, and a published name is the more
+ * considered of the two. */
+export function listedTitle(item: DandisetListItem): string {
+  return item.most_recent_published_version?.name ?? item.draft_version?.name ?? "";
+}
+
+/** The path to ask {@link apiFetch} for next, from the absolute `next` URL a paged response carries.
+ * Null both when there is no next page and when it points somewhere other than this archive, which
+ * is not ours to follow. */
+export function nextPagePath(cfg: ArchiveConfig, next: string | null | undefined): string | null {
+  return next && next.startsWith(cfg.api) ? next.slice(cfg.api.length) : null;
+}

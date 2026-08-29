@@ -1,5 +1,5 @@
 import type { ArchiveConfig } from "./types";
-import { apiFetch } from "./api";
+import { apiFetch, listedTitle, type DandisetListResponse } from "./api";
 
 export interface IncomingDandiset {
   identifier: string;
@@ -15,17 +15,6 @@ export interface IncomingDandisetsResult {
    * UI can say "couldn't verify" instead of the indistinguishable "you have no datasets".
    */
   unverified: number;
-}
-
-interface DandisetListItem {
-  identifier: string;
-  embargo_status?: string;
-  draft_version?: { name?: string };
-  most_recent_published_version?: { name?: string };
-}
-
-interface DandisetListResponse {
-  results: DandisetListItem[];
 }
 
 const INCOMING_PREFIX = "Incoming: ";
@@ -72,7 +61,7 @@ export async function listIncomingDandisets(cfg: ArchiveConfig): Promise<Incomin
   const candidates = (resp?.results ?? [])
     .map((d) => ({
       identifier: d.identifier,
-      title: d.most_recent_published_version?.name ?? d.draft_version?.name ?? "",
+      title: listedTitle(d),
       embargoed: d.embargo_status === "EMBARGOED",
     }))
     .filter((d) => d.title.startsWith(INCOMING_PREFIX));

@@ -49,22 +49,36 @@ export function planParts(fileSize: number): FilePart[] {
   return parts;
 }
 
-/** MD5 of one part of a blob, streamed in 16MB chunks so a large source video never lands in
- * memory whole. */
-export async function hashPart(blob: Blob, part: FilePart, onChunk: (bytesDoneInPart: number) => void): Promise<Uint8Array> {
-  const spark = new SparkMD5.ArrayBuffer();
+/** Reads `length` bytes of `blob` from `offset` in HASH_CHUNK-sized pieces, handing each to `take`
+ * along with the running total read so far, so a multi-gigabyte source never lands in memory whole.
+ * Every hash below is one pass of this: what differs between them is only which digest the bytes go
+ * into and how the running total is reported.
+ *
+ * A short read means the file changed underneath the hash — a browser hands out a `File` as a live
+ * handle on something the visitor can still edit or unmount — and a digest folded from part-old,
+ * part-new bytes would name a blob that never existed. */
+async function eachChunk(blob: Blob, offset: number, length: number, take: (buf: ArrayBuffer, readSoFar: number) => void): Promise<void> {
   let read = 0;
-  while (read < part.size) {
-    const n = Math.min(HASH_CHUNK, part.size - read);
-    const start = part.offset + read;
+  while (read < length) {
+    const n = Math.min(HASH_CHUNK, length - read);
+    const start = offset + read;
     const buf = await blob.slice(start, start + n).arrayBuffer();
     if (buf.byteLength !== n) {
       throw new Error("The source file changed while hashing — please re-load it.");
     }
-    spark.append(buf);
     read += n;
-    onChunk(read);
+    take(buf, read);
   }
+}
+
+/** MD5 of one part of a blob, streamed in 16MB chunks so a large source video never lands in
+ * memory whole. */
+export async function hashPart(blob: Blob, part: FilePart, onChunk: (bytesDoneInPart: number) => void): Promise<Uint8Array> {
+  const spark = new SparkMD5.ArrayBuffer();
+  await eachChunk(blob, part.offset, part.size, (buf, read) => {
+    spark.append(buf);
+    onChunk(read);
+  });
   // end(true) yields the raw 16-byte digest as a binary string
   const raw = spark.end(true);
   const digest = new Uint8Array(16);
@@ -103,17 +117,10 @@ export async function computeDandiEtag(blob: Blob, parts: FilePart[], onProgress
  * digest at every part boundary and this one must not. */
 export async function computeMd5(blob: Blob, onProgress: (fraction: number) => void = () => {}): Promise<string> {
   const spark = new SparkMD5.ArrayBuffer();
-  let read = 0;
-  while (read < blob.size) {
-    const n = Math.min(HASH_CHUNK, blob.size - read);
-    const buf = await blob.slice(read, read + n).arrayBuffer();
-    if (buf.byteLength !== n) {
-      throw new Error("The source file changed while hashing — please re-load it.");
-    }
+  await eachChunk(blob, 0, blob.size, (buf, read) => {
     spark.append(buf);
-    read += n;
     onProgress(blob.size ? read / blob.size : 1);
-  }
+  });
   onProgress(1);
   return spark.end();
 }
@@ -126,17 +133,10 @@ export async function computeMd5(blob: Blob, onProgress: (fraction: number) => v
 export async function computeSha256(blob: Blob, onProgress: (fraction: number) => void = () => {}): Promise<string> {
   const hasher = await createSHA256();
   hasher.init();
-  let read = 0;
-  while (read < blob.size) {
-    const n = Math.min(HASH_CHUNK, blob.size - read);
-    const buf = await blob.slice(read, read + n).arrayBuffer();
-    if (buf.byteLength !== n) {
-      throw new Error("The source file changed while hashing — please re-load it.");
-    }
+  await eachChunk(blob, 0, blob.size, (buf, read) => {
     hasher.update(new Uint8Array(buf));
-    read += n;
     onProgress(blob.size ? read / blob.size : 1);
-  }
+  });
   onProgress(1);
   return hasher.digest("hex");
 }

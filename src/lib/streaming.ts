@@ -12,7 +12,7 @@ import {
 } from "mediabunny";
 import type { InputVideoTrack, Source, VideoSample } from "mediabunny";
 import { bytes } from "./format";
-import { pixelFormatInfo, type PixelFormatInfo } from "./videoFormat";
+import { decodedPixelFormatAt, type PixelFormatInfo } from "./videoFormat";
 import type { TechnicalDetail } from "./provenance";
 import type { SleapVideoBackend } from "./types";
 
@@ -437,15 +437,10 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       // parameter string, which is a real "don't know", not a failure to open the file over.
       const codecRFC6381 = await track.getCodecParameterString().catch(() => null);
       // One frame decoded and immediately closed again, purely to read its pixel format: every frame
-      // of a track shares one layout, so the first is as good a source for it as any other.
-      const pixelFormat = await new VideoSampleSink(track)
-        .getSample(index.time(0))
-        .then((sample) => {
-          const info = sample?.format ? pixelFormatInfo(sample.format) : null;
-          sample?.close();
-          return info;
-        })
-        .catch(() => null);
+      // of a track shares one layout, so the first is as good a source for it as any other. Taken at
+      // the index's own first frame rather than the container's first timestamp, which is the frame
+      // this backend can already reach — `canDecode` was settled above.
+      const pixelFormat = await decodedPixelFormatAt(track, index.time(0));
       return new StreamingVideoBackend(input, track, index, options.cacheSize ?? DEFAULT_CACHE_SIZE, codecRFC6381, pixelFormat);
     } catch (e) {
       // Nothing was handed back, so nothing else can dispose the input or the requests behind it.

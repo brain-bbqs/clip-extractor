@@ -44,19 +44,34 @@ export function pixelFormatInfo(format: VideoSamplePixelFormat): PixelFormatInfo
   return packed ? { pixelFormat: packed, bitDepth: 8 } : null;
 }
 
-/** The pixel layout of a track's frames, decoded from the first of them: it is a property of the
- * pictures rather than of the container, and every frame of one track shares it. Null on a track
- * this browser cannot decode, or a layout the vocabulary above has no name for. */
-async function decodedPixelFormat(track: InputVideoTrack): Promise<PixelFormatInfo | null> {
+/** The pixel layout of one decoded frame of `track`, taken at `timestamp`. It is a property of the
+ * pictures rather than of the container, and every frame of one track shares it, so whichever frame
+ * a caller can most cheaply reach answers for all of them. Null on a frame that will not decode, or
+ * a layout the vocabulary above has no name for — never a throw, since this only ever enriches a
+ * sidecar that is allowed to say nothing.
+ *
+ * Exported for lib/streaming.ts, which reads the same thing off the frame its own index already
+ * names rather than seeking to the container's first timestamp a second time. */
+export async function decodedPixelFormatAt(track: InputVideoTrack, timestamp: number): Promise<PixelFormatInfo | null> {
   try {
-    if (!(await track.canDecode())) return null;
-    const sample = await new VideoSampleSink(track).getSample(await track.getFirstTimestamp());
+    const sample = await new VideoSampleSink(track).getSample(timestamp);
     const info = sample?.format ? pixelFormatInfo(sample.format) : null;
     sample?.close();
     return info;
   } catch {
     return null;
   }
+}
+
+/** The same, for a track nothing has opened a frame of yet: decodability is checked first and the
+ * container's own first timestamp is the frame taken. */
+async function decodedPixelFormat(track: InputVideoTrack): Promise<PixelFormatInfo | null> {
+  try {
+    if (!(await track.canDecode())) return null;
+  } catch {
+    return null;
+  }
+  return decodedPixelFormatAt(track, await track.getFirstTimestamp().catch(() => 0));
 }
 
 /** Reads whatever a just-written video file says about itself, in the shape a sidecar's technical
