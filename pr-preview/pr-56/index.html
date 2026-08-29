@@ -93,7 +93,7 @@
         });
       });
     </script>
-    <script type="module" crossorigin src="./assets/index-C5iwxWuA.js"></script>
+    <script type="module" crossorigin src="./assets/index-BnMQ3LB5.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-BAS5nXCl.css">
   </head>
   <body>
@@ -550,7 +550,7 @@
         </div>
       </section>
 
-      <!-- Delivery: save the extracted selection locally, or upload it to EMBER. main.ts picks the
+      <!-- Delivery: export the extracted selection locally, or upload it to EMBER. main.ts picks the
            starting side once sign-in resolves (Upload when there is a dataset to upload to).
            Hidden until a recording is open, like the player above it: there is nothing to describe,
            name or send until there is something to take a selection out of. -->
@@ -562,8 +562,8 @@
         <div class="toggle-row" id="deliverToggleRow" hidden>
           <div class="seg" id="deliverSeg" role="group" aria-label="Delivery">
             <!-- The data-deliver values are the persisted setting (see StoredSettings.deliveryMode),
-                 so they stay "download"/"upload" even though this side now reads "Save". -->
-            <button type="button" data-deliver="download" class="active" aria-pressed="true">Save</button>
+                 so they stay "download"/"upload" even though this side now reads "Export". -->
+            <button type="button" data-deliver="download" class="active" aria-pressed="true">Export</button>
             <button type="button" data-deliver="upload" aria-pressed="false">Upload</button>
           </div>
         </div>
@@ -595,12 +595,12 @@ Note anything that went wrong in it, or any other details you want to share alon
         </p>
 
         <div id="downloadPane">
-          <p class="hint deliver-hint" id="downloadHint">Saves the current selection to your computer.</p>
+          <p class="hint deliver-hint" id="downloadHint">Exports the current selection to your computer.</p>
           <p class="hint deliver-preview" id="downloadPreview" hidden><code id="downloadPreviewName"></code></p>
           <div class="action-bar">
             <div class="action-buttons">
-              <button type="button" id="btnDownload" class="primary upload-btn" disabled>Save</button>
-              <!-- Only up while a save is running: packing a long snippet is minutes of work, and
+              <button type="button" id="btnDownload" class="primary upload-btn" disabled>Export</button>
+              <!-- Only up while an export is running: packing a long snippet is minutes of work, and
                    this is the way back out of one that was started on the wrong selection. -->
               <button type="button" id="btnStopDownload" class="stop-btn" hidden>Stop</button>
             </div>
