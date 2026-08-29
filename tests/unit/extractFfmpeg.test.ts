@@ -277,7 +277,9 @@ describe("extractClip, through ffmpeg.wasm", () => {
 describe("extractClip, blurring a streamed source", () => {
   it("burns the blur into each frame through a canvas, handing the muxer a fresh sample", async () => {
     const blur = [{ x: 10, y: 10, radius: 20 }];
-    const extractRange = vi.fn(() => Promise.resolve({ blob: new Blob(["clip"], { type: "video/mp4" }), transcoded: true, start: 1, end: 2 }));
+    const extractRange = vi.fn(() =>
+      Promise.resolve({ blob: new Blob(["clip"], { type: "video/mp4" }), transcoded: true, start: 1, end: 2 }),
+    );
     const backend = { width: 320, height: 240, technical: {}, extractRange } as unknown as StreamingVideoBackend;
     const media = await extractClip({
       sourceFile: null,
@@ -349,9 +351,7 @@ describe("extractFrame", () => {
 
   it("reports a browser that hands out no 2D context at all", async () => {
     canvasControl.ctxAvailable = false;
-    await expect(extractFrame({ ...params, backend: backendWith(new FakeImageBitmap()) })).rejects.toThrow(
-      "Canvas 2D context unavailable",
-    );
+    await expect(extractFrame({ ...params, backend: backendWith(new FakeImageBitmap()) })).rejects.toThrow("Canvas 2D context unavailable");
   });
 });
 
