@@ -1,6 +1,7 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import { blurFilterChain, type BlurRegion } from "./blur";
+import { InterruptedError, throwIfInterrupted } from "./interrupt";
 import type { PixelFormatInfo } from "./videoFormat";
 import type { TrimMode } from "./types";
 
@@ -116,6 +117,33 @@ export function encodedFraction({ time }: FfmpegProgress, outputSeconds: number)
   if (!Number.isFinite(time) || time < 0 || time > Number.MAX_SAFE_INTEGER) return null;
   if (!(outputSeconds > 0)) return null;
   return Math.min(1, time / 1e6 / outputSeconds);
+}
+
+/**
+ * Runs one ffmpeg command, stoppable partway through.
+ *
+ * @ffmpeg/ffmpeg's own `signal` only rejects the promise waiting on the worker — the encode itself
+ * carries on inside it, since ffmpeg.wasm runs as one blocking call that nothing can interrupt — so
+ * an interruption tears the worker down instead. The next extraction loads a fresh one; its core is
+ * a normal cached fetch by then, where the encode it would otherwise have gone on running is
+ * minutes of a CPU nobody is waiting on.
+ */
+export async function runFfmpeg(ff: FFmpeg, args: string[], signal?: AbortSignal): Promise<void> {
+  throwIfInterrupted(signal);
+  try {
+    await ff.exec(args, -1, { signal });
+  } catch (e) {
+    if (!signal?.aborted) throw e;
+    terminateFfmpeg();
+    throw new InterruptedError();
+  }
+}
+
+/** Drops the shared instance, killing whatever it is running. `ensureFfmpeg` loads a new one on the
+ * next call, so nothing else has to know this happened. */
+export function terminateFfmpeg(): void {
+  ffmpegInstance?.terminate();
+  ffmpegInstance = null;
 }
 
 export interface EnsureFfmpegHandlers {

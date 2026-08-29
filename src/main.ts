@@ -95,6 +95,7 @@ import {
 } from "./lib/datasetDescription";
 import { fetchArchiveUser, type ArchiveUser } from "./lib/users";
 import { friendlyError } from "./lib/errors";
+import { isInterruption, throwIfInterrupted } from "./lib/interrupt";
 import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
 import { StageStatus } from "./ui/stageStatus";
@@ -2143,6 +2144,14 @@ els.dandisetId.addEventListener("change", () => {
 
 // Guards both actions while an extraction or upload is in flight.
 let deliveryBusy = false;
+// The running delivery's own interrupt (see lib/interrupt.ts), tripped by the Stop button beside
+// whichever action is running. A selection dragged a few seconds too far reads exactly like any
+// other until the encode is under way, so the way out of one has to be there while it runs.
+let deliveryAbort: AbortController | null = null;
+// The status line the running delivery is reporting on. Held rather than derived from `deliveryMode`:
+// the Save/Upload toggle stays live while a delivery runs, so the pane on screen is not necessarily
+// the route that is running, and a "Stopping…" on the other one would be a line about nothing.
+let runningDeliveryStatus: HTMLElement | null = null;
 // Which side is on screen. Read by the human-subjects gate below, whose warning is about a
 // destination and so has nothing to say while the selection is being saved to a computer instead.
 let deliveryMode: DeliveryMode = "download";
@@ -2272,19 +2281,23 @@ els.humanSubjectsConfirmBtn.addEventListener("click", () => {
   renderHumanSubjectsBanner();
 });
 
+/** What a status line can be saying: a caption about what to do next (no class), or one of the three
+ * outcomes a finished delivery leaves behind — it worked, it failed, or the visitor stopped it. */
+type StatusClass = "" | "ok" | "err" | "stopped";
+
 /** The class every status line carries, plus whichever outcome class it is showing. `showsOutcome`
  * below reads these back, so all three setters have to spell them the same way. */
-function applyHintClass(el: HTMLElement, cls: "" | "ok" | "err"): void {
+function applyHintClass(el: HTMLElement, cls: StatusClass): void {
   el.className = cls ? `hint ${cls}` : "hint";
 }
 
-function setStatus(el: HTMLElement, message: string, cls: "" | "ok" | "err" = ""): void {
+function setStatus(el: HTMLElement, message: string, cls: StatusClass = ""): void {
   el.textContent = message;
   applyHintClass(el, cls);
 }
 
 /** Same, followed by a link — so an outcome can hand over somewhere to go next. */
-function setStatusLink(el: HTMLElement, message: string, href: string, linkText: string, cls: "" | "ok" | "err" = ""): void {
+function setStatusLink(el: HTMLElement, message: string, href: string, linkText: string, cls: StatusClass = ""): void {
   const link = document.createElement("a");
   try {
     const url = new URL(href, window.location.origin);
@@ -2303,7 +2316,7 @@ function setStatusLink(el: HTMLElement, message: string, href: string, linkText:
  * where the upload landed, or why one failed — rather than a caption about what to do next. Those
  * are the only lines worth keeping: everything else is recomputed on any UI change. */
 function showsOutcome(el: HTMLElement): boolean {
-  return el.classList.contains("ok") || el.classList.contains("err");
+  return el.classList.contains("ok") || el.classList.contains("err") || el.classList.contains("stopped");
 }
 
 /** Retires both routes' outcome lines, once what they described has stopped being true: a different
@@ -2321,7 +2334,7 @@ function clearDeliveryOutcomes(): void {
 }
 
 /** Same, with a file name set in the monospace `code` style so it stands out from the prose. */
-function setStatusNaming(el: HTMLElement, before: string, filename: string, after: string, cls: "" | "ok" | "err" = ""): void {
+function setStatusNaming(el: HTMLElement, before: string, filename: string, after: string, cls: StatusClass = ""): void {
   const code = document.createElement("code");
   code.textContent = filename;
   el.replaceChildren(before, code, after);
@@ -2367,6 +2380,17 @@ function updateOriginalContentRow(): void {
   els.blurOriginalNote.hidden = !blurred || !canSendOriginal;
 }
 
+/** Stop only exists while there is something to stop, and goes insensitive once pressed: the
+ * interrupt has been asked for, and the steps under way take until their next checkpoint to notice
+ * it. Both panes carry one, since either route can be the one running. */
+function updateStopButtons(): void {
+  const interrupted = deliveryAbort?.signal.aborted ?? false;
+  for (const stop of [els.btnStopDownload, els.btnStopUpload]) {
+    stop.hidden = !deliveryBusy;
+    stop.disabled = interrupted;
+  }
+}
+
 // Enablement, the embargo warning, and both panes' copy, all derived from the current video,
 // selection, selector mode, and destination.
 function updateDeliveryGate(): void {
@@ -2383,6 +2407,7 @@ function updateDeliveryGate(): void {
   els.btnDownload.disabled = deliveryBusy || !hasVideo || !selected || !described;
   els.btnUpload.disabled = deliveryBusy || !hasVideo || !selected || !described || !cfg.dandisetId || notEmbargoed || unconfirmed;
   els.btnUpload.hidden = uploadSubmitted;
+  updateStopButtons();
   // A delivery reads the video and the pose as it runs, so neither can be closed out from under it.
   els.btnChangeVideo.disabled = deliveryBusy;
   els.btnChangePose.disabled = deliveryBusy;
@@ -2436,10 +2461,27 @@ function setDeliveryBusy(busy: boolean): void {
   deliveryBusy = busy;
   // Starting a delivery retires the last one's line, so the two are never on screen together.
   if (busy) clearDeliveryOutcomes();
+  // A fresh interrupt per delivery, dropped again once it is over: an aborted one left in place
+  // would stop the next delivery before it had drawn a single frame.
+  deliveryAbort = busy ? new AbortController() : null;
+  if (!busy) runningDeliveryStatus = null;
   updateDeliveryGate();
   // An extraction reads the blur areas as it runs, so the tool is held still until it is finished.
   blurTool.render();
 }
+
+/** Stops the running delivery. What is under way carries on until its next checkpoint — an
+ * in-flight part finishes, an overlay frame is drawn — so the line says the interrupt has been asked
+ * for rather than that it has landed; the outcome is written by whichever route unwinds. */
+function interruptDelivery(): void {
+  if (!deliveryAbort || deliveryAbort.signal.aborted) return;
+  deliveryAbort.abort();
+  if (runningDeliveryStatus) setStatus(runningDeliveryStatus, "Stopping…");
+  updateDeliveryGate();
+}
+
+els.btnStopDownload.addEventListener("click", interruptDelivery);
+els.btnStopUpload.addEventListener("click", interruptDelivery);
 
 /** Extracts the selection `entities` names: an MP4 snippet, or a single PNG frame. Driven by the
  * entities rather than by live state, so scrubbing on while an extraction runs cannot move what is
@@ -2449,6 +2491,7 @@ async function extractSelection(
   entities: AssetEntities,
   blur: BlurRegion[],
   onProgress: ExtractProgress,
+  signal: AbortSignal,
 ): Promise<ExtractedMedia> {
   if (entities.mode === "frame") {
     onProgress(`Encoding frame ${entities.inFrame}…`);
@@ -2460,6 +2503,7 @@ async function extractSelection(
       height: state.height,
       beh: entities.beh,
       blur,
+      signal,
     });
   }
   return extractClip({
@@ -2475,6 +2519,7 @@ async function extractSelection(
     fps: state.fps,
     blur,
     onProgress,
+    signal,
   });
 }
 
@@ -2534,14 +2579,19 @@ function reportUploadStep(label: string, step: string, fraction: number): void {
 }
 
 /** Uploads one assembled file, under the digest it was already hashed to. */
-async function uploadOne(cfg: ArchiveConfig, file: DeliverableFile): Promise<void> {
+async function uploadOne(cfg: ArchiveConfig, file: DeliverableFile, signal: AbortSignal): Promise<void> {
   log(`Uploading ${file.label} to ${file.path} (${bytes(file.blob.size)})…`);
   await uploadAsset(cfg, {
     blob: file.blob,
     path: file.path,
     contentType: file.contentType,
     digest: file.digest,
-    onPhase: (phase, fraction) => reportUploadStep(file.label, PHASE_LABEL[phase], fraction),
+    // Silent once Stop has been pressed: the part still in flight must not paint over the line
+    // saying the upload was asked to stop.
+    onPhase: (phase, fraction) => {
+      if (!signal.aborted) reportUploadStep(file.label, PHASE_LABEL[phase], fraction);
+    },
+    signal,
   });
   log(`Uploaded ${file.path}`, "ok");
 }
@@ -2573,6 +2623,7 @@ async function deliverOverlay(
   backend: SleapVideoBackend,
   blur: BlurRegion[],
   onProgress: ExtractProgress,
+  signal: AbortSignal,
 ): Promise<DeliveredOverlay | null> {
   const pose = els.slpToggle.checked ? state.pose : null;
   if (!pose) return null;
@@ -2593,8 +2644,9 @@ async function deliverOverlay(
       beh: entities.beh,
       blur,
       onProgress,
+      signal,
     });
-    return { media, digest: await checksumFor(media.blob, label, onProgress) };
+    return { media, digest: await checksumFor(media.blob, label, onProgress, signal) };
   });
   const path = uploadAssetPath(directory, media.filename);
   await deliver({ blob: media.blob, path, contentType: media.mime, label, digest });
@@ -2610,7 +2662,7 @@ async function deliverOverlay(
     checksum: { md5: digest.md5, sha256: digest.sha256, dandiEtag: digest.etag },
   });
   const sidecarPath = uploadAssetPath(directory, sidecarFileName(entities.beh, entities.mode, "overlay"));
-  await deliverJson(deliver, sidecarPath, "the pose overlay's sidecar", sidecar, onProgress);
+  await deliverJson(deliver, sidecarPath, "the pose overlay's sidecar", sidecar, onProgress, signal);
   return { media, path, digest };
 }
 
@@ -2618,13 +2670,19 @@ async function deliverOverlay(
  * either way: recording which video a clip came from is only useful if that video can be identified
  * again later — and `sourceDigestOnce` holds it for whatever asks next, so nothing is handed back
  * from here. */
-async function deliverOriginalVideo(deliver: DeliverFile, directory: string, beh: BehEntities, onProgress: ExtractProgress): Promise<void> {
+async function deliverOriginalVideo(
+  deliver: DeliverFile,
+  directory: string,
+  beh: BehEntities,
+  onProgress: ExtractProgress,
+  signal: AbortSignal,
+): Promise<void> {
   const original = state.sourceFile;
   if (!original) return;
   const label = "the original video";
   // Keyed to the load rather than the selection: the same bytes hash to the same digest however
   // many selections are cut out of them, and this is the hash that can take minutes.
-  const originalDigest = await sourceDigestOnce(`source-${sourceGeneration}`, () => checksumFor(original, label, onProgress));
+  const originalDigest = await sourceDigestOnce(`source-${sourceGeneration}`, () => checksumFor(original, label, onProgress, signal));
   if (!els.uploadOriginal.checked) return;
   // Whether the source carries sound decides both what this copy is called and what its sidecar can
   // say about it. BEP047 names an audio-bearing recording `_audiovideo` where a silent one is
@@ -2663,7 +2721,7 @@ async function deliverOriginalVideo(deliver: DeliverFile, directory: string, beh
     : state.backend instanceof StreamingVideoBackend
       ? state.backend.technical
       : {};
-  await deliverSidecar(deliver, directory, originalName, onProgress, {
+  await deliverSidecar(deliver, directory, originalName, onProgress, signal, {
     description: "The source video this selection was clipped from.",
     technical: {
       ...videoTechnicalFields(state.fps, state.width, state.height, state.totalFrames, sourceDetail),
@@ -2683,11 +2741,16 @@ async function deliverOriginalVideo(deliver: DeliverFile, directory: string, beh
  * so a companion `.json` naming the format and pointing back at the video would only restate what
  * opening the file says better. The video and image assets this app produces still get theirs: those
  * are BEP047 media files, where the sidecar is where the technical keys are defined to live. */
-async function deliverAnnotationFile(deliver: DeliverFile, directory: string, onProgress: ExtractProgress): Promise<DeliveredSlp | null> {
+async function deliverAnnotationFile(
+  deliver: DeliverFile,
+  directory: string,
+  onProgress: ExtractProgress,
+  signal: AbortSignal,
+): Promise<DeliveredSlp | null> {
   const slpFile = state.slpFile;
   if (!slpFile) return null;
   const label = "the annotations";
-  const digest = await annotationDigestOnce(`pose-${poseGeneration}`, () => checksumFor(slpFile, label, onProgress));
+  const digest = await annotationDigestOnce(`pose-${poseGeneration}`, () => checksumFor(slpFile, label, onProgress, signal));
   if (!els.uploadOriginal.checked) return { digest, path: null };
   const path = uploadAssetPath(directory, verbatimFilename(slpFile.name));
   await deliver({ blob: slpFile, path, contentType: slpFile.type || "application/octet-stream", label, digest });
@@ -2702,25 +2765,39 @@ async function deliverSidecar(
   directory: string,
   filename: string,
   onProgress: ExtractProgress,
+  signal: AbortSignal,
   input: Parameters<typeof buildCompanionSidecar>[0],
 ): Promise<void> {
   const sidecarName = `${verbatimFilename(filename).replace(/\.[^./]+$/, "")}.json`;
   const sidecarPath = uploadAssetPath(directory, sidecarName);
-  await deliverJson(deliver, sidecarPath, `${filename}'s sidecar`, buildCompanionSidecar(input), onProgress);
+  await deliverJson(deliver, sidecarPath, `${filename}'s sidecar`, buildCompanionSidecar(input), onProgress, signal);
 }
 
 /** Serializes `doc` and hands it to `deliver` as a JSON asset at `path`, hashing it on the way like
  * every other file. Every JSON a delivery writes — the extract's own sidecar, the companions', and
  * the three `dataset_description.json` files — goes out through here, so all of them are written
  * with the same two-space indentation and the same content type. */
-async function deliverJson(deliver: DeliverFile, path: string, label: string, doc: unknown, onProgress: ExtractProgress): Promise<void> {
+async function deliverJson(
+  deliver: DeliverFile,
+  path: string,
+  label: string,
+  doc: unknown,
+  onProgress: ExtractProgress,
+  signal: AbortSignal,
+): Promise<void> {
   const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
-  await deliver({ blob, path, contentType: "application/json", label, digest: await checksumFor(blob, label, onProgress) });
+  await deliver({ blob, path, contentType: "application/json", label, digest: await checksumFor(blob, label, onProgress, signal) });
 }
 
-/** Hashes one file for delivery, reporting progress on whichever route's status line is listening. */
-function checksumFor(blob: Blob, label: string, onProgress: ExtractProgress): Promise<BlobDigest> {
-  return checksumBlob(blob, (fraction) => onProgress(`${PHASE_LABEL.checksum} ${label}… ${(fraction * 100).toFixed(0)}%`, fraction));
+/** Hashes one file for delivery, reporting progress on whichever route's status line is listening.
+ * Hashing a multi-gigabyte original is the longest single step a delivery has, so it takes the
+ * interrupt too rather than running to the end of the file whatever the visitor asked for. */
+function checksumFor(blob: Blob, label: string, onProgress: ExtractProgress, signal: AbortSignal): Promise<BlobDigest> {
+  return checksumBlob(
+    blob,
+    (fraction) => onProgress(`${PHASE_LABEL.checksum} ${label}… ${(fraction * 100).toFixed(0)}%`, fraction),
+    signal,
+  );
 }
 
 interface AssembleParams {
@@ -2737,6 +2814,9 @@ interface AssembleParams {
   existingDescriptions?: () => Promise<ExistingDatasetDescriptions>;
   deliver: DeliverFile;
   onProgress: ExtractProgress;
+  /** The running delivery's interrupt (see lib/interrupt.ts): handed to every step, and read again
+   * between them, so Stop lands within one file rather than at the end of the whole tree. */
+  signal: AbortSignal;
 }
 
 interface AssembledSelection {
@@ -2753,7 +2833,13 @@ interface AssembledSelection {
  * would have written.
  */
 async function assembleSelection(params: AssembleParams): Promise<AssembledSelection> {
-  const { backend, deliver, onProgress } = params;
+  const { backend, onProgress, signal } = params;
+  // Every file goes out through here, so one check covers every handover: whatever has just been
+  // extracted, hashed or drawn is dropped rather than saved or sent once Stop has been pressed.
+  const deliver: DeliverFile = async (file) => {
+    throwIfInterrupted(signal);
+    await params.deliver(file);
+  };
   // One instant for the whole delivery, so the `recording-<label>` entity every file shares and the
   // sidecar's own `created_at` name the same moment.
   const createdAt = new Date();
@@ -2765,8 +2851,8 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // Re-used when this selection has already been extracted — saving a bundle and then uploading it
   // encodes nothing the second time round.
   const { media, digest: mediaDigest } = await extractOnce(selectionKey(entities), async () => {
-    const media = await extractSelection(backend, entities, blur, onProgress);
-    return { media, digest: await checksumFor(media.blob, `the ${kind}`, onProgress) };
+    const media = await extractSelection(backend, entities, blur, onProgress, signal);
+    return { media, digest: await checksumFor(media.blob, `the ${kind}`, onProgress, signal) };
   });
   await params.onReady?.();
   const directories = deliveryDirectories(beh);
@@ -2776,9 +2862,9 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   const mediaPath = uploadAssetPath(directories.derivatives, media.filename);
   await deliver({ blob: media.blob, path: mediaPath, contentType: media.mime, label: `the ${kind}`, digest: mediaDigest });
 
-  await deliverOverlay(deliver, directories.derivatives, mediaPath, entities, backend, blur, onProgress);
-  await deliverOriginalVideo(deliver, directories.sourcedata, beh, onProgress);
-  await deliverAnnotationFile(deliver, directories.derivatives, onProgress);
+  await deliverOverlay(deliver, directories.derivatives, mediaPath, entities, backend, blur, onProgress, signal);
+  await deliverOriginalVideo(deliver, directories.sourcedata, beh, onProgress, signal);
+  await deliverAnnotationFile(deliver, directories.derivatives, onProgress, signal);
 
   const provenanceInput: ProvenanceInput = { description: els.selectionDescription.value };
 
@@ -2793,7 +2879,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   const sidecarPath = uploadAssetPath(directories.derivatives, sidecarFileName(beh, kind));
   // The one file that is never re-used: it names this delivery's own instant, so it differs even
   // when everything it describes was carried over from the last one.
-  await deliverJson(deliver, sidecarPath, "the sidecar record", sidecar, onProgress);
+  await deliverJson(deliver, sidecarPath, "the sidecar record", sidecar, onProgress, signal);
 
   // Every `dataset_description.json` this delivery's tool identity belongs in — the dataset root's
   // own, the derivatives pipeline's, and sourcedata/rawbids's own (so that subtree validates as a
@@ -2801,6 +2887,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
   // lib/datasetDescription.ts). A bundle has no archive to read existing ones from, so it always
   // writes them fresh; unpacked into a dataset that already has its own, a person reconciles them by
   // hand, same as any other file a bundle might collide with.
+  throwIfInterrupted(signal);
   const existing = (await params.existingDescriptions?.()) ?? { root: null, derivatives: null, sourcedata: null };
   const generatedByEntry = buildGeneratedByEntry();
   const sourceDataset = buildSourceDatasetEntry(currentConfig().api, state.sourceArchive);
@@ -2813,7 +2900,7 @@ async function assembleSelection(params: AssembleParams): Promise<AssembledSelec
     [DERIVATIVES_DESCRIPTION_PATH, descriptions.derivatives],
     [SOURCEDATA_DESCRIPTION_PATH, descriptions.sourcedata],
   ] as const) {
-    await deliverJson(deliver, path, path, doc, onProgress);
+    await deliverJson(deliver, path, path, doc, onProgress, signal);
   }
 
   return { entities, directories, createdAt };
@@ -2826,11 +2913,20 @@ async function runDownload(): Promise<void> {
   const backend = state.backend;
   if (!backend) return;
   setDeliveryBusy(true);
+  runningDeliveryStatus = els.downloadStatus;
+  // The interrupt setDeliveryBusy just raised, held locally: the unwind below still needs it after
+  // the flag — and the controller with it — has been dropped.
+  const { signal } = deliveryAbort!;
   try {
     const bundled: BundleEntry[] = [];
     const { createdAt } = await assembleSelection({
       backend,
-      onProgress: (message) => setStatus(els.downloadStatus, message),
+      signal,
+      // Silent once Stop has been pressed, so the step that has not noticed yet cannot paint over
+      // the line saying it was asked to stop.
+      onProgress: (message) => {
+        if (!signal.aborted) setStatus(els.downloadStatus, message);
+      },
       // Every file is hashed on its way in even though nothing is being uploaded: the sidecar
       // inside the bundle quotes the same digests an upload would have registered, so a selection
       // saved now and uploaded later is identifiable as the same bytes.
@@ -2839,8 +2935,12 @@ async function runDownload(): Promise<void> {
         return Promise.resolve();
       },
     });
+    throwIfInterrupted(signal);
     setStatus(els.downloadStatus, "Packing the bundle…");
     const bundle = await tarGzip(bundled, createdAt);
+    // The last checkpoint: a bundle packed but never handed to the browser is one nothing has to be
+    // told about, where a download that starts cannot be called back.
+    throwIfInterrupted(signal);
     const filename = bundleFileName(state.sourceArchive?.dandisetId ?? null);
     saveBlob(bundle, filename);
     setDeliveryBusy(false);
@@ -2848,6 +2948,13 @@ async function runDownload(): Promise<void> {
     log(`Saved ${filename} (${bundled.length} files, ${bytes(bundle.size)})`, "ok");
   } catch (e) {
     setDeliveryBusy(false);
+    // A stopped save is not a failed one: nothing was written anywhere, and the card goes back to
+    // where it was so the selection can be adjusted and saved again.
+    if (isInterruption(e)) {
+      setStatus(els.downloadStatus, "Save stopped — nothing was written. Adjust the selection and save again.", "stopped");
+      log("Save stopped.", "warn");
+      return;
+    }
     setStatus(els.downloadStatus, friendlyError(e), "err");
     log(`Save failed: ${friendlyError(e)}`, "err");
     console.error(e);
@@ -2863,9 +2970,16 @@ async function runUpload(): Promise<void> {
   uploadSubmitted = true;
   updateDeliveryGate();
   setUploadProgress(0);
+  runningDeliveryStatus = els.uploadStatus;
+  // See runDownload: the interrupt this delivery runs under, held past the point the flag is dropped.
+  const { signal } = deliveryAbort!;
+  // What a stop would leave behind. Registered assets are not withdrawn — the bytes are in the
+  // dataset the moment the archive validates them — so the count is what the outcome line reports.
+  let registered = 0;
   try {
     const { directories } = await assembleSelection({
       backend,
+      signal,
       onReady: async () => {
         // Refresh the token before the first request rather than mid-transfer, where an expiry would
         // strand a half-finished multipart upload.
@@ -2877,11 +2991,16 @@ async function runUpload(): Promise<void> {
         currentUser ??= await fetchArchiveUser(cfg).catch(() => null);
       },
       existingDescriptions: () => readExistingDatasetDescriptions(currentConfig()),
+      // Silent once Stop has been pressed, for the same reason the save route's is.
       onProgress: (message, fraction) => {
+        if (signal.aborted) return;
         setStatus(els.uploadStatus, message);
         setUploadProgress(fraction ?? 0);
       },
-      deliver: (file) => uploadOne(currentConfig(), file),
+      deliver: async (file) => {
+        await uploadOne(currentConfig(), file, signal);
+        registered++;
+      },
     });
 
     const cfg = currentConfig();
@@ -2898,10 +3017,21 @@ async function runUpload(): Promise<void> {
     );
     log(`Upload complete: ${directories.derivatives}/`, "ok");
   } catch (e) {
-    // Back on offer: a failed upload is one worth pressing again.
+    // Back on offer: an upload that failed, or one the visitor stopped, is worth pressing again.
     uploadSubmitted = false;
     setDeliveryBusy(false);
     setUploadProgress(null);
+    if (isInterruption(e)) {
+      // Whatever had already gone up stays there, under this delivery's own `recording-` stamp; the
+      // next upload is stamped afresh, so it lands beside them rather than replacing them.
+      const left =
+        registered === 0
+          ? "Nothing reached the dataset."
+          : `${registered} file${registered === 1 ? "" : "s"} had already gone up and stay in the dataset, in a directory of their own.`;
+      setStatus(els.uploadStatus, `Upload stopped. ${left} Adjust the selection and upload again.`, "stopped");
+      log(`Upload stopped after ${registered} file(s).`, "warn");
+      return;
+    }
     setStatus(els.uploadStatus, `Upload failed: ${friendlyError(e)}`, "err");
     log(`Upload failed: ${friendlyError(e)}`, "err");
     console.error(e);

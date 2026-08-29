@@ -1,8 +1,9 @@
 import { VideoSample } from "mediabunny";
-import { ENCODED_PIXEL_FORMAT, X264_MP4_ARGS, encodedFraction, ensureFfmpeg, ffmpegArgs, streamCopies } from "./ffmpeg";
+import { ENCODED_PIXEL_FORMAT, X264_MP4_ARGS, encodedFraction, ensureFfmpeg, ffmpegArgs, runFfmpeg, streamCopies } from "./ffmpeg";
 import { decodeIndex, drawVideoFrame } from "./video";
 import { drawPose } from "./pose";
 import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
+import { throwIfInterrupted } from "./interrupt";
 import type { StreamingVideoBackend } from "./streaming";
 import type { SelectionKind } from "./delivery";
 import { behFilename, behSidecarName, type BehEntities } from "./bidsPath";
@@ -110,6 +111,8 @@ export interface ExtractClipParams {
   /** Areas blurred into every frame on the way out, in source pixels. */
   blur?: BlurRegion[];
   onProgress?: ExtractProgress;
+  /** Stops the extraction partway through, when the visitor asks for it (see lib/interrupt.ts). */
+  signal?: AbortSignal;
 }
 
 /**
@@ -158,12 +161,13 @@ function blurProcessor(width: number, height: number, blur: BlurRegion[]): (samp
 
 /** Trims [lo, hi] straight out of a streamed source, reading only the bytes that range needs. */
 async function extractStreamedClip(params: ExtractClipParams & { backend: StreamingVideoBackend }): Promise<ExtractedMedia> {
-  const { backend, beh, lo, hi, trim = "precise", blur = [], onProgress } = params;
+  const { backend, beh, lo, hi, trim = "precise", blur = [], onProgress, signal } = params;
   onProgress?.("Trimming the selection out of the stream…", 0);
   const { blob, transcoded, start, end } = await backend.extractRange(lo, hi, {
     precise: trim === "precise",
     process: blur.length ? blurProcessor(backend.width, backend.height, blur) : undefined,
     onProgress: (fraction) => onProgress?.(`Trimming the selection… ${(fraction * 100).toFixed(0)}%`, fraction),
+    signal,
   });
   onProgress?.("Trimming the selection… 100%", 1);
   const blurred = blurSummary(blur);
@@ -184,7 +188,8 @@ async function extractStreamedClip(params: ExtractClipParams & { backend: Stream
 /** Trims [lo, hi] out of the source video and returns it as an MP4: straight out of the stream when
  * that is what is open, and through ffmpeg.wasm when the bytes are already in the browser. */
 export async function extractClip(params: ExtractClipParams): Promise<ExtractedMedia> {
-  const { sourceFile, sourceUrl, backend, sourceName, beh, lo, hi, fps, trim = "precise", blur = [], onProgress } = params;
+  const { sourceFile, sourceUrl, backend, sourceName, beh, lo, hi, fps, trim = "precise", blur = [], onProgress, signal } = params;
+  throwIfInterrupted(signal);
   // Checked before ffmpeg is even loaded: it works out of a virtual filesystem, so it would need
   // the whole container written into memory first, which for a streamed recording means downloading
   // all of it however few frames were selected.
@@ -213,13 +218,14 @@ export async function extractClip(params: ExtractClipParams): Promise<ExtractedM
     // ffmpeg needs the whole container, so a streamed source has to be fetched in full here even
     // though playback never downloaded it.
     onProgress?.("Downloading the source video…");
-    const resp = await fetch(sourceUrl);
+    const resp = await fetch(sourceUrl, { signal });
     if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching the source video`);
     inputBytes = new Uint8Array(await resp.arrayBuffer());
   } else {
     throw new Error("No source bytes available for ffmpeg");
   }
 
+  throwIfInterrupted(signal);
   await ff.writeFile(inName, inputBytes);
   const args = ffmpegArgs(inName, outName, lo, hi, fps, trim, blur);
   const command = `ffmpeg ${args.join(" ")}`;
@@ -230,7 +236,7 @@ export async function extractClip(params: ExtractClipParams): Promise<ExtractedM
   const readsUpToSelection = !streamCopies(trim, blur) && lo > 0;
   onProgress?.(readsUpToSelection ? `Decoding the source up to frame ${lo}…` : "Encoding snippet…", 0);
   try {
-    await ff.exec(args);
+    await runFfmpeg(ff, args, signal);
     // ffmpeg's last report lands on the final frame's timestamp, which is a frame short of the whole
     // duration. The encode is over once exec returns, so say so rather than stopping just under it.
     onProgress?.("Encoding snippet… 100%", 1);
@@ -258,11 +264,14 @@ export interface ExtractFrameParams {
   beh: BehEntities;
   /** Areas blurred into the image, in source pixels. */
   blur?: BlurRegion[];
+  /** Stops the extraction before it decodes, when the visitor asks for it (see lib/interrupt.ts). */
+  signal?: AbortSignal;
 }
 
 /** Re-decodes one frame and encodes it as a PNG (no pose overlay burned in). */
 export async function extractFrame(params: ExtractFrameParams): Promise<ExtractedMedia> {
-  const { backend, frameOrder, frame, width, height, beh, blur = [] } = params;
+  const { backend, frameOrder, frame, width, height, beh, blur = [], signal } = params;
+  throwIfInterrupted(signal);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -299,6 +308,9 @@ export interface ExtractOverlayParams {
   /** Areas blurred into every frame, in source pixels. */
   blur?: BlurRegion[];
   onProgress?: ExtractProgress;
+  /** Stops the rendering partway through, when the visitor asks for it (see lib/interrupt.ts).
+   * Read between frames, which is the whole of what this loop is. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -308,7 +320,8 @@ export interface ExtractOverlayParams {
  * neither depends on which codecs the browser itself can encode.
  */
 export async function extractOverlay(params: ExtractOverlayParams): Promise<ExtractedMedia> {
-  const { backend, frameOrder, pose, mode, inFrame, outFrame, fps, width, height, beh, blur = [], onProgress } = params;
+  const { backend, frameOrder, pose, mode, inFrame, outFrame, fps, width, height, beh, blur = [], onProgress, signal } = params;
+  throwIfInterrupted(signal);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -356,6 +369,7 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
   });
   try {
     for (let i = 0; i < total; i++) {
+      throwIfInterrupted(signal);
       const png = await renderOverlayFrame(inFrame + i);
       const name = `ov${String(i).padStart(6, "0")}.png`;
       await ff.writeFile(name, new Uint8Array(await png.arrayBuffer()));
@@ -368,7 +382,7 @@ export async function extractOverlay(params: ExtractOverlayParams): Promise<Extr
     const command = `ffmpeg ${args.join(" ")}`;
     console.info(`$ ${command}`);
     onProgress?.("Encoding the overlay snippet…", 0);
-    await ff.exec(args);
+    await runFfmpeg(ff, args, signal);
     onProgress?.("Encoding the overlay snippet… 100%", 1);
     const data = await ff.readFile(outName);
     const blob = new Blob([(data as Uint8Array).buffer as ArrayBuffer], { type: "video/mp4" });

@@ -2,6 +2,8 @@
 // than fetch: it is the only way to get upload progress events. Ported from
 // brain-bbqs/bbqs-uploader.
 
+import { InterruptedError, isInterruption } from "./interrupt";
+
 function uploadPartToS3(url: string, blob: Blob, onProgress: (loaded: number) => void, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -28,13 +30,13 @@ function uploadPartToS3(url: string, blob: Blob, onProgress: (loaded: number) =>
       }
     };
     xhr.onerror = () => reject(new Error("Network error during S3 part upload (possibly a CORS rejection)."));
-    xhr.onabort = () => reject(new Error("Upload cancelled."));
+    xhr.onabort = () => reject(new InterruptedError("The upload was stopped."));
     if (signal) signal.addEventListener("abort", () => xhr.abort(), { once: true });
     xhr.send(blob);
   });
 }
 
-/** PUTs one part, retrying transient failures with backoff. A cancellation or a missing (CORS-
+/** PUTs one part, retrying transient failures with backoff. An interruption or a missing (CORS-
  * blocked) ETag header is final — retrying either just repeats the same outcome. */
 export async function uploadPartWithRetry(
   url: string,
@@ -45,13 +47,13 @@ export async function uploadPartWithRetry(
 ): Promise<string> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
-    if (signal?.aborted) throw new Error("Upload cancelled.");
+    if (signal?.aborted) throw new InterruptedError("The upload was stopped.");
     try {
       return await uploadPartToS3(url, blob, onProgress, signal);
     } catch (e) {
       lastErr = e;
       const message = e instanceof Error ? e.message : String(e);
-      if (/cancelled/i.test(message) || /ETag response header/.test(message)) throw e;
+      if (isInterruption(e) || /ETag response header/.test(message)) throw e;
       onProgress(0);
       await new Promise((r) => setTimeout(r, 1500 * 2 ** i));
     }

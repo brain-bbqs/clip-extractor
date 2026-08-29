@@ -2,6 +2,7 @@ import type { ArchiveConfig, Asset, CompletedPart, FilePart, UploadInitResponse 
 import { apiFetch } from "./api";
 import { ApiError } from "./errors";
 import { computeDandiEtag, computeMd5, computeSha256, planParts } from "./etag";
+import { throwIfInterrupted } from "./interrupt";
 import { runQueue } from "./queue";
 import { uploadPartWithRetry } from "./s3";
 
@@ -53,6 +54,7 @@ export async function uploadBlob(
     throw e;
   }
 
+  throwIfInterrupted(signal);
   const serverParts = init.parts;
   if (serverParts.length !== parts.length) {
     throw new Error(`Server planned ${serverParts.length} parts but this client computed ${parts.length} — aborting.`);
@@ -84,6 +86,7 @@ export async function uploadBlob(
   });
 
   // Finish the multipart upload on S3, then let the API validate the etag.
+  throwIfInterrupted(signal);
   const completion = (await apiFetch<{ complete_url: string; body: string }>(cfg, `/uploads/${init.upload_id}/complete/`, {
     method: "POST",
     json: { parts: results },
@@ -146,14 +149,14 @@ export interface BlobDigest {
   parts: FilePart[];
 }
 
-export async function checksumBlob(blob: Blob, onProgress?: (fraction: number) => void): Promise<BlobDigest> {
+export async function checksumBlob(blob: Blob, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<BlobDigest> {
   const parts = planParts(blob.size);
   // Three full passes over the bytes — the dandi-etag, the plain MD5 and the SHA-256 are all
   // different digests (see lib/etag.ts's computeMd5) — reported as one smooth 0..1 rather than a bar
   // that fills and resets twice.
-  const etag = await computeDandiEtag(blob, parts, (f) => onProgress?.(f / 3));
-  const md5 = await computeMd5(blob, (f) => onProgress?.((1 + f) / 3));
-  const sha256 = await computeSha256(blob, (f) => onProgress?.((2 + f) / 3));
+  const etag = await computeDandiEtag(blob, parts, (f) => onProgress?.(f / 3), signal);
+  const md5 = await computeMd5(blob, (f) => onProgress?.((1 + f) / 3), signal);
+  const sha256 = await computeSha256(blob, (f) => onProgress?.((2 + f) / 3), signal);
   return { etag, md5, sha256, parts };
 }
 
@@ -172,11 +175,15 @@ export interface UploadAssetParams {
 /** Checksums, uploads, and registers one blob as an asset at `path`. */
 export async function uploadAsset(cfg: ArchiveConfig, params: UploadAssetParams): Promise<Asset> {
   const { blob, path, contentType, onPhase, signal } = params;
-  const { etag, parts } = params.digest ?? (await checksumBlob(blob, (f) => onPhase?.("checksum", f)));
+  const { etag, parts } = params.digest ?? (await checksumBlob(blob, (f) => onPhase?.("checksum", f), signal));
   // A path match says nothing about content, so it never skips the upload; it only decides whether
   // asset registration replaces or creates. Content dedup stays server-side (uploadBlob's 409).
+  throwIfInterrupted(signal);
   const existing = await findExistingAsset(cfg, path);
   const { blobId } = await uploadBlob(cfg, blob, etag, parts, (f) => onPhase?.("upload", f), signal);
+  // Checked before registration rather than after: the bytes are in the archive either way once the
+  // blob validates, and an asset nothing points at is the tidier thing to leave behind.
+  throwIfInterrupted(signal);
   onPhase?.("register", 0);
   const asset = await createOrReplaceAsset(cfg, path, blobId, existing?.asset_id ?? null, contentType);
   onPhase?.("register", 1);

@@ -424,6 +424,11 @@ select {
 .hint.err {
   color: var(--err);
 }
+/* A delivery the visitor stopped: an outcome like the two above, and one the card keeps on screen
+   (see main.ts's showsOutcome), but not a failure to report in red. */
+.hint.stopped {
+  color: var(--warn);
+}
 .badge {
   display: inline-block;
   flex-shrink: 0;
@@ -1569,6 +1574,12 @@ textarea {
   gap: 0.5rem;
   margin-top: 1rem;
 }
+/* Save/Upload and the Stop that joins it while one is running, side by side on the bar's first row */
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 
 /* Upload destination: the EMBER dataset the extracted selection is bound for. */
 .card-heading {
@@ -1697,6 +1708,16 @@ ul.human-subjects-body {
 
 .upload-btn {
   min-width: 8rem;
+}
+
+/* Stopping a running delivery: an ordinary button rather than a primary one — it is the way out of
+   the action, not the action. */
+.stop-btn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.stop-btn:hover:not(:disabled) {
+  background: var(--warn-soft);
 }
 
 /* Upload progress (checksum -> transfer -> registration), one bar across all phases */

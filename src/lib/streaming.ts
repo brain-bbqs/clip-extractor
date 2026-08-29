@@ -12,6 +12,7 @@ import {
 } from "mediabunny";
 import type { InputVideoTrack, Source, VideoSample } from "mediabunny";
 import { bytes } from "./format";
+import { InterruptedError, isInterruption, throwIfInterrupted } from "./interrupt";
 import { decodedPixelFormatAt, type PixelFormatInfo } from "./videoFormat";
 import type { TechnicalDetail } from "./provenance";
 import type { SleapVideoBackend } from "./types";
@@ -308,6 +309,9 @@ export interface RangeExtractOptions {
   process?: (sample: VideoSample) => VideoSample;
   /** 0..1 through the selection. */
   onProgress?: (fraction: number) => void;
+  /** Stops the trim partway through — mediabunny's conversion is cancelled where it stands and the
+   * half-written output is dropped. */
+  signal?: AbortSignal;
 }
 
 export interface ExtractedRange {
@@ -501,6 +505,7 @@ export class StreamingVideoBackend implements SleapVideoBackend {
    * selection is. Here the same range requests that play the video also cut it. */
   async extractRange(lo: number, hi: number, options: RangeExtractOptions): Promise<ExtractedRange> {
     if (this.closed) throw new Error("The video was closed before the selection could be extracted");
+    throwIfInterrupted(options.signal);
     const first = Math.max(0, Math.min(lo, hi));
     const last = Math.min(this.index.count - 1, Math.max(lo, hi));
     if (first > last) throw new Error("There is nothing selected to extract");
@@ -530,7 +535,18 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     }
     const report = options.onProgress;
     if (report) conversion.onProgress = (fraction) => report(fraction);
-    await conversion.execute();
+    // Cancelling makes the `execute` below throw mediabunny's own ConversionCanceledError, which is
+    // re-thrown as an interruption so every route out of a stopped delivery reports the same way.
+    const stop = () => void conversion.cancel();
+    options.signal?.addEventListener("abort", stop, { once: true });
+    try {
+      await conversion.execute();
+    } catch (e) {
+      if (isInterruption(e)) throw new InterruptedError();
+      throw e;
+    } finally {
+      options.signal?.removeEventListener("abort", stop);
+    }
     const buffer = output.target.buffer;
     if (!buffer?.byteLength) throw new Error("Trimming produced an empty clip — try a different selection");
     return { blob: new Blob([buffer], { type: "video/mp4" }), transcoded, start, end };

@@ -109,6 +109,7 @@ export function getElements() {
     downloadPreview: required<HTMLParagraphElement>("downloadPreview"),
     downloadPreviewName: required<HTMLElement>("downloadPreviewName"),
     btnDownload: required<HTMLButtonElement>("btnDownload"),
+    btnStopDownload: required<HTMLButtonElement>("btnStopDownload"),
     downloadStatus: required<HTMLSpanElement>("downloadStatus"),
 
     // Upload destination
@@ -124,6 +125,7 @@ export function getElements() {
     humanSubjectsConfirmed: required<HTMLParagraphElement>("humanSubjectsConfirmed"),
     viewDatasetLink: required<HTMLAnchorElement>("viewDatasetLink"),
     btnUpload: required<HTMLButtonElement>("btnUpload"),
+    btnStopUpload: required<HTMLButtonElement>("btnStopUpload"),
     uploadStatus: required<HTMLSpanElement>("uploadStatus"),
     uploadProgress: required<HTMLDivElement>("uploadProgress"),
     uploadProgressFill: required<HTMLDivElement>("uploadProgressFill"),

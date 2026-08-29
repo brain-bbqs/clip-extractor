@@ -596,7 +596,12 @@ Note anything that went wrong in it, or any other details you want to share alon
           <p class="hint deliver-hint" id="downloadHint">Saves the current selection to your computer.</p>
           <p class="hint deliver-preview" id="downloadPreview" hidden><code id="downloadPreviewName"></code></p>
           <div class="action-bar">
-            <button type="button" id="btnDownload" class="primary upload-btn" disabled>Save</button>
+            <div class="action-buttons">
+              <button type="button" id="btnDownload" class="primary upload-btn" disabled>Save</button>
+              <!-- Only up while a save is running: packing a long snippet is minutes of work, and
+                   this is the way back out of one that was started on the wrong selection. -->
+              <button type="button" id="btnStopDownload" class="stop-btn" hidden>Stop</button>
+            </div>
             <span class="hint" id="downloadStatus">Load a video to extract a selection.</span>
           </div>
         </div>
@@ -647,7 +652,10 @@ Note anything that went wrong in it, or any other details you want to share alon
           </div>
 
           <div class="action-bar">
-            <button type="button" id="btnUpload" class="primary upload-btn" disabled>Upload</button>
+            <div class="action-buttons">
+              <button type="button" id="btnUpload" class="primary upload-btn" disabled>Upload</button>
+              <button type="button" id="btnStopUpload" class="stop-btn" hidden>Stop</button>
+            </div>
             <span class="hint" id="uploadStatus">Sign in and load a video to upload a selection.</span>
           </div>
           <div class="progress" id="uploadProgress" hidden><div class="progress-fill" id="uploadProgressFill"></div></div>
