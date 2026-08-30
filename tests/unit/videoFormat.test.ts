@@ -21,6 +21,8 @@ const harness = vi.hoisted(() => ({
   openError: null as Error | null,
   /** The WebCodecs pixel format the decoded first sample carries, or null for no sample at all. */
   sampleFormat: null as string | null,
+  /** Thrown out of `getSample()` when set — a decoder that gives out mid-frame. */
+  sampleError: null as Error | null,
   /** Whether the decoded sample was released again, and whether the input behind it was. */
   sampleClosed: false,
   disposed: 0,
@@ -44,6 +46,7 @@ vi.mock("mediabunny", () => ({
   VideoSampleSink: class {
     getSample(timestamp: number): Promise<{ format: string | null; close(): void } | null> {
       harness.sampledAt = timestamp;
+      if (harness.sampleError) return Promise.reject(harness.sampleError);
       if (!harness.sampleFormat) return Promise.resolve(null);
       return Promise.resolve({
         format: harness.sampleFormat,
@@ -70,6 +73,7 @@ beforeEach(() => {
   harness.track = track();
   harness.openError = null;
   harness.sampleFormat = "I420";
+  harness.sampleError = null;
   harness.sampleClosed = false;
   harness.disposed = 0;
   harness.sampledAt = null;
@@ -105,6 +109,27 @@ describe("videoFormatInfo", () => {
   it("survives a track whose parameter string throws instead of answering", async () => {
     harness.track = track({ getCodecParameterString: () => Promise.reject(new Error("no config")) });
     expect(await videoFormatInfo(new Blob([]))).toEqual({ codec: "avc", pixelFormat: "yuv420p", bitDepth: 8 });
+  });
+
+  it("keeps what the container said when the decoder gives out mid-frame", async () => {
+    harness.sampleError = new Error("decoder crashed");
+    expect(await videoFormatInfo(new Blob([]))).toEqual({ codec: "avc", codecRFC6381: "avc1.640028" });
+  });
+
+  it("keeps what the container said when even the decodability check throws", async () => {
+    harness.track = track({ canDecode: () => Promise.reject(new Error("no codec registry")) });
+    expect(await videoFormatInfo(new Blob([]))).toEqual({ codec: "avc", codecRFC6381: "avc1.640028" });
+  });
+
+  it("falls back to the frame at zero when the track will not say where it starts", async () => {
+    harness.track = track({ getFirstTimestamp: () => Promise.reject(new Error("no index")) });
+    expect(await videoFormatInfo(new Blob([]))).toEqual({
+      codec: "avc",
+      codecRFC6381: "avc1.640028",
+      pixelFormat: "yuv420p",
+      bitDepth: 8,
+    });
+    expect(harness.sampledAt).toBe(0);
   });
 
   it("claims nothing for a layout FFmpeg's own vocabulary has no name for", async () => {

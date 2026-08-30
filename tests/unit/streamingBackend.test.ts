@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StreamingVideoBackend, openStreamingBlob, openStreamingUrl } from "../../src/lib/streaming";
+import { InterruptedError } from "../../src/lib/interrupt";
 
 // Covers the backend against a stand-in for mediabunny: what it asks the container for while
 // opening a file (the whole point of the module — see its header), and how it serves frames out of
@@ -44,6 +45,22 @@ const harness = vi.hoisted(() => ({
   sourceSize: null as number | null,
   /** The WebCodecs pixel format decoded samples carry, or null for a fake that names none. */
   sampleFormat: null as string | null,
+  /** Timestamps `getKeyPacket()` was asked for — the seeks a stream copy starts from. */
+  keyPacketAsked: [] as number[],
+  /** Where the fake container puts the keyframe at or before any asked timestamp, or null for a
+   * container that reports none. */
+  keyPacketTimestamp: null as number | null,
+  /** What the last `Conversion.init` was configured with. */
+  conversionOptions: null as Record<string, unknown> | null,
+  /** Whether the fake conversion considers itself able to run, and why not when it cannot. */
+  conversionValid: true,
+  discardedReasons: [] as string[],
+  /** What `execute()` leaves in the output's BufferTarget, or a throw of its own. */
+  outputBuffer: null as ArrayBuffer | null,
+  executeError: null as unknown,
+  /** Progress fractions the fake conversion reports while executing. */
+  executeProgress: [] as number[],
+  cancelled: 0,
 }));
 
 /** Reports `bytes` read from the source, as mediabunny does while it works through a container. */
@@ -110,6 +127,41 @@ vi.mock("mediabunny", () => {
         const at = harness.timestamps.filter((t) => t <= timestamp + 1e-9).sort((a, b) => b - a)[0];
         return Promise.resolve(at === undefined ? null : { timestamp: at });
       }
+      getKeyPacket(timestamp: number): Promise<{ timestamp: number } | null> {
+        harness.keyPacketAsked.push(timestamp);
+        return Promise.resolve(harness.keyPacketTimestamp === null ? null : { timestamp: harness.keyPacketTimestamp });
+      }
+    },
+    Mp4OutputFormat: class {},
+    BufferTarget: class {
+      buffer: ArrayBuffer | null = null;
+    },
+    Output: class {
+      target: { buffer: ArrayBuffer | null };
+      constructor({ target }: { target: { buffer: ArrayBuffer | null } }) {
+        this.target = target;
+      }
+    },
+    Conversion: {
+      init(options: Record<string, unknown>): Promise<unknown> {
+        harness.conversionOptions = options;
+        const conversion = {
+          isValid: harness.conversionValid,
+          discardedTracks: harness.discardedReasons.map((reason) => ({ reason })),
+          onProgress: null as ((fraction: number) => void) | null,
+          execute: () => {
+            for (const fraction of harness.executeProgress) conversion.onProgress?.(fraction);
+            if (harness.executeError) return Promise.reject(harness.executeError);
+            (options.output as { target: { buffer: ArrayBuffer | null } }).target.buffer = harness.outputBuffer;
+            return Promise.resolve();
+          },
+          cancel: () => {
+            harness.cancelled++;
+            return Promise.resolve();
+          },
+        };
+        return Promise.resolve(conversion);
+      },
     },
     VideoSampleSink: class {
       getSample(timestamp: number): Promise<FakeSample | null> {
@@ -172,6 +224,15 @@ beforeEach(() => {
   harness.bytesPerPacket = 0;
   harness.sourceSize = null;
   harness.sampleFormat = null;
+  harness.keyPacketAsked = [];
+  harness.keyPacketTimestamp = null;
+  harness.conversionOptions = null;
+  harness.conversionValid = true;
+  harness.discardedReasons = [];
+  harness.outputBuffer = new TextEncoder().encode("trimmed-mp4").buffer as ArrayBuffer;
+  harness.executeError = null;
+  harness.executeProgress = [];
+  harness.cancelled = 0;
   bitmaps = [];
   vi.stubGlobal("createImageBitmap", (frame: unknown) => {
     const bitmap: FakeBitmap = {
@@ -444,5 +505,137 @@ describe("StreamingVideoBackend.close", () => {
     backend.close();
     expect(bitmaps.every((b) => b.closed)).toBe(true);
     expect(harness.disposed).toBe(1);
+  });
+});
+
+describe("StreamingVideoBackend.extractRange", () => {
+  interface ConversionConfig {
+    audio: { discard: boolean };
+    video: { forceTranscode: boolean; process?: unknown };
+    trim: { start: number; end: number };
+  }
+
+  it("re-encodes a precise cut from the selection's own first frame, audio dropped either way", async () => {
+    const backend = await open();
+    const result = await backend.extractRange(1, 3, { precise: true });
+    const config = harness.conversionOptions as unknown as ConversionConfig;
+    expect(config.audio).toEqual({ discard: true });
+    expect(config.video.forceTranscode).toBe(true);
+    expect(config.trim.start).toBeCloseTo(0.1, 9);
+    expect(config.trim.end).toBeCloseTo(0.35, 9);
+    // A frame-exact cut never needs the keyframe before the selection.
+    expect(harness.keyPacketAsked).toEqual([]);
+    expect(result.transcoded).toBe(true);
+    expect(result.start).toBeCloseTo(0.1, 9);
+    expect(result.end).toBeCloseTo(0.35, 9);
+    expect(result.blob.type).toBe("video/mp4");
+    expect(result.blob.size).toBe(11);
+  });
+
+  it("copies a fast cut from the keyframe at or before the selection", async () => {
+    harness.keyPacketTimestamp = 0;
+    const backend = await open();
+    const result = await backend.extractRange(1, 3, { precise: false });
+    expect(harness.keyPacketAsked).toEqual([0.1]);
+    const config = harness.conversionOptions as unknown as ConversionConfig;
+    expect(config.video.forceTranscode).toBe(false);
+    expect(config.trim.start).toBe(0);
+    expect(result.transcoded).toBe(false);
+    expect(result.start).toBe(0);
+  });
+
+  it("starts at the selection itself when the container reports no keyframe before it", async () => {
+    const backend = await open();
+    const result = await backend.extractRange(1, 3, { precise: false });
+    expect(result.start).toBeCloseTo(0.1, 9);
+  });
+
+  it("re-encodes even a fast cut once frames have to be processed on the way through", async () => {
+    const backend = await open();
+    const process = (sample: unknown) => sample;
+    const result = await backend.extractRange(1, 3, { precise: false, process: process as never });
+    const config = harness.conversionOptions as unknown as ConversionConfig;
+    expect(config.video.forceTranscode).toBe(true);
+    expect(config.video.process).toBe(process);
+    expect(harness.keyPacketAsked).toEqual([]);
+    expect(result.transcoded).toBe(true);
+  });
+
+  it("holds the requested range to the video's own bounds", async () => {
+    const backend = await open();
+    const result = await backend.extractRange(-3, 99, { precise: true });
+    expect(result.start).toBeCloseTo(0, 9);
+    expect(result.end).toBeCloseTo(0.45, 9);
+  });
+
+  it("forwards the conversion's progress to whoever is watching", async () => {
+    harness.executeProgress = [0.25, 1];
+    const backend = await open();
+    const fractions: number[] = [];
+    await backend.extractRange(0, 4, { precise: true, onProgress: (f) => fractions.push(f) });
+    expect(fractions).toEqual([0.25, 1]);
+  });
+
+  it("refuses once the video is closed", async () => {
+    const backend = await open();
+    backend.close();
+    await expect(backend.extractRange(0, 2, { precise: true })).rejects.toThrow(/closed before the selection/);
+  });
+
+  it("refuses a range with nothing in it", async () => {
+    const backend = await open();
+    await expect(backend.extractRange(7, 9, { precise: true })).rejects.toThrow("There is nothing selected to extract");
+  });
+
+  it("stops before converting anything when the delivery was already stopped", async () => {
+    const backend = await open();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(backend.extractRange(0, 2, { precise: true, signal: controller.signal })).rejects.toThrow(InterruptedError);
+    expect(harness.conversionOptions).toBeNull();
+  });
+
+  it("names the reasons a source cannot be trimmed in the browser", async () => {
+    harness.conversionValid = false;
+    harness.discardedReasons = ["undecodable_source_codec"];
+    const backend = await open();
+    await expect(backend.extractRange(0, 2, { precise: true })).rejects.toThrow(
+      "This video cannot be trimmed in the browser (undecodable_source_codec)",
+    );
+  });
+
+  it("falls back to naming an unsupported source when the conversion says nothing more", async () => {
+    harness.conversionValid = false;
+    const backend = await open();
+    await expect(backend.extractRange(0, 2, { precise: true })).rejects.toThrow(/unsupported source/);
+  });
+
+  it("cancels the conversion on a stop mid-trim, reporting it as the interruption it is", async () => {
+    const backend = await open();
+    const controller = new AbortController();
+    harness.executeProgress = [0.5];
+    harness.executeError = { name: "ConversionCanceledError", message: "canceled" };
+    await expect(
+      backend.extractRange(0, 4, {
+        precise: true,
+        signal: controller.signal,
+        // Stop pressed while the trim is running: the abort tells mediabunny to cancel, whose own
+        // cancellation error then comes back out of execute().
+        onProgress: () => controller.abort(),
+      }),
+    ).rejects.toThrow(InterruptedError);
+    expect(harness.cancelled).toBe(1);
+  });
+
+  it("lets a real conversion failure through untouched", async () => {
+    harness.executeError = new Error("decoder crashed");
+    const backend = await open();
+    await expect(backend.extractRange(0, 2, { precise: true })).rejects.toThrow("decoder crashed");
+  });
+
+  it("refuses an empty trim rather than handing back a 0-byte clip", async () => {
+    harness.outputBuffer = new ArrayBuffer(0);
+    const backend = await open();
+    await expect(backend.extractRange(0, 2, { precise: true })).rejects.toThrow(/Trimming produced an empty clip/);
   });
 });
