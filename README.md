@@ -12,7 +12,7 @@
   </p>
 </p>
 
-A web app for selecting a clip (a snippet range or a single frame) from a video and saving it or uploading directly[^1] to the EMBER Archive.
+A web app for selecting a clip (a snippet range or a single frame) from a video and saving it locally or uploading directly[^1] to the EMBER Archive.
 
 ---
 
