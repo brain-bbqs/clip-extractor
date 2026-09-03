@@ -7,8 +7,9 @@
 
 A basic manual pass through Clip Extractor's core flows before a release or after a significant
 change. Run through this on the deployed site, signed in with a real EMBER Archive account with
-access to at least one Dandiset. See [`docs/README.md`](README.md) for `?test` query params that
-can stand in for steps that need a real video, sign-in, or dataset when those aren't handy.
+access to at least one Dandiset.
+
+See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results for some example pose data.
 
 ## Sign-in and dataset selection
 
