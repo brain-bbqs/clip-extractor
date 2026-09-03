@@ -20,4 +20,6 @@ Built & maintained by the [Center for Open Neuroscience](https://centerforopenne
 
 Conception & prototype by the [Talmo Lab](https://talmolab.org/) at [talmolab/vibes](https://github.com/talmolab/vibes).
 
+Funded by the [National Institutes of Health (NIH)](https://www.nih.gov/brain/research/data-knowledge-resources) grant [R24 MH136632](https://reporter.nih.gov/search/kDbcoCvju0ymZz0fI3zvhA/project-details/10888659) as a part of the [Brain Behavior Quantification and Synchronization (BBQS)](https://brain-bbqs.org/) consortium.
+
 [^1]: Powered by the [BBQS Uploader](https://github.com/brain-bbqs/bbqs-uploader).
