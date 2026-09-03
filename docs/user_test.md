@@ -1,62 +1,74 @@
 # User Test Checklist
 
-A basic manual pass through Clip Extractor's core flows, for a real browser session against
-production (or a preview deploy). See [`docs/README.md`](README.md) for `?test` query params that
+|            |         |
+| ---------- | ------- |
+| **Tester** | <enter> |
+| **Date**   | <enter> |
+
+A basic manual pass through Clip Extractor's core flows before a release or after a significant
+change. Run through this on the deployed site, signed in with a real EMBER Archive account with
+access to at least one Dandiset. See [`docs/README.md`](README.md) for `?test` query params that
 can stand in for steps that need a real video, sign-in, or dataset when those aren't handy.
 
-## Sign-in and access
+## Sign-in and dataset selection
 
-- [ ] Sign in via the header and confirm the user's name/avatar appears
-- [ ] Confirm the dataset picker lists the signed-in user's direct-upload datasets
-- [ ] Sign out and confirm the app returns to a usable signed-out state (local-only delivery)
+- [ ] Loading the page signed out shows the signed-out state and a working sign-in control
+- [ ] Signing in redirects back to the app in a signed-in state, with the user's name/avatar shown
+- With access to:
+  - [ ] exactly one direct-upload dataset, it's selected without needing a dropdown
+  - [ ] multiple direct-upload datasets, they appear in a dropdown and switching selection updates the page
+  - [ ] no direct-upload datasets, the app falls back to local-only delivery
+- [ ] A dataset flagged as containing human subjects data shows the warning banner and gates upload until the blur tool has been used or dismissed
+- [ ] Signing out returns to the signed-out state cleanly
 
 ## Loading a video
 
-- [ ] Drag-and-drop a local video file onto the picker and confirm it loads and starts playing
-- [ ] Load a video via the "Browse" pane from the EMBER Archive instead of a local file
-- [ ] Confirm video metadata (duration, resolution, frame rate) displays correctly
-- [ ] Try an unsupported/corrupt file and confirm a clear error message appears, not a silent failure
+- [ ] Dragging and dropping a local video file onto the picker loads it and playback starts
+- [ ] "Browse" loads a video from the EMBER Archive instead of a local file
+- [ ] Video metadata (duration, resolution, frame rate) displays correctly once loaded
+- [ ] An unsupported or corrupt file shows a clear error message, not a silent failure
 
 ## Timeline and playback
 
-- [ ] Scrub the timeline and confirm the preview frame updates accordingly
-- [ ] Play/pause with both the on-screen controls and spacebar
-- [ ] Step forward/backward frame-by-frame with keyboard shortcuts
-- [ ] Load a long video and confirm the sliding-window timeline works (zoom/pan behaves sensibly)
+- [ ] Scrubbing the timeline updates the preview frame accordingly
+- [ ] Play/pause works from both the on-screen controls and the spacebar
+- [ ] Frame-by-frame stepping works with the keyboard shortcuts
+- [ ] A long video shows the sliding-window timeline, and zoom/pan on it behaves sensibly
 
 ## Selecting a clip
 
-- [ ] Mark a single frame and confirm the selection UI reflects "frame" mode
-- [ ] Mark a snippet range (in/out points) and confirm duration updates as you adjust either end
-- [ ] Confirm the selection persists correctly when switching between play and pause
+- [ ] Marking a single frame switches the selection UI to "frame" mode
+- [ ] Marking a snippet range (in/out points) updates the duration as either end is adjusted
+- [ ] The selection persists correctly when switching between play and pause
 
 ## Pose overlay (SLEAP)
 
-- [ ] Load a matching `.slp` pose file alongside a video and confirm the pose overlay renders
-- [ ] Load a mismatched `.slp` file and confirm the app refuses with a clear mismatch message
+- [ ] Loading a matching `.slp` pose file alongside a video renders the pose overlay
+- [ ] Loading a mismatched `.slp` file is refused with a clear mismatch message
 
 ## Blur tool
 
-- [ ] For a dataset flagged as human-subjects, confirm the blur tool is available and the warning banner shows
-- [ ] Draw a blur region and confirm it's visibly applied in the preview and in the exported output
-- [ ] Remove/adjust a blur region and confirm the change is reflected
+- [ ] For a dataset flagged as human-subjects, the blur tool is available and the warning banner shows
+- [ ] Drawing a blur region visibly applies it in both the preview and the exported output
+- [ ] Removing or adjusting a blur region is reflected correctly
 
 ## Export / local download
 
-- [ ] Export a marked frame and confirm a valid image file downloads
-- [ ] Export a marked snippet and confirm a valid video file downloads
-- [ ] Confirm exported filenames follow the expected BIDS-like naming convention
-- [ ] Confirm exported files play/open correctly outside the app (e.g., in a media player or image viewer)
+- [ ] Exporting a marked frame downloads a valid image file
+- [ ] Exporting a marked snippet downloads a valid video file
+- [ ] Exported filenames follow the expected BIDS-like naming convention
+- [ ] Exported files play/open correctly outside the app (e.g., in a media player or image viewer)
 
 ## Upload to EMBER Archive
 
-- [ ] Upload an exported frame/snippet to a selected dataset and confirm a progress indicator shows
-- [ ] Confirm the upload completes and the asset appears in the target dataset's file listing
-- [ ] Interrupt an in-progress upload (e.g., close/reload the tab) and confirm the app recovers gracefully on return
-- [ ] Attempt to upload to a non-embargoed dataset and confirm upload is correctly disabled with an explanatory message
+- [ ] Uploading an exported frame/snippet to a selected dataset shows a progress indicator
+- [ ] A successful upload's asset appears in the target dataset's file listing on EMBER Archive
+- [ ] Interrupting an in-progress upload (e.g., close/reload the tab) recovers gracefully on return
+- [ ] Attempting to upload to a non-embargoed dataset is correctly disabled, with an explanatory message
 
-## General
+## Cross-cutting
 
-- [ ] Resize the browser window / test on a smaller viewport and confirm the layout stays usable
-- [ ] Reload the page mid-session and confirm no unrecoverable errors occur
-- [ ] Check the browser console for unexpected errors or warnings during the above steps
+- [ ] Reloading the page mid-session doesn't corrupt local state (localStorage) in a way that breaks the next load
+- [ ] The app is usable in both light and dark OS/browser theme
+- [ ] Basic responsiveness: window resized narrower doesn't break layout or hide controls
+- [ ] No unexpected errors in the browser console
