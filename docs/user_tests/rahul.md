@@ -1,8 +1,8 @@
 # User Test Checklist
 
-|            |        |
-| ---------- | ------ |
-| **Tester** | Rahul  |
+|            |         |
+| ---------- | ------- |
+| **Tester** | Rahul |
 | **Date**   | 9/3/26 |
 
 A basic manual pass through Clip Extractor's core flows before a release or after a significant
@@ -15,6 +15,7 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 
 - [ ] Loading the page signed out shows the signed-out state and a working sign-in control
 - [ ] Signing in redirects back to the app in a signed-in state, with the user's name/avatar shown
+  - Note: Doing the process and signing out reset the entire page 
 - With access to:
   - [ ] exactly one direct-upload dataset, it's selected without needing a dropdown
   - [ ] multiple direct-upload datasets, they appear in a dropdown and switching selection updates the page
@@ -59,6 +60,8 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 - [ ] Exporting a marked snippet downloads a valid video file
 - [ ] Exported filenames follow the expected BIDS-like naming convention
 - [ ] Exported files play/open correctly outside the app (e.g., in a media player or image viewer)
+
+NOTE: when exporting blurred version, need to deal better with including original content [can't bundle as intended but still says (recommended)]
 
 ## Upload to EMBER Archive
 
