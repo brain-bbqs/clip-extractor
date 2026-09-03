@@ -1,11 +1,5 @@
 # Changelog
 
-## 1.5.1
-
-#### 🏠 Internal
-
-- Removed unused logo and icon assets left over from earlier branding, including the ones the README pointed at ([#58](https://github.com/brain-bbqs/clip-extractor/pull/58))
-
 ## 1.5.0
 
 #### 🚀 Enhancement
