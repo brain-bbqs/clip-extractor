@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/assets/mark-612.png" width="120" alt="Clip Extractor logo"/>
+  <img src="src/assets/clip-extractor-mark.svg" width="120" alt="Clip Extractor logo"/>
   <h1 align="center">Clip Extractor</h1>
   <p align="center">
     <a href="https://codecov.io/github/brain-bbqs/clip-extractor?branch=main"><img src="https://codecov.io/github/brain-bbqs/clip-extractor/coverage.svg?branch=main" alt="codecov"></a>
@@ -19,5 +19,7 @@ A web app for selecting a clip (a snippet range or a single frame) from a video 
 Built & maintained by the [Center for Open Neuroscience](https://centerforopenneuroscience.org).
 
 Conception & prototype by the [Talmo Lab](https://talmolab.org/) at [talmolab/vibes](https://github.com/talmolab/vibes).
+
+Funded by the [National Institutes of Health (NIH)](https://www.nih.gov/brain/research/data-knowledge-resources) grant [R24 MH136632](https://reporter.nih.gov/search/kDbcoCvju0ymZz0fI3zvhA/project-details/10888659) as a part of the [Brain Behavior Quantification and Synchronization (BBQS)](https://brain-bbqs.org/) consortium.
 
 [^1]: Powered by the [BBQS Uploader](https://github.com/brain-bbqs/bbqs-uploader).
