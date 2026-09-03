@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/assets/mark-612.png" width="120" alt="Clip Extractor logo"/>
+  <img src="src/assets/clip-extractor-mark.svg" width="120" alt="Clip Extractor logo"/>
   <h1 align="center">Clip Extractor</h1>
   <p align="center">
     <a href="https://codecov.io/github/brain-bbqs/clip-extractor?branch=main"><img src="https://codecov.io/github/brain-bbqs/clip-extractor/coverage.svg?branch=main" alt="codecov"></a>
