@@ -1,8 +1,8 @@
 # User Test Checklist
 
-|            |         |
-| ---------- | ------- |
-| **Tester** | Rahul |
+|            |        |
+| ---------- | ------ |
+| **Tester** | Rahul  |
 | **Date**   | 9/3/26 |
 
 A basic manual pass through Clip Extractor's core flows before a release or after a significant
