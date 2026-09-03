@@ -28,7 +28,7 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 
 - [x] Dragging and dropping a local video file onto the picker loads it and playback starts
 - [ ] "Browse" loads a video from the EMBER Archive instead of a local file
-    - NOTE: Did not have time to try
+  - NOTE: Did not have time to try
 - [x] Video metadata (duration, resolution, frame rate) displays correctly once loaded
 - [x] An unsupported or corrupt file shows a clear error message, not a silent failure
 
