@@ -11,3 +11,10 @@
 - Keep PR descriptions short and to the point
 - End every PR description with the prompts that asked for the work, verbatim, inside a collapsed `<details>` block titled `Original prompt`; when follow-up prompts refine the same PR, append each one to that block
 - Limit use of em-dashes in all text
+
+## User stories
+
+`user-stories/` holds user stories for this tool, migrated from the EMBER documentation repository. See `user-stories/README.md` for the format and how to contribute a story, and `user-stories/story-template.md` for the template to start from.
+
+- Do not use task-list checkboxes (`- [ ]`) on these pages. Acceptance criteria and similar lists are plain bullets.
+- GitHub renders Mermaid natively in markdown files. Do not insert `<br/>` (or `<br>`) line breaks in node or edge labels; the renderer sizes and wraps labels on its own. Keep labels short enough to read at a glance and move detail into the surrounding prose instead of the diagram.
