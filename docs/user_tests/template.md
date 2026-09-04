@@ -73,3 +73,4 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 - [ ] The app is usable in both light and dark OS/browser theme
 - [ ] Basic responsiveness: window resized narrower doesn't break layout or hide controls
 - [ ] No unexpected errors in the browser console
+- [ ] Can navigate to all hyperlinks in the bottom-left
