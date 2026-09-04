@@ -13,12 +13,12 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 
 ## Sign-in and dataset selection
 
-- [ ] Loading the page signed out shows the signed-out state and a working sign-in control
-- [ ] Signing in redirects back to the app in a signed-in state, with the user's name/avatar shown
+- [x] Loading the page signed out shows the signed-out state and a working sign-in control
+- [x] Signing in redirects back to the app in a signed-in state, with the user's name/avatar shown
 - With access to:
-  - [ ] exactly one direct-upload dataset, it's selected without needing a dropdown
-  - [ ] multiple direct-upload datasets, they appear in a dropdown and switching selection updates the page
-  - [ ] no direct-upload datasets, the app falls back to local-only delivery
+  - [x] exactly one direct-upload dataset, it's selected without needing a dropdown
+  - [ ] ~~multiple direct-upload datasets, they appear in a dropdown and switching selection updates the page~~
+  - [ ] ~~no direct-upload datasets, the app falls back to local-only delivery~~
 - [ ] A dataset flagged as containing human subjects data shows the warning banner and gates upload until the blur tool has been used or dismissed
 - [ ] Signing out returns to the signed-out state cleanly
 
@@ -75,7 +75,9 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 - [ ] No unexpected errors in the browser console
 - [ ] Can navigate to all hyperlinks in the bottom-left
 
-# Extra notes
+## Extra notes
+
+Did not have time to grant access for certain features such as blurring
 
 Both he and Rahul were thrown off a little by the loading time for .slp files
 
