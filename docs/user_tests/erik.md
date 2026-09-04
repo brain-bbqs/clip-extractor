@@ -80,3 +80,8 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 Both he and Rahul were thrown off a little by the loading time for .slp files
 
 Signed into HEARTH apps FIRST then navigated to main EMBER site and was NOT logged in. [investigate and shared cookies across sites]
+
+Hit stop button and changed app while one file had been uploaded, leaving an orphaned state in the upload target.
+
+Make data views on EMBER/DANDI make new tab
+
