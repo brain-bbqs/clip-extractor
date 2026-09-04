@@ -35,7 +35,7 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 ## Timeline and playback
 
 - [x] Scrubbing the timeline updates the preview frame accordingly
-- [x] Play/pause works from both the on-screen controls and the spacebar
+- [x] Play/pause works from both the on-screen controls
 - [x] Frame-by-frame stepping works with the keyboard shortcuts
 - [ ] A long video shows the sliding-window timeline, and zoom/pan on it behaves sensibly
   - NOTE: did not have a video to try
@@ -72,7 +72,6 @@ NOTE: when exporting blurred version, need to deal better with including origina
 - [ ] Uploading an exported frame/snippet to a selected dataset shows a progress indicator
 - [ ] A successful upload's asset appears in the target dataset's file listing on EMBER Archive
 - [ ] Interrupting an in-progress upload (e.g., close/reload the tab) recovers gracefully on return
-- [ ] Attempting to upload to a non-embargoed dataset is correctly disabled, with an explanatory message
 
 NOTE: did not have time to try
 
@@ -83,4 +82,8 @@ NOTE: did not have time to try
 - [ ] Basic responsiveness: window resized narrower doesn't break layout or hide controls
 - [ ] No unexpected errors in the browser console
 
-NOTE: did not have time to check most of these
+## Extra notes
+
+See above
+
+Did not have time to check most of these
