@@ -1,9 +1,9 @@
 # User Test Checklist
 
-|            |         |
-| ---------- | ------- |
+|            |              |
+| ---------- | ------------ |
 | **Tester** | Erik Johnson |
-| **Date**   | 9/4/26 |
+| **Date**   | 9/4/26       |
 
 A basic manual pass through Clip Extractor's core flows before a release or after a significant
 change. Run through this on the deployed site, signed in with a real EMBER Archive account with
@@ -75,8 +75,6 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 - [ ] No unexpected errors in the browser console
 - [ ] Can navigate to all hyperlinks in the bottom-left
 
-
 # Extra notes
 
 Both he and Rahul were thrown off a little by the loading time for .slp files
-
