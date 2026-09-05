@@ -4,7 +4,7 @@
 
 #### 🏠 Internal
 
-- Removed Google Analytics and the cookie consent banner: the page no longer tracks usage, so there is nothing left to consent to (PR_LINK)
+- Removed Google Analytics and the cookie consent banner: the page no longer tracks usage, so there is nothing left to consent to ([#64](https://github.com/brain-bbqs/clip-extractor/pull/64))
 
 ## 1.5.0
 
