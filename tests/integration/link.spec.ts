@@ -21,10 +21,6 @@ async function streamClip(page: Page): Promise<void> {
   await expect(page.locator("#view")).toBeVisible();
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
-});
-
 test("a streamed video, its snippet and its description survive a reload", async ({ page }) => {
   await page.goto("/");
   await serveClip(page);

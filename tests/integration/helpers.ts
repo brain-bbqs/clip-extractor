@@ -159,7 +159,6 @@ export async function stubArchive(page: Page, { humanSubjects = false }: StubArc
         JSON.stringify({ oauth: { accessToken: "test-token", expiresAt: Date.now() + 3_600_000 }, deliveryMode: "upload" }),
       );
     }
-    localStorage.setItem("clip-extractor.analytics-consent", "declined");
   });
 
   return { registered, uploaded };

@@ -21,7 +21,6 @@ test("a source video carrying sound is copied in as _audiovideo, described down 
   // A snippet is a real ffmpeg.wasm encode: its 32MB core is served out of node_modules rather than
   // the CDN (see helpers.ts), so the encode is the app's own and still needs no network.
   test.setTimeout(180_000);
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await serveFfmpegCore(page);
   await page.goto(AUDIO_LINK);
   await expect(page.locator("#btnDownload")).toBeEnabled();
@@ -60,7 +59,6 @@ test("a source video carrying sound is copied in as _audiovideo, described down 
 });
 
 test("the same recording without a sound track keeps BEP047's plain _video suffix", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await page.goto("/?test&mock_video&mock_ready&from_local&frame");
   await expect(page.locator("#btnDownload")).toBeEnabled();
 
