@@ -41,13 +41,10 @@ call for this app.
 
 Also keep an eye on:
 
-- **Third-party runtime scripts are opt-in only.** `index.html` loads Google
-  Analytics' `gtag.js` (see "Google Analytics" below), but only after the
-  user explicitly accepts via the consent banner; nothing else loads a CDN
+- **No third-party runtime scripts.** Nothing in `index.html` loads a CDN
   `<script>` tag. A compromised third-party script is the other realistic way
   a token in storage gets exfiltrated even without a bug in this app's own
-  code, so keep the list of scripts that load unconditionally at page load
-  empty.
+  code, so keep it that way.
 - **Minimal runtime dependencies.** Currently `@talmolab/sleap-io.js`,
   `@ffmpeg/ffmpeg`, and `@ffmpeg/util`. Every added runtime dependency is
   something that could be compromised upstream and ship code that reads
@@ -100,22 +97,6 @@ this app's picker shows; it grants no capability on its own. When the service
 cannot be reached at all, the check fails closed (the dandiset is not
 offered) and the picker says so rather than reporting an empty list as "you
 have not been added to any datasets".
-
-## Google Analytics
-
-`index.html` loads GA (`gtag.js`, measurement ID `G-CQZQL50EFX`) gated behind
-a cookie-consent banner, copied from the pattern used by
-[dandi/usage-page](https://github.com/dandi/usage-page):
-
-- The consent choice (`'accepted'` / `'declined'` / unset) is stored in
-  `localStorage` under `clip-extractor.analytics-consent` and re-checked on
-  every page load.
-- Declining (or leaving the banner unanswered) never fetches `gtag.js`, never
-  sets `window.dataLayer`/`window.gtag`, and never touches a GA cookie.
-  Accepting is the only path that appends the `gtag.js` `<script>` tag.
-- This is not sensitive data: the stored value is a UI preference, not a
-  credential, so it doesn't fall under the "clear text storage" checklist
-  above.
 
 ## Handling a "clear text storage" alert on a new credential
 

@@ -16,7 +16,6 @@ const RECORDING = "\\d{17}";
 test("a save writes a bundle holding the extract, the original, their sidecar and all three dataset_description.json files", async ({
   page,
 }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await page.goto("/");
 
   await loadRecordedVideo(page, "file_example_480 - Copy.webm");
@@ -104,7 +103,6 @@ test("a save writes a bundle holding the extract, the original, their sidecar an
 test("leaving the original out saves the extract and its sidecar alone, plus all three dataset_description.json files", async ({
   page,
 }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await page.goto("/");
 
   await loadRecordedVideo(page, "mice.webm");
@@ -159,7 +157,6 @@ const MOCK_RANGE = { in: "6", out: "21" };
 const SNIPPET_MODE_BUTTON = '#modeSeg button[data-mode="video"]';
 
 test("?test&mock_video&mock_ready&from_local&frame saves a still frame of a locally dropped video", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await page.goto("/?test&mock_video&mock_ready&from_local&frame");
   await expect(page.locator("#btnDownload")).toBeEnabled();
   // A frame somebody would have had to seek to by hand, not the one the video opened on.
@@ -181,7 +178,6 @@ test("?test&mock_video&mock_ready&from_local&frame saves a still frame of a loca
 });
 
 test("?test&mock_video&mock_ready&from_local&snippet marks a real range of a locally dropped video", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await page.goto("/?test&mock_video&mock_ready&from_local&snippet");
   await expect(page.locator("#btnDownload")).toBeEnabled();
 
@@ -196,7 +192,6 @@ test("?test&mock_video&mock_ready&from_local&snippet marks a real range of a loc
 });
 
 test("?test&mock_video&mock_ready&from_ember&frame saves a still frame of an archive-sourced video", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   // `from_ember` (see lib/testInjection.ts) makes the mock video look, to behEntities, as if it were
   // opened from sub-01/ses-02/… — a known subject and session, so its derivatives directory gets a
   // date-/time- disambiguator (not recording-), while the bundle name carries neither.
@@ -225,7 +220,6 @@ test("?test&mock_video&mock_ready&from_ember&frame saves a still frame of an arc
 });
 
 test("?test&mock_video&mock_ready&from_ember&snippet marks a real range of an archive-sourced video", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await page.goto("/?test&mock_video&mock_ready&from_ember&snippet");
   await expect(page.locator("#btnDownload")).toBeEnabled();
 
@@ -237,7 +231,6 @@ test("?test&mock_video&mock_ready&from_ember&snippet marks a real range of an ar
 });
 
 test("the bundle stays named after its source dandiset even with an upload destination picked", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   // `num_datasets=1` picks the fake destination dandiset 214000 (see lib/testInjection.ts's
   // FAKE_DANDISET_ID_BASE), while from_ember's own source is 200123. The bundle names where the
   // recording came FROM, not where it is going — the destination is the archive's business, and it
@@ -254,7 +247,6 @@ test("the bundle stays named after its source dandiset even with an upload desti
 });
 
 test("&frame=<n> and &snippet=<lo>-<hi> pick their own indices, held to the video's own bounds", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
   await page.goto("/?test&mock_video&mock_ready&from_local&frame=4");
   await expect(page.locator("#curVal")).toHaveValue("4");
 

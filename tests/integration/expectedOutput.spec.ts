@@ -89,7 +89,6 @@ for (const { name, link, encodes } of CASES) {
   test(`${link} writes exactly the committed expected_output/${name} tree`, async ({ page }) => {
     // Loading a 32MB wasm core and encoding through it takes far longer than a frame's canvas.toBlob.
     if (encodes) test.setTimeout(180_000);
-    await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
     if (encodes) await serveFfmpegCore(page);
     await page.goto(link);
     await expect(page.locator("#btnDownload")).toBeEnabled();

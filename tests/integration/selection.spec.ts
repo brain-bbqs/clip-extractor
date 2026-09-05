@@ -41,10 +41,6 @@ async function dragHandle(page: Page, selector: string, frame: number): Promise<
   await page.mouse.up();
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("clip-extractor.analytics-consent", "declined"));
-});
-
 test("the trim handles bound the snippet, and the readouts follow them", async ({ page }) => {
   await page.goto("/?test&mock_video");
   await expect(page.locator("#view")).toBeVisible();

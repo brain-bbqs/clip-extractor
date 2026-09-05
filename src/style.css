@@ -1849,40 +1849,6 @@ ul.human-subjects-body {
   opacity: 0.45;
 }
 
-.consent-banner {
-  position: fixed;
-  bottom: 60px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(760px, calc(100% - 32px));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
-  z-index: 30;
-}
-
-.consent-banner[hidden] {
-  display: none;
-}
-
-.consent-banner-text {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.9em;
-}
-
-.consent-banner-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
 /* main caps out at a 928px-wide content box (960px max-width minus its own 1rem/16px side padding),
    so each side gutter is (viewport - 928) / 2. Measured against the built page, the corner
    watermark and the footer's left column need ~181px of gutter and the Talmo Lab + CON brand pair
@@ -1931,12 +1897,5 @@ ul.human-subjects-body {
   }
   .loaded-source {
     max-width: 100%;
-  }
-}
-
-@media (max-width: 700px) {
-  .consent-banner {
-    align-items: flex-start;
-    flex-direction: column;
   }
 }

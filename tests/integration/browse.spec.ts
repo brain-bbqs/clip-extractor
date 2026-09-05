@@ -131,7 +131,6 @@ async function stubSignedIn(page: Page): Promise<void> {
       "clip-extractor.settings.v1",
       JSON.stringify({ oauth: { accessToken: "test-token", expiresAt: Date.now() + 3_600_000 } }),
     );
-    localStorage.setItem("clip-extractor.analytics-consent", "declined");
   });
 }
 
