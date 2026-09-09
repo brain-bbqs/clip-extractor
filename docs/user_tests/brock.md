@@ -13,7 +13,7 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 
 ## Sign-in and dataset selection
 
-- [ ] Loading the page signed out shows the signed-out state and a working sign-in control
+- [x] Loading the page signed out shows the signed-out state and a working sign-in control
 - [ ] Signing in redirects back to the app in a signed-in state, with the user's name/avatar shown
 - With access to:
   - [ ] exactly one direct-upload dataset, it's selected without needing a dropdown
