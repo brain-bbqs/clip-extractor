@@ -19,20 +19,20 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
   - [ ] exactly one direct-upload dataset, it's selected without needing a dropdown
   - [ ] multiple direct-upload datasets, they appear in a dropdown and switching selection updates the page
   - [ ] no direct-upload datasets, the app falls back to local-only delivery
-- [ ] A dataset flagged as containing human subjects data shows the warning banner and gates upload until the blur tool has been used or dismissed
-- [ ] Signing out returns to the signed-out state cleanly
+- [x] A dataset flagged as containing human subjects data shows the warning banner and gates upload until the blur tool has been used or dismissed
+- [x] Signing out returns to the signed-out state cleanly
 
 ## Loading a video
 
-- [ ] Dragging and dropping a local video file onto the picker loads it and playback starts
-- [ ] "Browse" loads a video from the EMBER Archive instead of a local file
-- [ ] Video metadata (duration, resolution, frame rate) displays correctly once loaded
+- [x] Dragging and dropping a local video file onto the picker loads it and playback starts
+- [x] "Browse" loads a video from the EMBER Archive instead of a local file
+- [x] Video metadata (duration, resolution, frame rate) displays correctly once loaded
 - [ ] An unsupported or corrupt file shows a clear error message, not a silent failure
 
 ## Timeline and playback
 
-- [ ] Scrubbing the timeline updates the preview frame accordingly
-- [ ] Play/pause works from both the on-screen controls
+- [x] Scrubbing the timeline updates the preview frame accordingly
+- [x] Play/pause works from both the on-screen controls
 - [ ] Frame-by-frame stepping works with the keyboard shortcuts
 - [ ] A long video shows the sliding-window timeline, and zoom/pan on it behaves sensibly
 
