@@ -75,3 +75,9 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 - [ ] Can navigate to all hyperlinks in the bottom-left
 
 ## Extra notes
+
+Add 'Start' and 'End' buttons within frame digit boxes
+
+Make total frame and time exposure more visually obvious
+
+Allow user to enter exact frame OR timestamp
