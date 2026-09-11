@@ -1,11 +1,5 @@
 # Changelog
 
-## 1.6.2
-
-#### 🏠 Internal
-
-- The Lint workflow's Codecov upload no longer fails dependency-bump PRs opened by Dependabot, which run without repository secrets and so had no coverage token to upload with ([#68](https://github.com/brain-bbqs/clip-extractor/pull/68))
-
 ## 1.5.0
 
 #### 🚀 Enhancement
