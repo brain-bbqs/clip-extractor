@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.1
+
+#### 🏠 Internal
+
+- Fixed a broken dependency update that left `vitest` and `@vitest/coverage-v8` on mismatched major versions, which had blocked installs and CI ([#67](https://github.com/brain-bbqs/clip-extractor/pull/67))
+
 ## 1.5.0
 
 #### 🚀 Enhancement
