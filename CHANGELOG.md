@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.3
+
+#### 🐛 Bug Fix
+
+- Playing a short looping range no longer stutters, most of all on a phone: the player now decodes the frames ahead of the playhead in one run and reads round the loop before it wraps, keeps a short loop in memory whole once it has played through once, and no longer steps the picture backwards when a frame arrives late ([#71](https://github.com/brain-bbqs/clip-extractor/pull/71))
+
 ## 1.5.0
 
 #### 🚀 Enhancement

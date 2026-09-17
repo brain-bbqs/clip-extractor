@@ -421,6 +421,33 @@ describe("StreamingVideoBackend.technical", () => {
   });
 });
 
+describe("StreamingVideoBackend's cache", () => {
+  // The fake track is 320x240, so a frame of it is this many bytes as a bitmap.
+  const frameBytes = 320 * 240 * 4;
+
+  it("is sized to a memory budget at the track's own dimensions when given one", async () => {
+    const backend = await openStreamingBlob(new Blob([]), { cacheSize: 4, cacheBytes: frameBytes * 10 });
+    expect(backend.cacheSize).toBe(10);
+  });
+
+  it("holds the frame count it is given when no budget is", async () => {
+    const backend = await openStreamingBlob(new Blob([]), { cacheSize: 4 });
+    expect(backend.cacheSize).toBe(4);
+  });
+
+  it("keeps the frame being shown while a read-ahead fills the cache past it", async () => {
+    // Two frames' worth of room, the first of them on screen, and a window of three read in over
+    // it: everything else turns over, but the bitmap the player is drawing is never closed.
+    const backend = await openStreamingBlob(new Blob([]), { cacheSize: 2 });
+    const shown = await backend.getFrame(0);
+    await backend.prefetch(1, 3);
+    expect(bitmaps[0]).toBe(shown);
+    expect(bitmaps[0].closed).toBe(false);
+    expect(backend.cacheSize).toBe(2);
+    expect(bitmaps.filter((b) => !b.closed)).toHaveLength(2);
+  });
+});
+
 describe("StreamingVideoBackend.getFrame", () => {
   it("decodes the frame at the index's timestamp", async () => {
     const backend = await open();
