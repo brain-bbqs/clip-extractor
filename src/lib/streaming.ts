@@ -7,10 +7,11 @@ import {
   Input,
   Mp4OutputFormat,
   Output,
+  QUALITY_MEDIUM,
   UrlSource,
   VideoSampleSink,
 } from "mediabunny";
-import type { InputVideoTrack, Source, VideoSample } from "mediabunny";
+import type { ConversionVideoOptions, InputVideoTrack, Source, VideoSample } from "mediabunny";
 import { bytes } from "./format";
 import { InterruptedError, isInterruption, throwIfInterrupted } from "./interrupt";
 import { decodedPixelFormatAt, type PixelFormatInfo } from "./videoFormat";
@@ -370,6 +371,18 @@ export interface RangeExtractOptions {
   signal?: AbortSignal;
 }
 
+export interface ProxyRenderOptions {
+  /** The copy's dimensions. Kept to the source's aspect by the caller (see lib/proxy.ts). */
+  width: number;
+  height: number;
+  /** Seconds between key frames. */
+  keyFrameSeconds: number;
+  /** 0..1 through the range. */
+  onProgress?: (fraction: number) => void;
+  /** Gives the copy up partway through, when the range it was for has moved on. */
+  signal?: AbortSignal;
+}
+
 export interface ExtractedRange {
   blob: Blob;
   /** Whether the frames were re-encoded rather than copied over untouched. */
@@ -583,7 +596,50 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     const keyPacket = transcoded ? null : await new EncodedPacketSink(this.track).getKeyPacket(wanted, { metadataOnly: true });
     const start = keyPacket?.timestamp ?? wanted;
     const end = this.index.window(last, last).end;
+    const blob = await this.convert({ start, end }, { forceTranscode: transcoded, process: options.process }, options, "trimmed");
+    if (!blob.size) throw new Error("Trimming produced an empty clip — try a different selection");
+    return { blob, transcoded, start, end };
+  }
 
+  /**
+   * Re-encodes frames `lo..hi` into a small MP4 the player can decode faster than the recording
+   * itself: `width`x`height`, a key frame every `keyFrameSeconds`, frame-exact from `lo`. What the
+   * player loops over once it has fallen behind the recording (see lib/proxy.ts); never what is
+   * extracted or shown while paused.
+   */
+  async renderProxy(lo: number, hi: number, options: ProxyRenderOptions): Promise<Blob> {
+    if (this.closed) throw new Error("The video was closed before a lighter copy of the range could be made");
+    throwIfInterrupted(options.signal);
+    const first = Math.max(0, Math.min(lo, hi));
+    const last = Math.min(this.index.count - 1, Math.max(lo, hi));
+    if (first > last) throw new Error("There is nothing in the range to copy");
+    const blob = await this.convert(
+      { start: this.index.time(first), end: this.index.window(last, last).end },
+      {
+        forceTranscode: true,
+        // H.264 is the one codec every phone decodes in hardware, which is the point of the copy.
+        codec: "avc",
+        width: options.width,
+        height: options.height,
+        fit: "contain",
+        quality: QUALITY_MEDIUM,
+        keyFrameInterval: options.keyFrameSeconds,
+      },
+      options,
+      "copied for playback",
+    );
+    if (!blob.size) throw new Error("Re-encoding the range produced nothing");
+    return blob;
+  }
+
+  /** Runs one mediabunny conversion of `trim` out of this source into an in-memory MP4. `failure`
+   * is what the source could not be, for the refusal raised when the conversion cannot run. */
+  private async convert(
+    trim: { start: number; end: number },
+    video: ConversionVideoOptions,
+    options: { onProgress?: (fraction: number) => void; signal?: AbortSignal },
+    failure: string,
+  ): Promise<Blob> {
     const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
     const conversion = await Conversion.init({
       input: this.input,
@@ -592,13 +648,13 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       // voices out of it in a track nobody was shown. The frame-exact cut has always dropped audio;
       // this drops it whichever way the cut is made.
       audio: { discard: true },
-      video: { forceTranscode: transcoded, process: options.process },
-      trim: { start, end },
+      video,
+      trim,
       showWarnings: false,
     });
     if (!conversion.isValid) {
       const reasons = [...new Set(conversion.discardedTracks.map((track) => track.reason))].join(", ");
-      throw new Error(`This video cannot be trimmed in the browser (${reasons || "unsupported source"})`);
+      throw new Error(`This video cannot be ${failure} in the browser (${reasons || "unsupported source"})`);
     }
     const report = options.onProgress;
     if (report) conversion.onProgress = (fraction) => report(fraction);
@@ -615,8 +671,7 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       options.signal?.removeEventListener("abort", stop);
     }
     const buffer = output.target.buffer;
-    if (!buffer?.byteLength) throw new Error("Trimming produced an empty clip — try a different selection");
-    return { blob: new Blob([buffer], { type: "video/mp4" }), transcoded, start, end };
+    return new Blob(buffer?.byteLength ? [buffer] : [], { type: "video/mp4" });
   }
 
   /** Drops every decoded frame and cancels whatever the source still has in flight. */

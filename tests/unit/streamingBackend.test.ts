@@ -133,6 +133,7 @@ vi.mock("mediabunny", () => {
       }
     },
     Mp4OutputFormat: class {},
+    QUALITY_MEDIUM: "medium",
     BufferTarget: class {
       buffer: ArrayBuffer | null = null;
     },
@@ -521,6 +522,71 @@ describe("StreamingVideoBackend.prefetch", () => {
     expect(await backend.getFrame(0)).toBe(bitmaps[0]);
     expect(harness.sampled).toEqual([0]);
     await window;
+  });
+});
+
+describe("StreamingVideoBackend.renderProxy", () => {
+  interface ProxyConfig {
+    audio: { discard: boolean };
+    video: { forceTranscode: boolean; codec: string; width: number; height: number; fit: string; keyFrameInterval: number };
+    trim: { start: number; end: number };
+  }
+
+  it("re-encodes the range frame-exact, small, with frequent key frames and no sound", async () => {
+    const backend = await open();
+    const blob = await backend.renderProxy(1, 3, { width: 160, height: 120, keyFrameSeconds: 0.5 });
+    const config = harness.conversionOptions as unknown as ProxyConfig;
+    expect(config.audio).toEqual({ discard: true });
+    expect(config.video.forceTranscode).toBe(true);
+    expect(config.video.codec).toBe("avc");
+    expect(config.video.width).toBe(160);
+    expect(config.video.height).toBe(120);
+    expect(config.video.fit).toBe("contain");
+    expect(config.video.keyFrameInterval).toBe(0.5);
+    expect(config.trim.start).toBeCloseTo(0.1, 9);
+    expect(config.trim.end).toBeCloseTo(0.35, 9);
+    // Never from the key frame before the range: the copy's first frame has to be the range's.
+    expect(harness.keyPacketAsked).toEqual([]);
+    expect(blob.type).toBe("video/mp4");
+    expect(blob.size).toBe(11);
+  });
+
+  it("gives up when told to, as the interruption it is", async () => {
+    const backend = await open();
+    const controller = new AbortController();
+    harness.executeProgress = [0.5];
+    harness.executeError = { name: "ConversionCanceledError", message: "canceled" };
+    await expect(
+      backend.renderProxy(0, 4, {
+        width: 160,
+        height: 120,
+        keyFrameSeconds: 0.5,
+        signal: controller.signal,
+        onProgress: () => controller.abort(),
+      }),
+    ).rejects.toThrow(InterruptedError);
+    expect(harness.cancelled).toBe(1);
+  });
+
+  it("names what the source could not be, when the conversion cannot run", async () => {
+    harness.conversionValid = false;
+    harness.discardedReasons = ["no_encodable_target_codec"];
+    const backend = await open();
+    await expect(backend.renderProxy(0, 2, { width: 160, height: 120, keyFrameSeconds: 0.5 })).rejects.toThrow(
+      "This video cannot be copied for playback in the browser (no_encodable_target_codec)",
+    );
+  });
+
+  it("refuses to hand back an empty copy", async () => {
+    harness.outputBuffer = new ArrayBuffer(0);
+    const backend = await open();
+    await expect(backend.renderProxy(0, 2, { width: 160, height: 120, keyFrameSeconds: 0.5 })).rejects.toThrow(/produced nothing/);
+  });
+
+  it("refuses once the video is closed", async () => {
+    const backend = await open();
+    backend.close();
+    await expect(backend.renderProxy(0, 2, { width: 160, height: 120, keyFrameSeconds: 0.5 })).rejects.toThrow(/closed before/);
   });
 });
 
