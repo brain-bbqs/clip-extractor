@@ -1033,12 +1033,11 @@ function decodeAt(source: FrameSource, frame: number): number {
   return decodeIndex(source.order, frame - source.offset);
 }
 
-/** What the caption says about the copy: that one is being made, or that the loop is playing it.
- * Nothing while paused, when the frame on screen is the recording's own. */
+/** What the caption says about the copy: that one is being made, and how far along it is. Nothing
+ * once it plays — smooth playback is its own announcement, and a note that stayed up for the whole
+ * loop read as something still going on. */
 function playbackNote(): string {
-  if (proxyBuild) return `preparing a lighter copy for playback… ${proxyBuild.percent}%`;
-  if (state.playing && shownFromProxy) return "playing a lighter copy";
-  return "";
+  return proxyBuild ? `preparing a lighter copy for playback… ${proxyBuild.percent}%` : "";
 }
 
 /** Playback has fallen behind: make a copy of the loop, if one is worth making and none is in hand
