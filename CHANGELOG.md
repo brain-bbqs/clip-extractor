@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.3
+
+#### 🐛 Bug Fix
+
+- On a phone the three video-source buttons (**Load local file**, **Browse EMBER**, **Stream from a URL**) now stack one under another instead of running off both sides of the screen with their labels cut ([#N](https://github.com/brain-bbqs/clip-extractor/pull/N))
+
 ## 1.5.0
 
 #### 🚀 Enhancement
