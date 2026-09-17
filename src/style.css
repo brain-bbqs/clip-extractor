@@ -1899,3 +1899,33 @@ ul.human-subjects-body {
     max-width: 100%;
   }
 }
+
+/* The source picker is three labelled buttons in one row, close to 500px of them, and a phone is
+   narrower than that: the row sat centred on the card and hung off both sides of the page, with the
+   first and last labels clipped and the page given a sideways scroll. Below the width the row needs
+   (its ~493px plus the card's and page's side padding, with a little slack for text-size drift) the
+   three stack instead, each a full-width bar of the same control, the divider between them turned
+   from a right border into a bottom one and the rows made a little taller to suit a thumb. The
+   selector-mode picker that takes the same slot once a video opens is two short words and keeps
+   its row. */
+@media (max-width: 600px) {
+  #srcSeg {
+    flex-direction: column;
+    /* A set width rather than a share of the slot: the slot is centred in its column, so it
+       shrink-wraps whatever it holds and a percentage of it would only be the widest label again.
+       Wide enough for a thumb, but not so wide past its widest label that the stack reads as three
+       loose bars rather than one control; capped for a viewport narrower still. */
+    width: 16rem;
+    max-width: 100%;
+  }
+  #srcSeg button {
+    justify-content: center;
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  #srcSeg button:last-child {
+    border-bottom: none;
+  }
+}
