@@ -6,6 +6,10 @@
 
 - On a phone the three video-source buttons (**Load local file**, **Browse EMBER**, **Stream from a URL**) now stack one under another instead of running off both sides of the screen with their labels cut ([#70](https://github.com/brain-bbqs/clip-extractor/pull/70))
 
+#### 🏠 Internal
+
+- The Chromatic snapshots now capture the page at phone and tablet sizes in both orientations as well as desktop, and fail by naming any element that runs off the side of the screen ([#70](https://github.com/brain-bbqs/clip-extractor/pull/70))
+
 ## 1.5.0
 
 #### 🚀 Enhancement
