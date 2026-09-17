@@ -7,10 +7,11 @@ import {
   Input,
   Mp4OutputFormat,
   Output,
+  QUALITY_MEDIUM,
   UrlSource,
   VideoSampleSink,
 } from "mediabunny";
-import type { InputVideoTrack, Source, VideoSample } from "mediabunny";
+import type { ConversionVideoOptions, InputVideoTrack, Source, VideoSample } from "mediabunny";
 import { bytes } from "./format";
 import { InterruptedError, isInterruption, throwIfInterrupted } from "./interrupt";
 import { decodedPixelFormatAt, type PixelFormatInfo } from "./videoFormat";
@@ -38,6 +39,32 @@ import type { SleapVideoBackend } from "./types";
  * (non-JS-heap) memory, so the number is small on purpose — see FRAME_CACHE_SIZE in main.ts. */
 const DEFAULT_CACHE_SIZE = 32;
 
+/** The most frames a cache is sized to from a memory budget, however small each one is. Past this
+ * the frames held span longer than any loop worth holding whole (see {@link frameCacheSize}), and
+ * every one of them is a live bitmap the browser has to keep a handle on. */
+export const MAX_CACHE_SIZE = 256;
+
+/** Bytes a decoded frame of `width`x`height` occupies as an ImageBitmap: four channels, one byte each. */
+function bytesPerFrame(width: number, height: number): number {
+  return width * height * 4;
+}
+
+/**
+ * How many frames of `width`x`height` a cache may hold within `budgetBytes`, never fewer than
+ * `floor` and never more than {@link MAX_CACHE_SIZE}.
+ *
+ * A fixed count treats every video as though it were the largest one, and the budget is what the
+ * count was standing in for. Sizing to the budget instead means a smaller picture gets more frames
+ * for the same memory — enough, for most recordings, that a short looping range fits in the cache
+ * whole, after which playing it round costs no decoding at all. The floor keeps the read-ahead's
+ * own room on a picture too large for the budget to cover even that many frames.
+ */
+export function frameCacheSize(width: number, height: number, budgetBytes: number, floor: number): number {
+  const perFrame = bytesPerFrame(width, height);
+  if (!(perFrame > 0) || !(budgetBytes > 0)) return floor;
+  return Math.max(floor, Math.min(MAX_CACHE_SIZE, Math.floor(budgetBytes / perFrame)));
+}
+
 /** Packets the frame rate is measured over. The rate is a property of the container, not of the
  * sample, so this only has to be long enough to span a group of pictures. */
 const RATE_PROBE_PACKETS = 600;
@@ -58,6 +85,10 @@ const YIELD_EVERY = 20_000;
 export interface StreamingBackendOptions {
   /** Decoded frames to keep. Defaults to {@link DEFAULT_CACHE_SIZE}. */
   cacheSize?: number;
+  /** Memory the decoded frames may take between them, in bytes. When given, the cache holds as
+   * many frames as fit in it at the track's own dimensions (see {@link frameCacheSize}), with
+   * `cacheSize` as the fewest it will hold on a picture too large for that. */
+  cacheBytes?: number;
   /** Called as the container index is read, with the bytes read from the source so far. Opening a
    * large file is not instant even when it streams, and this is what a caller can say so with. */
   onIndexProgress?: (bytesRead: number) => void;
@@ -87,12 +118,26 @@ interface Closable {
   close(): void;
 }
 
-/** The decoded-frame cache: a fixed-size LRU that closes what it evicts, since an ImageBitmap holds
- * memory the garbage collector does not account for and will not free on its own. */
+/**
+ * The decoded-frame cache: fixed-size, closing what it evicts, since an ImageBitmap holds memory
+ * the garbage collector does not account for and will not free on its own.
+ *
+ * Eviction goes by decode order — the frame decoded longest ago is the first out — rather than by
+ * use. Frames arrive here from a read-ahead that decodes a window in the order it will be shown, so
+ * decode order is display order and the frames decoded longest ago are the ones already shown.
+ * Evicting by use instead (the usual LRU) punished the read-ahead for its own foresight: the frames
+ * it had decoded but the player had not reached yet were the ones never used, so the next window
+ * evicted exactly them, and the player then met each one as a miss and a fresh decode from the key
+ * frame — during playback, on every window, which is a stutter. The one frame eviction passes over
+ * is the last one served, since that is the one on screen: a bitmap the player is drawing must never
+ * be closed underneath it, whatever its age.
+ */
 export class FrameCache<T extends Closable> {
   private readonly entries = new Map<number, T>();
+  /** The index {@link get} last handed out, which eviction leaves alone. */
+  private served: number | null = null;
 
-  constructor(private readonly limit: number) {}
+  constructor(readonly limit: number) {}
 
   get size(): number {
     return this.entries.size;
@@ -102,39 +147,51 @@ export class FrameCache<T extends Closable> {
     return this.entries.has(index);
   }
 
-  /** The frame at `index`, if it is still held, counting the lookup as a use. */
+  /** The frame at `index`, if it is still held. Marks it as the one on screen, which is what
+   * protects it from eviction until the next frame is served. */
   get(index: number): T | null {
     const frame = this.entries.get(index);
     if (!frame) return null;
-    // Re-inserting moves it to the end of the Map's iteration order, which is where "most recently
-    // used" lives: eviction takes from the front.
-    this.entries.delete(index);
+    this.served = index;
+    return frame;
+  }
+
+  /** Keeps `frame`, evicting the frame decoded longest ago if that puts the cache over its limit. A
+   * frame already held at `index` is left alone and the new one closed, so a duplicate decode can
+   * never invalidate a bitmap a caller is holding. Returns whichever frame is held at `index` once
+   * this is done. */
+  set(index: number, frame: T): T {
+    const existing = this.entries.get(index);
+    if (existing) {
+      if (existing !== frame) frame.close();
+      return existing;
+    }
+    while (this.entries.size >= this.limit) {
+      const oldest = this.oldestEvictable();
+      // Only the frame on screen is left, which is not one to close: the cache runs a frame over
+      // its limit sooner than that.
+      if (oldest === null) break;
+      this.entries.get(oldest)?.close();
+      this.entries.delete(oldest);
+    }
     this.entries.set(index, frame);
     return frame;
   }
 
-  /** Keeps `frame`, evicting the least recently used one if that puts the cache over its limit. A
-   * frame already held at `index` is left alone and the new one closed, so a duplicate decode can
-   * never invalidate a bitmap a caller is holding. */
-  set(index: number, frame: T): void {
-    const existing = this.entries.get(index);
-    if (existing) {
-      if (existing !== frame) frame.close();
-      return;
+  /** The Map iterates in insertion order, which here is decode order, so the first key that is not
+   * the frame on screen is the one decoded longest ago. */
+  private oldestEvictable(): number | null {
+    for (const index of this.entries.keys()) {
+      if (index !== this.served) return index;
     }
-    while (this.entries.size >= this.limit) {
-      const oldest = this.entries.keys().next();
-      if (oldest.done) break;
-      this.entries.get(oldest.value)?.close();
-      this.entries.delete(oldest.value);
-    }
-    this.entries.set(index, frame);
+    return null;
   }
 
   /** Closes and drops everything held. */
   clear(): void {
     for (const frame of this.entries.values()) frame.close();
     this.entries.clear();
+    this.served = null;
   }
 }
 
@@ -314,6 +371,18 @@ export interface RangeExtractOptions {
   signal?: AbortSignal;
 }
 
+export interface ProxyRenderOptions {
+  /** The copy's dimensions. Kept to the source's aspect by the caller (see lib/proxy.ts). */
+  width: number;
+  height: number;
+  /** Seconds between key frames. */
+  keyFrameSeconds: number;
+  /** 0..1 through the range. */
+  onProgress?: (fraction: number) => void;
+  /** Gives the copy up partway through, when the range it was for has moved on. */
+  signal?: AbortSignal;
+}
+
 export interface ExtractedRange {
   blob: Blob;
   /** Whether the frames were re-encoded rather than copied over untouched. */
@@ -445,7 +514,10 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       // the index's own first frame rather than the container's first timestamp, which is the frame
       // this backend can already reach — `canDecode` was settled above.
       const pixelFormat = await decodedPixelFormatAt(track, index.time(0));
-      return new StreamingVideoBackend(input, track, index, options.cacheSize ?? DEFAULT_CACHE_SIZE, codecRFC6381, pixelFormat);
+      const floor = options.cacheSize ?? DEFAULT_CACHE_SIZE;
+      const cacheSize =
+        options.cacheBytes === undefined ? floor : frameCacheSize(track.displayWidth, track.displayHeight, options.cacheBytes, floor);
+      return new StreamingVideoBackend(input, track, index, cacheSize, codecRFC6381, pixelFormat);
     } catch (e) {
       // Nothing was handed back, so nothing else can dispose the input or the requests behind it.
       input.dispose();
@@ -474,7 +546,15 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       const arrived = this.cache.get(index);
       if (arrived) return arrived;
     }
-    return this.decodeOne(index);
+    await this.decodeOne(index);
+    // Read back through the cache rather than handed straight out of the decode: the lookup is what
+    // marks the frame as the one on screen, which is what keeps it from being closed while it is.
+    return this.cache.get(index);
+  }
+
+  /** How many decoded frames this backend keeps. */
+  get cacheSize(): number {
+    return this.cache.limit;
   }
 
   /** Decodes `startIndex..endIndex` into the cache, ahead of anyone asking for them. */
@@ -516,7 +596,50 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     const keyPacket = transcoded ? null : await new EncodedPacketSink(this.track).getKeyPacket(wanted, { metadataOnly: true });
     const start = keyPacket?.timestamp ?? wanted;
     const end = this.index.window(last, last).end;
+    const blob = await this.convert({ start, end }, { forceTranscode: transcoded, process: options.process }, options, "trimmed");
+    if (!blob.size) throw new Error("Trimming produced an empty clip — try a different selection");
+    return { blob, transcoded, start, end };
+  }
 
+  /**
+   * Re-encodes frames `lo..hi` into a small MP4 the player can decode faster than the recording
+   * itself: `width`x`height`, a key frame every `keyFrameSeconds`, frame-exact from `lo`. What the
+   * player loops over once it has fallen behind the recording (see lib/proxy.ts); never what is
+   * extracted or shown while paused.
+   */
+  async renderProxy(lo: number, hi: number, options: ProxyRenderOptions): Promise<Blob> {
+    if (this.closed) throw new Error("The video was closed before a lighter copy of the range could be made");
+    throwIfInterrupted(options.signal);
+    const first = Math.max(0, Math.min(lo, hi));
+    const last = Math.min(this.index.count - 1, Math.max(lo, hi));
+    if (first > last) throw new Error("There is nothing in the range to copy");
+    const blob = await this.convert(
+      { start: this.index.time(first), end: this.index.window(last, last).end },
+      {
+        forceTranscode: true,
+        // H.264 is the one codec every phone decodes in hardware, which is the point of the copy.
+        codec: "avc",
+        width: options.width,
+        height: options.height,
+        fit: "contain",
+        quality: QUALITY_MEDIUM,
+        keyFrameInterval: options.keyFrameSeconds,
+      },
+      options,
+      "copied for playback",
+    );
+    if (!blob.size) throw new Error("Re-encoding the range produced nothing");
+    return blob;
+  }
+
+  /** Runs one mediabunny conversion of `trim` out of this source into an in-memory MP4. `failure`
+   * is what the source could not be, for the refusal raised when the conversion cannot run. */
+  private async convert(
+    trim: { start: number; end: number },
+    video: ConversionVideoOptions,
+    options: { onProgress?: (fraction: number) => void; signal?: AbortSignal },
+    failure: string,
+  ): Promise<Blob> {
     const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
     const conversion = await Conversion.init({
       input: this.input,
@@ -525,13 +648,13 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       // voices out of it in a track nobody was shown. The frame-exact cut has always dropped audio;
       // this drops it whichever way the cut is made.
       audio: { discard: true },
-      video: { forceTranscode: transcoded, process: options.process },
-      trim: { start, end },
+      video,
+      trim,
       showWarnings: false,
     });
     if (!conversion.isValid) {
       const reasons = [...new Set(conversion.discardedTracks.map((track) => track.reason))].join(", ");
-      throw new Error(`This video cannot be trimmed in the browser (${reasons || "unsupported source"})`);
+      throw new Error(`This video cannot be ${failure} in the browser (${reasons || "unsupported source"})`);
     }
     const report = options.onProgress;
     if (report) conversion.onProgress = (fraction) => report(fraction);
@@ -548,8 +671,7 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       options.signal?.removeEventListener("abort", stop);
     }
     const buffer = output.target.buffer;
-    if (!buffer?.byteLength) throw new Error("Trimming produced an empty clip — try a different selection");
-    return { blob: new Blob([buffer], { type: "video/mp4" }), transcoded, start, end };
+    return new Blob(buffer?.byteLength ? [buffer] : [], { type: "video/mp4" });
   }
 
   /** Drops every decoded frame and cancels whatever the source still has in flight. */
@@ -563,14 +685,16 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     this.input.dispose();
   }
 
-  private async decodeOne(index: number): Promise<ImageBitmap | null> {
+  /** Decodes the one frame at `index` into the cache. Costs a fresh decoder run from the key frame
+   * before it, so this is the path for a frame no read-ahead covered. */
+  private async decodeOne(index: number): Promise<void> {
     // Reached either directly or after waiting on a read-ahead, which is long enough for the video
     // to have been closed out from under it.
-    if (this.closed) return null;
+    if (this.closed) return;
     const sample = await this.sink.getSample(this.index.time(index));
-    if (!sample) return null;
+    if (!sample) return;
     try {
-      return this.keep(index, sample);
+      await this.keep(index, sample);
     } finally {
       sample.close();
     }
@@ -591,8 +715,10 @@ export class StreamingVideoBackend implements SleapVideoBackend {
     }
   }
 
-  /** Turns a decoded sample into a cached bitmap, releasing anyone waiting on that frame. */
-  private async keep(index: number, sample: { toVideoFrame(): VideoFrame }): Promise<ImageBitmap> {
+  /** Turns a decoded sample into a cached bitmap, releasing anyone waiting on that frame. Deliberately
+   * hands nothing back: what is cached is read through `get`, which is also what marks a frame as
+   * the one on screen, and a read-ahead's frames are not that. */
+  private async keep(index: number, sample: { toVideoFrame(): VideoFrame }): Promise<void> {
     const frame = sample.toVideoFrame();
     let bitmap: ImageBitmap;
     try {
@@ -606,8 +732,6 @@ export class StreamingVideoBackend implements SleapVideoBackend {
       this.waiters.delete(index);
       for (const resolve of waiting) resolve();
     }
-    // set() keeps whichever bitmap was already there, so read back rather than assume.
-    return this.cache.get(index) ?? bitmap;
   }
 
   /** Settles once `index` is cached or `until` does, whichever comes first, leaving no waiter

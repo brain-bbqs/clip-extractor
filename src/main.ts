@@ -18,6 +18,17 @@ import {
 } from "./lib/timeline";
 import { buildFrameOrder, decodeIndex, drawVideoFrame } from "./lib/video";
 import { openStreamingBlob, openStreamingUrl, StreamingVideoBackend } from "./lib/streaming";
+import {
+  LAG_TOLERATED,
+  LAG_WINDOWS,
+  LAG_WINDOW_MS,
+  LagMeter,
+  PROXY_CACHE_BYTES,
+  PROXY_KEYFRAME_SECONDS,
+  PROXY_MAX_DIMENSION,
+  proxyDimensions,
+  proxyWorthwhile,
+} from "./lib/proxy";
 import { withTimeout } from "./lib/timeout";
 import {
   loadTimeoutRefusal,
@@ -340,6 +351,12 @@ interface OpenedSource {
 // (non-JS-heap) memory, so at 1080p a 96-frame cache is ~800MB — enough that a large .slp on the
 // heap alongside it pushes the tab into thrashing. 32 still covers the read-ahead window below.
 const FRAME_CACHE_SIZE = 32;
+// What that count was standing in for: the memory those 32 frames take at 1080p. The streaming
+// backend is sized to this rather than to the count, so a smaller picture keeps more frames for the
+// same memory (see lib/streaming.ts's frameCacheSize) — enough that a short looping range fits in
+// the cache whole and plays round without decoding anything twice. The count stays as the floor,
+// and as the size of the sleap-io.js fallback backends, which take nothing else.
+const FRAME_CACHE_BYTES = 256 * 1024 * 1024;
 
 // Opening a long recording means reading its container index, which for a multi-gigabyte file is
 // itself tens of megabytes over the network. That is a wait worth reporting rather than sitting
@@ -419,7 +436,11 @@ async function fetchWholeVideo(url: string, name: string): Promise<Blob> {
  * mp4box one covers files MediaBunny will not open at all. */
 async function openLocalBackend(file: File, name: string): Promise<SleapVideoBackend> {
   try {
-    return await openStreamingBlob(file, { cacheSize: FRAME_CACHE_SIZE, onIndexProgress: indexProgress(name) });
+    return await openStreamingBlob(file, {
+      cacheSize: FRAME_CACHE_SIZE,
+      cacheBytes: FRAME_CACHE_BYTES,
+      onIndexProgress: indexProgress(name),
+    });
   } catch (e) {
     log(`Streaming open failed (${(e as Error).message}); indexing the whole file…`, "warn");
   }
@@ -458,6 +479,7 @@ async function openVideoBackend(source: File | string, name: string): Promise<Op
     try {
       const backend = await openStreamingUrl(source, {
         cacheSize: FRAME_CACHE_SIZE,
+        cacheBytes: FRAME_CACHE_BYTES,
         onIndexProgress: indexProgress(name),
         // A URL's frames are found by reading the container, and a file whose container does not
         // say where they are leaves reading the file itself as the only way — which over a network
@@ -575,6 +597,7 @@ async function loadVideo(
     blurTool.clearRegions();
     prefetched = null;
     prefetchInFlight = false;
+    dropProxy();
     els.view.width = state.width;
     els.view.height = state.height;
     els.emptyStage.style.display = "none";
@@ -662,6 +685,7 @@ function unloadVideo(): void {
   blurTool.clearRegions();
   prefetched = null;
   prefetchInFlight = false;
+  dropProxy();
   els.view.style.display = "none";
   els.overlayInfo.style.display = "none";
   els.emptyStage.style.display = "";
@@ -872,7 +896,10 @@ async function loadPoseFile(source: File | string, name: string): Promise<void> 
 // ============================================================
 // Rendering
 // ============================================================
-function renderFrame(): void {
+/** Draws the frame in hand, with the overlay and caption for frame `at`. That is the playhead's
+ * frame unless a seek says otherwise: a frame that landed after the playhead had already been sent
+ * on is drawn as the frame it is, not captioned as the one it is standing in for. */
+function renderFrame(at: number = state.cur): void {
   if (!state.curBitmap) return;
   ctx.clearRect(0, 0, els.view.width, els.view.height);
   drawVideoFrame(state.curBitmap, ctx, state.width, state.height);
@@ -881,8 +908,15 @@ function renderFrame(): void {
   // drawn over an unobscured face.
   paintBlurRegions(ctx, state.blurRegions, state.width, state.height);
   if (state.pose && els.slpToggle.checked && els.showPose.checked)
-    drawPose(ctx, state.pose.byFrame.get(state.cur), state.pose.skeleton, state.width);
-  els.overlayInfo.textContent = `frame ${state.cur} / ${state.totalFrames - 1}  ·  ${fmtTime(state.cur, state.fps)}`;
+    drawPose(ctx, state.pose.byFrame.get(at), state.pose.skeleton, state.width);
+  els.overlayInfo.textContent = caption(at);
+}
+
+/** The line over the picture: which frame this is, and what the player has to say about how it is
+ * being played (see playbackNote below). */
+function caption(at: number): string {
+  const note = playbackNote();
+  return `frame ${at} / ${state.totalFrames - 1}  ·  ${fmtTime(at, state.fps)}${note ? `  ·  ${note}` : ""}`;
 }
 
 // ============================================================
@@ -919,36 +953,217 @@ const blurTool = createBlurTool(els, {
 let seeking = false;
 let pendingSeek: number | null = null;
 
-// Read-ahead bookkeeping. sleap-io.js's getFrame() awaits any in-flight decodeRange before it will
-// serve even an already-cached frame, so asking for a fresh window on every seek made each rendered
-// frame wait on a whole range decode — playback crawled and stalled for seconds at a time while the
-// playhead kept advancing. Ask once per window instead, and never while a request is outstanding.
+// Read-ahead bookkeeping. Frames are decoded a window at a time, ahead of where the playhead is,
+// and one at a time only when no window covers them. The difference is not a small one: a frame
+// asked for on its own starts a fresh decoder at the key frame before it and decodes forward from
+// there, so it costs anywhere from one decode to a whole group of pictures depending on where in
+// the group it sits, while a window is one decoder run in display order with every frame decoded
+// once. Ask once per window, and never while a request is outstanding.
 //
 // Measured on a 1920x1080 clip (software decode), distinct frames rendered per second and the worst
-// stall: a window per seek 1.8fps/1900ms, one per window 5.6fps/1000ms, and skipping it during
-// playback (below) 5.4fps/350ms. A smaller window is worse, not better — 8 frames re-arms so often
-// that a decode is almost always in flight, back down to 2.2fps. Playback is sequential, which is
-// the access pattern the backend's own decoder already handles well; scrubbing is what benefits from
-// reading ahead.
+// stall: a window per seek 1.8fps/1900ms, one per window 5.6fps/1000ms. A smaller window is worse,
+// not better — 8 frames re-arms so often that a decode is almost always in flight, back down to
+// 2.2fps.
+//
+// Playback reads ahead too, and around the loop: the window is measured in play order, so near the
+// end of the marked range it carries on from the range's start, and the wrap lands on frames already
+// decoded instead of on a seek back to a key frame. Playback used to be the one place that did not
+// read ahead, because sleap-io.js's getFrame() waits on any in-flight range decode before it will
+// serve even a cached frame, which made every played frame wait on a whole window. That still holds
+// for its backends, which are the fallbacks and keep the old rule; the app's own streaming backend
+// serves a frame out of a window still being decoded as soon as that frame lands (see
+// lib/streaming.ts), which is exactly what a player wants from a decoder running just ahead of it.
+// Asking for played frames one by one instead ran at the decoder's worst case, unevenly — a frame
+// period that swung with each frame's place in its group of pictures — and on a phone, where the
+// decoder is slower to begin with, that was a stutter.
 const PREFETCH_AHEAD = 30;
 // Re-arm this far before the window's end, so the next range is in flight before it is needed.
 const PREFETCH_MARGIN = 10;
-let prefetched: { lo: number; hi: number } | null = null;
+/** The frames last asked for: `count` of them from `from`, in play order, out of `backend`. `loop`
+ * is the range play order wraps in when the window was asked for during playback, and null for a
+ * window read while scrubbing, which runs in the recording's own order and never wraps. */
+let prefetched: { from: number; count: number; loop: [number, number] | null; backend: SleapVideoBackend } | null = null;
 let prefetchInFlight = false;
 
-function schedulePrefetch(target: number): void {
+// ---- The lighter copy played once the player falls behind (see lib/proxy.ts) ----
+/** The copy of `lo..hi`, opened as a backend of its own: its frame `i` is the recording's `lo + i`,
+ * and `frameOrder` is its own decode-order map, as the recording has one. */
+interface PlaybackProxy {
+  lo: number;
+  hi: number;
+  backend: StreamingVideoBackend;
+  frameOrder: number[] | null;
+}
+let proxy: PlaybackProxy | null = null;
+/** A copy being made: the range it is of, how far along it is, and what gives it up. */
+let proxyBuild: { lo: number; hi: number; percent: number; controller: AbortController } | null = null;
+/** A range no copy could be made of, so the attempt is not repeated every time playback lags. */
+let proxyRefused: { lo: number; hi: number } | null = null;
+const lagMeter = new LagMeter(LAG_WINDOW_MS, LAG_TOLERATED, LAG_WINDOWS);
+/** Whether the frame on screen is the copy's, so that stopping can put the recording's own back. */
+let shownFromProxy = false;
+
+/** Where a frame is decoded from: a backend, the decode-order map to go through, and what to take
+ * off the frame number first (the copy's frames start at its range's In). */
+interface FrameSource {
+  backend: SleapVideoBackend;
+  order: number[] | null;
+  offset: number;
+  copy: boolean;
+}
+
+/** The copy, while playback runs over exactly the range it holds. Exactly: frame mode loops the
+ * whole recording, over which a copy of the marked range would cover some frames and not others,
+ * and one window read ahead cannot straddle two backends. */
+function activeProxy(): PlaybackProxy | null {
+  if (!state.playing || !proxy) return null;
+  const [lo, hi] = loopRange();
+  return proxy.lo === lo && proxy.hi === hi ? proxy : null;
+}
+
+/** Where `frame` is decoded from: the copy while playback runs over it, the recording otherwise. */
+function frameSource(frame: number): FrameSource | null {
+  const copy = activeProxy();
+  if (copy && frame >= copy.lo && frame <= copy.hi) return { backend: copy.backend, order: copy.frameOrder, offset: copy.lo, copy: true };
+  return state.backend ? { backend: state.backend, order: state.frameOrder, offset: 0, copy: false } : null;
+}
+
+/** The index `frame` has in `source`. */
+function decodeAt(source: FrameSource, frame: number): number {
+  return decodeIndex(source.order, frame - source.offset);
+}
+
+/** What the caption says about the copy: that one is being made, and how far along it is. Nothing
+ * once it plays — smooth playback is its own announcement, and a note that stayed up for the whole
+ * loop read as something still going on. */
+function playbackNote(): string {
+  return proxyBuild ? `preparing a lighter copy for playback… ${proxyBuild.percent}%` : "";
+}
+
+/** Playback has fallen behind: make a copy of the loop, if one is worth making and none is in hand
+ * or on its way. Only for the streaming backend, which is the one that can re-encode a range, and
+ * not while a delivery has the decoder busy with the range already. */
+function considerProxy(): void {
   const backend = state.backend;
-  if (!backend || typeof backend.prefetch !== "function" || prefetchInFlight) return;
-  if (prefetched && target >= prefetched.lo && target + PREFETCH_MARGIN <= prefetched.hi) return;
-  const hi = Math.min(state.totalFrames - 1, target + PREFETCH_AHEAD);
-  if (hi <= target) return;
+  if (!(backend instanceof StreamingVideoBackend) || state.mode !== "video" || proxy || proxyBuild || deliveryBusy) return;
+  const [lo, hi] = selRange();
+  if (proxyRefused && proxyRefused.lo === lo && proxyRefused.hi === hi) return;
+  if (!proxyWorthwhile(hi - lo + 1, state.fps)) return;
+  void buildProxy(backend, lo, hi);
+}
+
+async function buildProxy(backend: StreamingVideoBackend, lo: number, hi: number): Promise<void> {
+  const controller = new AbortController();
+  const build = { lo, hi, percent: 0, controller };
+  proxyBuild = build;
+  const generation = sourceGeneration;
+  const size = proxyDimensions(state.width, state.height, PROXY_MAX_DIMENSION);
+  log(
+    `Playback is falling behind the recording; making a lighter ${size.width}×${size.height} copy of frames ${lo}–${hi} to play instead…`,
+  );
+  try {
+    const blob = await backend.renderProxy(lo, hi, {
+      ...size,
+      keyFrameSeconds: PROXY_KEYFRAME_SECONDS,
+      signal: controller.signal,
+      onProgress: (fraction) => {
+        const percent = Math.floor(fraction * 100);
+        if (percent === build.percent) return;
+        build.percent = percent;
+        // The caption alone: redrawing the whole frame for a figure would cost the player it is
+        // already struggling to keep up.
+        els.overlayInfo.textContent = caption(state.cur);
+      },
+    });
+    const copy = await openStreamingBlob(blob, { cacheSize: FRAME_CACHE_SIZE, cacheBytes: PROXY_CACHE_BYTES });
+    // Given up on, or the recording under it changed, while the copy was being made.
+    if (controller.signal.aborted || generation !== sourceGeneration) {
+      copy.close();
+      return;
+    }
+    // A copy whose frames do not line up one for one with the range's would play the wrong frame
+    // under every number, which is worse than the stutter.
+    const frames = hi - lo + 1;
+    if (copy.numFrames !== frames) {
+      copy.close();
+      throw new Error(`the copy holds ${copy.numFrames} frames where the range has ${frames}`);
+    }
+    proxy = { lo, hi, backend: copy, frameOrder: await buildFrameOrder(copy) };
+    log(`Playing frames ${lo}–${hi} from the lighter copy`, "ok");
+  } catch (e) {
+    if (controller.signal.aborted) return;
+    proxyRefused = { lo, hi };
+    log(`Could not make a lighter copy of frames ${lo}–${hi} for playback: ${(e as Error).message}`, "warn");
+  } finally {
+    if (proxyBuild === build) proxyBuild = null;
+    els.overlayInfo.textContent = caption(state.cur);
+  }
+}
+
+/** Forgets the copy, and gives up one being made: the range it was of, or the recording it was of,
+ * has moved on. */
+function dropProxy(): void {
+  proxyBuild?.controller.abort();
+  proxyBuild = null;
+  proxy?.backend.close();
+  proxy = null;
+  proxyRefused = null;
+  shownFromProxy = false;
+}
+
+/** The stretch playback runs over and loops in. The marked range in snippet mode; the whole
+ * recording in frame mode, whose selection is the playhead itself, so penning playback inside a
+ * range nothing on screen mentions would look like a stuck player. */
+function loopRange(): [number, number] {
+  return state.mode === "video" ? selRange() : [0, state.totalFrames - 1];
+}
+
+/** Whether the frames read ahead out of `backend` still run comfortably past `target` in the order
+ * they were asked for — or hold the whole loop they were asked for in, after which there is nothing
+ * left to read ahead of. */
+function readAheadCovers(target: number, backend: SleapVideoBackend): boolean {
+  if (!prefetched || prefetched.backend !== backend) return false;
+  const { from, count, loop } = prefetched;
+  let offset = target - from;
+  // Behind the window's start is ahead of it again once the loop has wrapped.
+  if (loop && offset < 0 && target >= loop[0] && target <= loop[1]) offset += loop[1] - loop[0] + 1;
+  if (offset < 0 || offset >= count) return false;
+  return offset + PREFETCH_MARGIN < count || (loop !== null && count >= loop[1] - loop[0] + 1);
+}
+
+/** Asks `source` for frames `lo..hi` of the recording, in display order. */
+function readAhead(source: FrameSource, lo: number, hi: number): Promise<void> {
+  if (typeof source.backend.prefetch !== "function") return Promise.resolve();
   // Decode order may be locally reordered (B-frames), so bound the range by min/max.
-  const a = decodeIndex(state.frameOrder, target);
-  const b = decodeIndex(state.frameOrder, hi);
-  prefetched = { lo: target, hi };
+  const a = decodeAt(source, lo);
+  const b = decodeAt(source, hi);
+  return source.backend.prefetch(Math.min(a, b), Math.max(a, b));
+}
+
+function schedulePrefetch(target: number): void {
+  const source = frameSource(target);
+  if (!source || typeof source.backend.prefetch !== "function" || prefetchInFlight) return;
+  const { backend } = source;
+  // See the note above: only the streaming backend serves a frame out of a window still being
+  // decoded, so only it reads ahead of a playing head.
+  if (state.playing && !(backend instanceof StreamingVideoBackend)) return;
+  if (readAheadCovers(target, backend)) return;
+  const range = loopRange();
+  const loop = state.playing && target >= range[0] && target <= range[1] ? range : null;
+  const first = loop ? loop[0] : 0;
+  const last = loop ? loop[1] : state.totalFrames - 1;
+  // The window itself: this frame and the next PREFETCH_AHEAD after it in play order, which is
+  // cut short by the recording's end when not looping and by the loop's own length when it is.
+  const count = Math.min(PREFETCH_AHEAD + 1, loop ? last - first + 1 : last - target + 1);
+  if (count <= 1) return;
+  const headEnd = Math.min(target + count - 1, last);
+  // What runs past the loop's end comes back round from its start.
+  const wrapped = target + count - 1 - last;
+  prefetched = { from: target, count, loop, backend };
   prefetchInFlight = true;
-  backend
-    .prefetch(Math.min(a, b), Math.max(a, b))
+  let window = readAhead(source, target, headEnd);
+  if (wrapped > 0) window = window.then(() => readAhead(source, first, first + wrapped - 1));
+  window
     .catch(() => {})
     .finally(() => {
       prefetchInFlight = false;
@@ -963,6 +1178,20 @@ const FRAME_WAIT_MS = 250;
 // Shift-held seeking extends the selection to cover the frames scrubbed over (video mode only).
 let shiftHeld = false;
 let shiftAnchor: number | null = null;
+
+/** Puts a decoded frame on the stage as frame `at`, from the copy or not as `copy` says.
+ *
+ * Drawn as the frame it is, and the playhead left where the newest seek put it. A newer seek may
+ * well have come in while this frame decoded — during playback, that is every frame that takes
+ * longer than a frame period — and pulling the playhead back onto this one meant the next step was
+ * taken from behind, so the picture went backwards a frame as often as a frame was late. */
+function showFrame(frame: NonNullable<AppState["curBitmap"]>, at: number, copy: boolean): void {
+  state.curBitmap = frame;
+  shownFromProxy = copy;
+  // A frame due that reached the screen, which is what the lag meter counts against the frames due.
+  if (state.playing) lagMeter.drew();
+  renderFrame(at);
+}
 
 /** `extend` is what makes a shift-held seek grow the range; a seek the app makes on its own behalf
  * (settling a panned window) passes false, since nothing was scrubbed over to include. */
@@ -987,15 +1216,12 @@ async function seek(frame: number, force = false, extend = true): Promise<void> 
     do {
       const target = pendingSeek == null ? frame : pendingSeek;
       pendingSeek = null;
-      if (!state.backend) break;
+      const source = frameSource(target);
+      if (!source) break;
       try {
-        const f = await state.backend.getFrame(decodeIndex(state.frameOrder, target));
-        if (f) {
-          state.curBitmap = f;
-          state.cur = target;
-          renderFrame();
-        }
-        if (!state.playing) schedulePrefetch(target);
+        const f = await source.backend.getFrame(decodeAt(source, target));
+        if (f) showFrame(f, target, source.copy);
+        schedulePrefetch(target);
       } catch (e) {
         log(`Seek error: ${(e as Error).message}`, "err");
       }
@@ -1016,18 +1242,22 @@ let lastT = 0;
 let accum = 0;
 function playLoop(t: number): void {
   if (!state.playing) return;
-  if (!lastT) lastT = t;
+  if (!lastT) {
+    lastT = t;
+    lagMeter.reset(t);
+  }
   const dt = (t - lastT) / 1000;
   lastT = t;
   accum += dt * state.fps * state.speed;
+  // Frames due against frames drawn: a player that cannot keep up gets a lighter copy to play.
+  if (lagMeter.check(t, state.fps * state.speed)) considerProxy();
   if (accum >= 1) {
     const step = Math.floor(accum);
     accum -= step;
     let next = state.cur + step;
-    // Playback loops over the marked range in snippet mode. Frame mode keeps those marks (so
-    // switching back restores them) but ignores them here — its selection is the playhead, and
-    // penning playback inside a range nothing on screen mentions would look like a stuck player.
-    const [lo, hi] = state.mode === "video" ? selRange() : [0, state.totalFrames - 1];
+    // Playback loops over the marked range in snippet mode (see loopRange). Frame mode keeps those
+    // marks, so switching back restores them, but ignores them here.
+    const [lo, hi] = loopRange();
     // Wrapping on either side, not just the far end: a playhead left ahead of In would otherwise
     // play the whole run-up to the snippet before the first loop brought it inside.
     if (next > hi || next < lo) next = lo;
@@ -1046,17 +1276,26 @@ function startPlay(): void {
   state.playing = true;
   lastT = 0;
   accum = 0;
+  // The decoder is set going on the frames ahead now rather than a frame from now: whatever was read
+  // ahead while scrubbing ran in the recording's order, and playback's window wraps the loop.
+  schedulePrefetch(state.cur);
   // Glyph only, so the label is the button's whole accessible name.
   els.btnPlay.innerHTML = "&#10073;&#10073;";
   els.btnPlay.setAttribute("aria-label", "Pause");
   rafId = requestAnimationFrame(playLoop);
 }
 function stopPlay(): void {
+  const wasPlaying = state.playing;
   state.playing = false;
   if (rafId != null) cancelAnimationFrame(rafId);
   rafId = null;
   els.btnPlay.innerHTML = "&#9654;";
   els.btnPlay.setAttribute("aria-label", "Play");
+  // The copy is for the loop. A paused player shows the recording's own frame, at its own size:
+  // what is looked at closely, blurred over and extracted is never the copy. Forced, since the
+  // playhead has not moved; not a shift-extend, since nothing was scrubbed.
+  if (wasPlaying && shownFromProxy && state.backend) void seek(state.cur, true, false);
+  else if (state.backend) els.overlayInfo.textContent = caption(state.cur);
 }
 function togglePlay(): void {
   if (state.playing) stopPlay();
@@ -1196,6 +1435,9 @@ function growSelection(target: number): void {
  * every seek during playback, so the delivery card is only recomputed when the range really moves. */
 function selectionChanged(): void {
   clearDeliveryOutcomes();
+  // The lighter copy is of the range as it was: a moved end means a different loop to copy, which
+  // playback will ask for again if it still falls behind.
+  dropProxy();
   updateSelUI();
   updateDeliveryGate();
 }
