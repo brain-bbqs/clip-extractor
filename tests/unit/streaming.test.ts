@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { FrameCache, constantRateIndex, enumeratedIndex, fpsFromSpan, modelHolds, nearestIndex } from "../../src/lib/streaming";
+import {
+  FrameCache,
+  MAX_CACHE_SIZE,
+  constantRateIndex,
+  enumeratedIndex,
+  fpsFromSpan,
+  frameCacheSize,
+  modelHolds,
+  nearestIndex,
+} from "../../src/lib/streaming";
 
 /** A stand-in for a decoded frame: jsdom has no ImageBitmap, and all the cache asks of one is that
  * it can be closed. */
@@ -23,7 +32,7 @@ describe("FrameCache", () => {
     expect(cache.has(1)).toBe(true);
   });
 
-  it("closes the least recently used frame once it is over its limit", () => {
+  it("closes the frame decoded longest ago once it is over its limit", () => {
     const cache = new FrameCache(2);
     const [a, b, c] = [frame(), frame(), frame()];
     cache.set(0, a);
@@ -36,7 +45,23 @@ describe("FrameCache", () => {
     expect(cache.get(2)).toBe(c);
   });
 
-  it("counts a lookup as a use, so the frame just read is not the next one evicted", () => {
+  it("evicts by decode order, so frames read ahead of the player outlive the ones it has shown", () => {
+    // A window of four decoded ahead, with the player having worked through the first three. Under
+    // eviction by use the fourth — never yet read, and the very next frame wanted — would be the one
+    // to go when the next window's first frame arrives; the frame shown longest ago is what goes.
+    const cache = new FrameCache(4);
+    const frames = [frame(), frame(), frame(), frame(), frame()];
+    for (let i = 0; i < 4; i++) cache.set(i, frames[i]);
+    cache.get(0);
+    cache.get(1);
+    cache.get(2);
+    cache.set(4, frames[4]);
+    expect(frames[0].closed).toBe(true);
+    expect(frames[3].closed).toBe(false);
+    expect(cache.get(3)).toBe(frames[3]);
+  });
+
+  it("never evicts the frame it last served, which is the one on screen", () => {
     const cache = new FrameCache(2);
     const [a, b, c] = [frame(), frame(), frame()];
     cache.set(0, a);
@@ -48,11 +73,33 @@ describe("FrameCache", () => {
     expect(cache.get(0)).toBe(a);
   });
 
+  it("moves that protection along with each frame served", () => {
+    const cache = new FrameCache(2);
+    const [a, b, c] = [frame(), frame(), frame()];
+    cache.set(0, a);
+    cache.set(1, b);
+    cache.get(0);
+    cache.get(1);
+    cache.set(2, c);
+    expect(a.closed).toBe(true);
+    expect(b.closed).toBe(false);
+  });
+
+  it("runs a frame over its limit sooner than close the one on screen", () => {
+    const cache = new FrameCache(1);
+    const [a, b] = [frame(), frame()];
+    cache.set(0, a);
+    cache.get(0);
+    cache.set(1, b);
+    expect(a.closed).toBe(false);
+    expect(cache.size).toBe(2);
+  });
+
   it("keeps the frame already held and closes the duplicate, so a held bitmap stays valid", () => {
     const cache = new FrameCache(2);
     const [first, second] = [frame(), frame()];
     cache.set(0, first);
-    cache.set(0, second);
+    expect(cache.set(0, second)).toBe(first);
     expect(cache.get(0)).toBe(first);
     expect(second.closed).toBe(true);
     expect(first.closed).toBe(false);
@@ -67,6 +114,37 @@ describe("FrameCache", () => {
     expect(cache.size).toBe(0);
     expect(a.closed).toBe(true);
     expect(b.closed).toBe(true);
+  });
+});
+
+describe("frameCacheSize", () => {
+  // The budget the app hands over is what 32 frames take at 1080p (see main.ts's FRAME_CACHE_BYTES),
+  // so that picture size is where the count and the budget agree.
+  const budget = 32 * 1920 * 1080 * 4;
+
+  it("holds the same 32 frames at 1080p that the fixed count used to", () => {
+    expect(frameCacheSize(1920, 1080, budget, 32)).toBe(32);
+  });
+
+  it("holds more frames of a smaller picture for the same memory", () => {
+    // 1280x720 is 4/9 of the pixels, so 9/4 of the frames.
+    expect(frameCacheSize(1280, 720, budget, 32)).toBe(72);
+    // 640x480: enough of them that a loop several seconds long fits whole.
+    expect(frameCacheSize(640, 480, budget, 32)).toBe(216);
+  });
+
+  it("never holds fewer than the floor on a picture too large for the budget", () => {
+    expect(frameCacheSize(3840, 2160, budget, 32)).toBe(32);
+  });
+
+  it("stops at the ceiling however small the picture", () => {
+    expect(frameCacheSize(160, 120, budget, 32)).toBe(MAX_CACHE_SIZE);
+  });
+
+  it("falls back to the floor when the picture or the budget makes no sense", () => {
+    expect(frameCacheSize(0, 0, budget, 32)).toBe(32);
+    expect(frameCacheSize(640, 480, 0, 32)).toBe(32);
+    expect(frameCacheSize(640, 480, Number.NaN, 32)).toBe(32);
   });
 });
 

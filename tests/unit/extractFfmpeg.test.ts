@@ -319,7 +319,9 @@ describe("extractFrame", () => {
     const backend = backendWith(bitmap);
     const media = await extractFrame({ ...params, backend });
     expect(backend.getFrame).toHaveBeenCalledWith(5);
-    expect(canvasControl.contexts[0].drawImage).toHaveBeenCalledWith(bitmap, 0, 0);
+    // At the frame's own size: the extraction always draws the recording's frame, never the
+    // lighter copy playback may be showing, so nothing here is ever scaled.
+    expect(canvasControl.contexts[0].drawImage).toHaveBeenCalledWith(bitmap, 0, 0, 320, 240);
     expect(media.filename).toBe("sub-mice_recording-20260810012356482_image.png");
     expect(media.mime).toBe("image/png");
     expect(media.encoding).toBe("canvas.toBlob(image/png), decoded frame without pose overlay");
