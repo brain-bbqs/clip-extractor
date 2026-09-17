@@ -22,9 +22,13 @@ export const VIEWPORTS = [
 
 /**
  * Asserts that the page does not scroll sideways at the current viewport, and names the elements
- * that overflow it when it does. This is the failure a narrow viewport hits first (a row of
- * controls that cannot wrap runs off the screen) and it is far easier to act on as a named element
- * than as a pixel diff in a snapshot.
+ * that reach past its right edge when it does. This is the failure a narrow viewport hits first
+ * (a row of controls that cannot wrap runs off the screen) and it is far easier to act on as a
+ * named element than as a pixel diff in a snapshot.
+ *
+ * The right edge rather than the width: a control pushed out of a grid it no longer fits is not
+ * itself wider than the screen, only hanging off the side of it, and it is the sideways scroll
+ * that the visitor meets either way.
  */
 export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   const { scrollWidth, clientWidth, offenders } = await page.evaluate(() => {
@@ -35,16 +39,16 @@ export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
       // in the thousands; the <svg> that holds them is what is checked. ownerSVGElement is null on
       // that outermost <svg> and set only on what is nested inside it.
       if ((el as SVGElement).ownerSVGElement) return;
-      const { width } = el.getBoundingClientRect();
-      if (width > root.clientWidth + 1) {
+      const { width, right } = el.getBoundingClientRect();
+      if (width > 0 && right > root.clientWidth + 1) {
         const id = el.id ? `#${el.id}` : "";
         const names = typeof el.className === "string" ? el.className.trim().split(/\s+/).filter(Boolean) : [];
         const classes = names.length ? `.${names.join(".")}` : "";
-        offenders.push(`${el.tagName.toLowerCase()}${id}${classes} (${Math.round(width)}px)`);
+        offenders.push(`${el.tagName.toLowerCase()}${id}${classes} (${Math.round(width)}px wide, ends at ${Math.round(right)}px)`);
       }
     });
     return { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth, offenders };
   });
-  expect(offenders, `Elements wider than the ${clientWidth}px viewport`).toEqual([]);
+  expect(offenders, `Elements past the right edge of the ${clientWidth}px viewport`).toEqual([]);
   expect(scrollWidth, `Page scrolls sideways at ${clientWidth}px`).toBeLessThanOrEqual(clientWidth + 1);
 }
