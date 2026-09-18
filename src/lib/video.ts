@@ -34,10 +34,12 @@ export function decodeIndex(frameOrder: number[] | null, displayIndex: number): 
   return frameOrder ? frameOrder[displayIndex] : displayIndex;
 }
 
-/** Draws a decoded frame (whatever shape the backend handed back) onto a 2D canvas context. */
+/** Draws a decoded frame (whatever shape the backend handed back) onto a 2D canvas context. A
+ * bitmap is scaled to the `w`x`h` the canvas is, which is the frame's own size for a frame of the
+ * recording and an enlargement for one of the lighter copy played in its place (see lib/proxy.ts). */
 export function drawVideoFrame(frame: VideoFrameLike, targetCtx: CanvasRenderingContext2D, w: number, h: number): void {
   if (frame instanceof ImageBitmap) {
-    targetCtx.drawImage(frame, 0, 0);
+    targetCtx.drawImage(frame, 0, 0, w, h);
     return;
   }
   if (frame instanceof ImageData) {

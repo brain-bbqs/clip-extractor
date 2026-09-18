@@ -68,11 +68,11 @@ describe("drawVideoFrame", () => {
     vi.unstubAllGlobals();
   });
 
-  it("draws an ImageBitmap straight onto the canvas", () => {
+  it("draws an ImageBitmap onto the canvas at the canvas's size, so a smaller copy fills it", () => {
     const ctx = fakeCtx();
     const bitmap = new FakeImageBitmap();
     drawVideoFrame(bitmap as ImageBitmap, ctx as unknown as CanvasRenderingContext2D, 2, 2);
-    expect(ctx.drawImage).toHaveBeenCalledWith(bitmap, 0, 0);
+    expect(ctx.drawImage).toHaveBeenCalledWith(bitmap, 0, 0, 2, 2);
     expect(ctx.putImageData).not.toHaveBeenCalled();
   });
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.6.4
+
+#### 🐛 Bug Fix
+
+- On a phone the three video-source buttons (**Load local file**, **Browse EMBER**, **Stream from a URL**) now stack one under another instead of running off both sides of the screen with their labels cut ([#70](https://github.com/brain-bbqs/clip-extractor/pull/70))
+
+#### 🏠 Internal
+
+- The Chromatic snapshots now capture the page at phone and tablet sizes in both orientations as well as desktop, and fail by naming any element that runs off the side of the screen ([#70](https://github.com/brain-bbqs/clip-extractor/pull/70))
+
+## 1.6.3
+
+#### 🐛 Bug Fix
+
+- Playing a short looping range no longer stutters, most of all on a phone: the player now decodes the frames ahead of the playhead in one run and reads round the loop before it wraps, keeps a short loop in memory whole once it has played through once, no longer steps the picture backwards when a frame arrives late, and, when it still cannot keep up with the recording, makes a lighter copy of the range and loops over that instead, going back to the recording's own frame the moment playback stops ([#71](https://github.com/brain-bbqs/clip-extractor/pull/71))
+
 ## 1.5.0
 
 #### 🚀 Enhancement
