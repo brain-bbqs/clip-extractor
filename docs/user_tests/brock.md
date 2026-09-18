@@ -60,7 +60,6 @@ See https://github.com/talmolab/sleap-tutorial-data/tree/main/new_data/results f
 - [x] Exported filenames follow the expected BIDS-like naming convention
 - [x] Exported files play/open correctly outside the app (e.g., in a media player or image viewer)
 
-
 ## Upload to EMBER Archive
 
 - [x] Uploading an exported frame/snippet to a selected dataset shows a progress indicator
@@ -86,6 +85,7 @@ Allow user to enter exact frame OR timestamp
 keyboard shortcut + speed respect; shift+nav could multiply by 10x
 
 time-dependent blur ; primarily for tracking faces ; alometric scaling for size of region?
+
 - wouldn't be hard to have 1 second keyframes to shift centroid and then interpolate spline
 
 investigate if restoring after stop requires adjusting video range
@@ -174,4 +174,3 @@ index-Ca73Nk8g.js:1576 Uploading sourcedata/rawbids/dataset_description.json to 
 index-Ca73Nk8g.js:1576 Uploaded sourcedata/rawbids/dataset_description.json
 index-Ca73Nk8g.js:1576 Upload complete: derivatives/clip-extractor/sub-1/beh/date-20260918_time-142446/
 ```
-
