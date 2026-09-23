@@ -1,9 +1,9 @@
 # User Test Checklist
 
-|            |         |
-| ---------- | ------- |
+|            |              |
+| ---------- | ------------ |
 | **Tester** | Sully Sharif |
-| **Date**   | 9/23/26 |
+| **Date**   | 9/23/26      |
 
 A basic manual pass through Clip Extractor's core flows before a release or after a significant
 change. Run through this on the deployed site, signed in with a real EMBER Archive account with
@@ -87,5 +87,3 @@ Ideas: on mobile, do not show drag and drop but only the file selector
 Maybe don't have local export available for.
 
 The portrait frame looks terrible but the rest worked.
-
-
