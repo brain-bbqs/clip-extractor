@@ -4,7 +4,7 @@
 
 #### 🏠 Internal
 
-- Updated the shared `@brain-bbqs/config` package to 0.2.0 ([#PR](https://github.com/brain-bbqs/clip-extractor/pull/PR))
+- Updated the shared `@brain-bbqs/config` package to 0.2.0 ([#74](https://github.com/brain-bbqs/clip-extractor/pull/74))
 
 ## 1.6.5
 
