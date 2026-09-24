@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.6
+
+#### 🏠 Internal
+
+- Updated the shared `@brain-bbqs/config` package to 0.2.0 ([#PR](https://github.com/brain-bbqs/clip-extractor/pull/PR))
+
 ## 1.6.5
 
 #### 🏠 Internal
