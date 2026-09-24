@@ -4,7 +4,7 @@
 
 #### 🏠 Internal
 
-- Moved the build, lint, test and Storybook configuration onto the shared `@brain-bbqs/config` package ([#PR](https://github.com/brain-bbqs/clip-extractor/pull/PR))
+- Moved the build, lint, test and Storybook configuration onto the shared `@brain-bbqs/config` package ([#73](https://github.com/brain-bbqs/clip-extractor/pull/73))
 
 ## 1.6.4
 
