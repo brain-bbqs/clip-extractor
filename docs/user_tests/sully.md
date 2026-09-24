@@ -88,4 +88,4 @@ Maybe don't have local export available for.
 
 The portrait frame looks terrible but the rest worked.
 
-BUG: signed in first to clip-extractor, then navigated to EMBER, then had to sign in there again. Should sync the cookies 
+BUG: signed in first to clip-extractor, then navigated to EMBER, then had to sign in there again. Should sync the cookies
