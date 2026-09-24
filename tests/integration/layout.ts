@@ -5,7 +5,7 @@ import { expect, type Page } from "@playwright/test";
 
 /**
  * The viewports a page is looked at across: the two device classes in both orientations, plus the
- * desktop width the suite started at (the Desktop Chrome default in playwright.shared.ts).
+ * desktop width the suite started at (the Desktop Chrome default in the shared @brain-bbqs/config/playwright config).
  *
  * The Chromatic run applies these per test rather than as Playwright projects, since Chromatic
  * keys an archive by the test's title alone: run as projects, each viewport would write over the

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.5
+
+#### 🏠 Internal
+
+- Moved the build, lint, test and Storybook configuration onto the shared `@brain-bbqs/config` package ([#PR](https://github.com/brain-bbqs/clip-extractor/pull/PR))
+
 ## 1.6.4
 
 #### 🐛 Bug Fix
