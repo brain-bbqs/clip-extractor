@@ -1,6 +1,6 @@
 {
   "name": "clip-extractor",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "description": "A single-page video player for selecting a frame range and extracting it as an upload-ready payload, built on sleap-io.js and ffmpeg.wasm.",
   "type": "module",
   "license": "MIT",
@@ -14,8 +14,9 @@
     "test:integration": "playwright test --config configs/playwright.config.ts",
     "test:chromatic": "playwright test --config configs/playwright.chromatic.config.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint --config configs/eslint.config.cjs .",
-    "format": "prettier --config configs/prettier.config.cjs --write .",
+    "lint": "eslint --config configs/eslint.config.js .",
+    "format": "prettier --config configs/prettier.config.js --write .",
+    "format:check": "prettier --config configs/prettier.config.js --check .",
     "storybook": "storybook dev -p 6006 --config-dir configs/storybook",
     "build-storybook": "storybook build --config-dir configs/storybook"
   },
@@ -29,6 +30,7 @@
     "spark-md5": "^3.0.2"
   },
   "devDependencies": {
+    "@brain-bbqs/config": "^0.1.0",
     "@chromatic-com/playwright": "^0.14.11",
     "@eslint/js": "^9.39.5",
     "@ffmpeg/core": "^0.12.10",

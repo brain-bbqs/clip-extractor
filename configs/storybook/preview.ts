@@ -1,13 +1,6 @@
 import "../../src/style.css";
+import { storybookPreview } from "@brain-bbqs/config/storybook";
 
-const preview = {
-  parameters: {
-    backgrounds: {
-      // Matches the app's light-theme --bg so the story renders on the page's real background.
-      default: "app",
-      values: [{ name: "app", value: "#f6f7fb" }],
-    },
-  },
-};
-
-export default preview;
+// Spread rather than re-exported: Storybook statically parses the default export and warns unless it
+// is an object literal.
+export default { ...storybookPreview };

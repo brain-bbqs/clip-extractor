@@ -1,21 +1,7 @@
 {
+  "extends": "@brain-bbqs/config/tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "useDefineForClassFields": true,
-    "module": "ESNext",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "allowImportingTsExtensions": true,
-    "isolatedModules": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "types": ["vite/client"]
+    "allowImportingTsExtensions": true
   },
   "include": [
     "../src",
@@ -23,7 +9,6 @@
     "vitest.config.ts",
     "playwright.config.ts",
     "playwright.chromatic.config.ts",
-    "playwright.shared.ts",
     "storybook/main.ts",
     "storybook/preview.ts"
   ]

@@ -1,8 +1,10 @@
 import type { ArchiveConfig, StoredSettings } from "./types";
 import { EMBER_INSTANCE } from "./instances";
 
-// Also read by the inline pre-paint script in index.html — keep the two literals in sync.
+// Both keys are also read before first paint by the script configs/vite.config.ts injects into
+// index.html.
 export const STORAGE_KEY = "clip-extractor.settings.v1";
+export const THEME_KEY = "clip-extractor.theme";
 
 export function loadStoredSettings(): StoredSettings | null {
   try {

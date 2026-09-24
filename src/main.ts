@@ -59,7 +59,7 @@ import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } fro
 import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
 import { type ArchiveSource } from "./lib/archives";
 import { isAssetDownloadUrl, resolveEmbargoedStreamUrl } from "./lib/embargoed";
-import { loadStoredSettings, resolveConfig, saveStoredSettings } from "./lib/settings";
+import { loadStoredSettings, resolveConfig, saveStoredSettings, THEME_KEY } from "./lib/settings";
 import {
   defaultDeliveryMode,
   deliveryDirectories,
@@ -125,7 +125,7 @@ import {
 } from "./lib/testInjection";
 import type { ArchiveConfig, OAuthTokenSet, PoseInstance, PoseModel, SelectorMode, SleapLabels, SleapVideoBackend } from "./lib/types";
 
-// Injected at build time from package.json's version (see configs/appVersion.ts).
+// Injected at build time from package.json's version (see configs/vite.config.ts).
 declare const __APP_VERSION__: string;
 
 const els = getElements();
@@ -179,11 +179,10 @@ if (!ctx2d) throw new Error("Canvas 2D context unavailable");
 const ctx: CanvasRenderingContext2D = ctx2d;
 
 // ============================================================
-// Theme toggle (mirrors bbqs-uploader): the inline script in index.html already applied any
-// stored override before first paint, so the toggle only has to flip and persist it. With
-// nothing stored, data-theme is unset and the OS preference applies.
+// Theme toggle (mirrors bbqs-uploader): the pre-paint script configs/vite.config.ts injects into
+// index.html already applied any stored override before first paint, so the toggle only has to
+// flip and persist it. With nothing stored, data-theme is unset and the OS preference applies.
 // ============================================================
-const THEME_KEY = "clip-extractor.theme";
 const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
 els.themeToggle.addEventListener("click", () => {
   const current = document.documentElement.dataset.theme ?? (prefersDark.matches ? "dark" : "light");
@@ -2203,7 +2202,7 @@ function renderAuthUI(): void {
   // signed out — so the choice is not offered at all rather than offered and then refused.
   els.deliverToggleRow.hidden = !signedIn;
   // Once the real auth state is known, this element-level hidden state is authoritative; the
-  // pre-paint script's stand-in attribute (see index.html) is no longer needed.
+  // pre-paint script's stand-in attribute (see configs/vite.config.ts) is no longer needed.
   delete document.documentElement.dataset.signedIn;
 }
 

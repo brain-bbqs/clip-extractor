@@ -201,9 +201,9 @@ header h1 {
 #oauthSigninBtn:focus-visible {
   outline-color: var(--ember-red);
 }
-/* Set on <html> by index.html's pre-paint script when stored OAuth tokens exist, so a refresh
-   while already signed in doesn't flash the sign-in button before main.ts's renderAuthUI()
-   determines the real state and clears the attribute. Both rules toggle together so the avatar's
+/* Set on <html> by the pre-paint script configs/vite.config.ts injects when stored OAuth tokens
+   exist, so a refresh while already signed in doesn't flash the sign-in button before main.ts's
+   renderAuthUI() determines the real state and clears the attribute. Both rules toggle together so the avatar's
    spot in the (right-aligned) header row is reserved from the first frame, instead of popping in
    and shifting the theme toggle sideways. */
 :root[data-signed-in="1"] #oauthSigninBtn {
