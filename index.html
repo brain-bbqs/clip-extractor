@@ -8,27 +8,18 @@
     <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-small-32-Dbw-CWbA.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon-small-16-Cy9-lsb0.png" />
     <link rel="apple-touch-icon" href="./assets/icon-180-qInRyNvI.png" />
-    <script>
-      // Applies the stored theme override before first paint so a saved dark/light choice doesn't
-      // flash the OS-preferred theme first. Key kept in sync with THEME_KEY in src/main.ts.
-      try {
-        var storedTheme = localStorage.getItem("clip-extractor.theme");
-        if (storedTheme === "light" || storedTheme === "dark") document.documentElement.dataset.theme = storedTheme;
-      } catch (e) {}
-      // Swaps the sign-in button for the (still-empty) signed-in avatar slot before first paint
-      // when a previous session's tokens are still in storage, so refreshing while already signed
-      // in neither flashes the sign-in button nor pops the avatar in afterwards and shifts the
-      // theme toggle sideways. main.ts's renderAuthUI() clears this attribute once the real state
-      // is known. Key kept in sync with STORAGE_KEY in src/lib/settings.ts.
-      try {
-        var storedSettings = JSON.parse(localStorage.getItem("clip-extractor.settings.v1"));
-        if (storedSettings && storedSettings.oauth && storedSettings.oauth.accessToken) {
-          document.documentElement.dataset.signedIn = "1";
-        }
-      } catch (e) {}
-    </script>
-    <script type="module" crossorigin src="./assets/index-Ca73Nk8g.js"></script>
+    <script type="module" crossorigin src="./assets/index-CvvQCofx.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-BfZxCWid.css">
+    <script>try {
+  var storedTheme = localStorage.getItem("clip-extractor.theme");
+  if (storedTheme === "light" || storedTheme === "dark") document.documentElement.dataset.theme = storedTheme;
+} catch (e) {}
+try {
+  var storedSettings = JSON.parse(localStorage.getItem("clip-extractor.settings.v1"));
+  if (storedSettings && storedSettings.oauth && storedSettings.oauth.accessToken) {
+    document.documentElement.dataset.signedIn = "1";
+  }
+} catch (e) {}</script>
   </head>
   <body>
     <a class="brand-watermark-link" href="https://brain-bbqs.org" target="_blank" rel="noopener" aria-label="BBQS" title="BBQS">
@@ -491,7 +482,7 @@
       <section class="card" id="deliverCard" hidden>
         <!-- Hidden until an EMBER sign-in resolves: Upload is the only side it leads to, and there
              is nothing to upload to while signed out. Starts hidden so a signed-out visitor never
-             sees it flash; the pre-paint `data-signed-in` attribute (see the script above) holds it
+             sees it flash; the pre-paint `data-signed-in` attribute (see configs/vite.config.ts) holds it
              on screen for a signed-in refresh until main.ts settles the real state. -->
         <div class="toggle-row" id="deliverToggleRow" hidden>
           <div class="seg" id="deliverSeg" role="group" aria-label="Delivery">
