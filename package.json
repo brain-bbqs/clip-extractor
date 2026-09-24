@@ -21,7 +21,7 @@
     "build-storybook": "storybook build --config-dir configs/storybook"
   },
   "dependencies": {
-    "@brain-bbqs/utils": "^0.1.0",
+    "@brain-bbqs/utils": "^0.2.0",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@talmolab/sleap-io.js": "^0.5.9",
@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@brain-bbqs/config": "^0.2.0",
-    "@brain-bbqs/test-utils": "^0.1.0",
+    "@brain-bbqs/test-utils": "^0.2.0",
     "@chromatic-com/playwright": "^0.14.11",
     "@eslint/js": "^9.39.5",
     "@ffmpeg/core": "^0.12.10",
