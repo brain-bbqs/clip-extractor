@@ -4,7 +4,7 @@
 
 #### 🏠 Internal
 
-- Moved the shared formatting, queue, sanitizing and test helpers onto the `@brain-bbqs/utils` and `@brain-bbqs/test-utils` packages ([#PR](https://github.com/brain-bbqs/clip-extractor/pull/PR))
+- Moved the shared formatting, queue, sanitizing and test helpers onto the `@brain-bbqs/utils` and `@brain-bbqs/test-utils` packages ([#75](https://github.com/brain-bbqs/clip-extractor/pull/75))
 
 ## 1.6.6
 
