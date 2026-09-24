@@ -9,7 +9,7 @@ import {
   overlayFileName,
   sidecarFileName,
 } from "../../src/lib/extract";
-import { InterruptedError } from "../../src/lib/interrupt";
+import { InterruptedError } from "@brain-bbqs/utils";
 import type { BehEntities } from "../../src/lib/bidsPath";
 import type { StreamingVideoBackend } from "../../src/lib/streaming";
 
@@ -159,7 +159,7 @@ describe("extractClip, on a streamed source", () => {
   });
 });
 
-// A delivery that was stopped (see lib/interrupt.ts) must not go on decoding, drawing or encoding
+// A delivery that was stopped (see @brain-bbqs/utils) must not go on decoding, drawing or encoding
 // what it was asked for: every entry point reads the interrupt before it does any of that.
 describe("extraction after the delivery was stopped", () => {
   const backend = { getFrame: vi.fn(() => Promise.resolve(null)) } as unknown as Parameters<typeof extractFrame>[0]["backend"];

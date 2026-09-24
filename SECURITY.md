@@ -46,7 +46,8 @@ Also keep an eye on:
   a token in storage gets exfiltrated even without a bug in this app's own
   code, so keep it that way.
 - **Minimal runtime dependencies.** Currently `@talmolab/sleap-io.js`,
-  `@ffmpeg/ffmpeg`, and `@ffmpeg/util`. Every added runtime dependency is
+  `@ffmpeg/ffmpeg`, `@ffmpeg/util`, and the BBQS apps' own dependency-free
+  `@brain-bbqs/utils`. Every added runtime dependency is
   something that could be compromised upstream and ship code that reads
   `localStorage`; don't add one without a reason.
 

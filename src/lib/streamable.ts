@@ -1,4 +1,4 @@
-import { bytes } from "./format";
+import { bytes } from "@brain-bbqs/utils";
 
 // Which remote videos are worth opening, decided before anything is opened.
 //

@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { combineDigests, computeDandiEtag, computeMd5, computeSha256, planParts } from "../../src/lib/etag";
-import { InterruptedError } from "../../src/lib/interrupt";
+import { InterruptedError } from "@brain-bbqs/utils";
 import type { FilePart } from "../../src/lib/types";
 
 const MB = 2 ** 20;

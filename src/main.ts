@@ -1,7 +1,7 @@
 import "./style.css";
 import * as sio from "@talmolab/sleap-io.js";
 import { getElements } from "./ui/elements";
-import { bytes, fmtTime, rulerLabel } from "./lib/format";
+import { fmtTime, rulerLabel } from "./lib/format";
 import {
   defaultSelection,
   frameAt,
@@ -71,7 +71,7 @@ import {
 } from "./lib/delivery";
 import { behEntities, sourcedataOriginalFilename, type BehEntities } from "./lib/bidsPath";
 import { audioFormatInfo } from "./lib/audioFormat";
-import { verbatimFilename } from "./lib/sanitize";
+import { bytes, isInterruption, throwIfInterrupted, verbatimFilename } from "@brain-bbqs/utils";
 import {
   bundleFileName,
   extractClip,
@@ -106,7 +106,6 @@ import {
 } from "./lib/datasetDescription";
 import { fetchArchiveUser, type ArchiveUser } from "./lib/users";
 import { friendlyError } from "./lib/errors";
-import { isInterruption, throwIfInterrupted } from "./lib/interrupt";
 import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
 import { StageStatus } from "./ui/stageStatus";
@@ -2385,7 +2384,7 @@ els.dandisetId.addEventListener("change", () => {
 
 // Guards both actions while an extraction or upload is in flight.
 let deliveryBusy = false;
-// The running delivery's own interrupt (see lib/interrupt.ts), tripped by the Stop button beside
+// The running delivery's own interrupt (see @brain-bbqs/utils), tripped by the Stop button beside
 // whichever action is running. A selection dragged a few seconds too far reads exactly like any
 // other until the encode is under way, so the way out of one has to be there while it runs.
 let deliveryAbort: AbortController | null = null;
@@ -3055,7 +3054,7 @@ interface AssembleParams {
   existingDescriptions?: () => Promise<ExistingDatasetDescriptions>;
   deliver: DeliverFile;
   onProgress: ExtractProgress;
-  /** The running delivery's interrupt (see lib/interrupt.ts): handed to every step, and read again
+  /** The running delivery's interrupt (see @brain-bbqs/utils): handed to every step, and read again
    * between them, so Stop lands within one file rather than at the end of the whole tree. */
   signal: AbortSignal;
 }

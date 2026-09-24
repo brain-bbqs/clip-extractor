@@ -1,6 +1,6 @@
 import type { ClipExtractorElements } from "./elements";
 import { setMessage } from "./linkify";
-import { bytes } from "../lib/format";
+import { bytes } from "@brain-bbqs/utils";
 import { friendlyError } from "../lib/errors";
 import { loadCachedNames, saveCachedNames } from "../lib/archiveNames";
 import {

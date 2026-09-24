@@ -1,4 +1,4 @@
-import { runQueue } from "./queue";
+import { runQueue } from "@brain-bbqs/utils";
 import { EMBER_INSTANCE } from "./instances";
 
 // Browsing EMBER for a video to stream, without asking the archive's REST API anything.

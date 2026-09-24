@@ -3,7 +3,7 @@
 // command-building half of the module against the real thing.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ensureFfmpeg, runFfmpeg, terminateFfmpeg } from "../../src/lib/ffmpeg";
-import { InterruptedError } from "../../src/lib/interrupt";
+import { InterruptedError } from "@brain-bbqs/utils";
 
 // Hoisted so the class exists by the time the mock factory below runs, which is before this file's
 // own top-level statements.

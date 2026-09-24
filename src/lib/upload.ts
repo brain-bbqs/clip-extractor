@@ -2,8 +2,7 @@ import type { ArchiveConfig, Asset, CompletedPart, FilePart, UploadInitResponse 
 import { apiFetch } from "./api";
 import { ApiError } from "./errors";
 import { computeDandiEtag, computeMd5, computeSha256, planParts } from "./etag";
-import { throwIfInterrupted } from "./interrupt";
-import { runQueue } from "./queue";
+import { runQueue, throwIfInterrupted } from "@brain-bbqs/utils";
 import { uploadPartWithRetry } from "./s3";
 
 // The archive-side upload contract, ported from brain-bbqs/bbqs-uploader: hash the blob into the

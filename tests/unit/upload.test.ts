@@ -3,7 +3,7 @@ import { createOrReplaceAsset, findExistingAsset, uploadAsset, uploadBlob } from
 import { apiFetch } from "../../src/lib/api";
 import { uploadPartWithRetry } from "../../src/lib/s3";
 import { ApiError } from "../../src/lib/errors";
-import { InterruptedError } from "../../src/lib/interrupt";
+import { InterruptedError } from "@brain-bbqs/utils";
 import type { ArchiveConfig, Asset, FilePart } from "../../src/lib/types";
 
 vi.mock("../../src/lib/api");
@@ -207,7 +207,7 @@ describe("uploadAsset", () => {
     });
   });
 
-  // Stopping a delivery (see lib/interrupt.ts) has to reach the archive calls too, or a snippet the
+  // Stopping a delivery (see @brain-bbqs/utils) has to reach the archive calls too, or a snippet the
   // visitor pulled the plug on goes on being registered file by file after they asked it to stop.
   it("sends nothing at all when the delivery was stopped before this file", async () => {
     mockHappyPath();

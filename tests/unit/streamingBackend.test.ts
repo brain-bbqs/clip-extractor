@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StreamingVideoBackend, openStreamingBlob, openStreamingUrl } from "../../src/lib/streaming";
-import { InterruptedError } from "../../src/lib/interrupt";
+import { InterruptedError } from "@brain-bbqs/utils";
 
 // Covers the backend against a stand-in for mediabunny: what it asks the container for while
 // opening a file (the whole point of the module — see its header), and how it serves frames out of

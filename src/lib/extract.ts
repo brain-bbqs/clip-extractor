@@ -3,7 +3,7 @@ import { ENCODED_PIXEL_FORMAT, X264_MP4_ARGS, encodedFraction, ensureFfmpeg, ffm
 import { decodeIndex, drawVideoFrame } from "./video";
 import { drawPose } from "./pose";
 import { blurSummary, paintBlurRegions, type BlurRegion } from "./blur";
-import { throwIfInterrupted } from "./interrupt";
+import { throwIfInterrupted } from "@brain-bbqs/utils";
 import type { StreamingVideoBackend } from "./streaming";
 import type { SelectionKind } from "./delivery";
 import { behFilename, behSidecarName, type BehEntities } from "./bidsPath";
@@ -111,7 +111,7 @@ export interface ExtractClipParams {
   /** Areas blurred into every frame on the way out, in source pixels. */
   blur?: BlurRegion[];
   onProgress?: ExtractProgress;
-  /** Stops the extraction partway through, when the visitor asks for it (see lib/interrupt.ts). */
+  /** Stops the extraction partway through, when the visitor asks for it (see @brain-bbqs/utils). */
   signal?: AbortSignal;
 }
 
@@ -264,7 +264,7 @@ export interface ExtractFrameParams {
   beh: BehEntities;
   /** Areas blurred into the image, in source pixels. */
   blur?: BlurRegion[];
-  /** Stops the extraction before it decodes, when the visitor asks for it (see lib/interrupt.ts). */
+  /** Stops the extraction before it decodes, when the visitor asks for it (see @brain-bbqs/utils). */
   signal?: AbortSignal;
 }
 
@@ -308,7 +308,7 @@ export interface ExtractOverlayParams {
   /** Areas blurred into every frame, in source pixels. */
   blur?: BlurRegion[];
   onProgress?: ExtractProgress;
-  /** Stops the rendering partway through, when the visitor asks for it (see lib/interrupt.ts).
+  /** Stops the rendering partway through, when the visitor asks for it (see @brain-bbqs/utils).
    * Read between frames, which is the whole of what this loop is. */
   signal?: AbortSignal;
 }
