@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
-import { loadRecordedVideo, stubArchive, stubH5Wasm, SLP_CLIP_FRAMES } from "./helpers";
+import { loadRecordedVideo, stubArchive, SLP_CLIP_FRAMES } from "./helpers";
 
 // An ndx-pose `.nwb` goes through the same card as a `.slp`, but it says less about the video it
 // was labeled against: the predictions flavor records only a filename. What stands in for the frame
@@ -14,7 +14,6 @@ const TOO_LONG = fileURLToPath(new URL("../fixtures/mice_long.pose.nwb", import.
 
 test("an ndx-pose .nwb loads and draws, noting how much of the video it covers", async ({ page }) => {
   await stubArchive(page);
-  await stubH5Wasm(page);
 
   await page.goto("/");
   await loadRecordedVideo(page, "mice_new.webm", SLP_CLIP_FRAMES);
@@ -31,7 +30,6 @@ test("an ndx-pose .nwb loads and draws, noting how much of the video it covers",
 
 test("an .nwb sampled over a longer recording is refused", async ({ page }) => {
   await stubArchive(page);
-  await stubH5Wasm(page);
 
   await page.goto("/");
   await loadRecordedVideo(page, "mice_new.webm", SLP_CLIP_FRAMES);

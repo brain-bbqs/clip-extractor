@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
-import { loadRecordedVideo, stubArchive, stubH5Wasm, SLP_CLIP_FRAMES } from "./helpers";
+import { loadRecordedVideo, stubArchive, SLP_CLIP_FRAMES } from "./helpers";
 
 // A `.slp` records the video it was labeled against. When that is not the video in the player, the
 // pose would land on the wrong pixels of the wrong frames, so the SLEAP card refuses the file
@@ -12,7 +12,6 @@ const MISMATCHED_FIXTURE = fileURLToPath(new URL("../fixtures/mice_other.tracked
 
 test("a .slp labeled against another video is refused, naming what does not match", async ({ page }) => {
   await stubArchive(page);
-  await stubH5Wasm(page);
 
   await page.goto("/");
   await loadRecordedVideo(page, "mice_new.webm", SLP_CLIP_FRAMES);
@@ -37,7 +36,6 @@ test("a .slp labeled against another video is refused, naming what does not matc
 
 test("a .slp naming a different video is loaded, with a warning rather than a refusal", async ({ page }) => {
   await stubArchive(page);
-  await stubH5Wasm(page);
 
   await page.goto("/");
   // This fixture stores no shape and its 30 labeled frames fit inside the clip, so the recorded

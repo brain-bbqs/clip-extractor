@@ -41,18 +41,89 @@ call for this app.
 
 Also keep an eye on:
 
-- **No third-party runtime scripts.** Nothing in `index.html` loads a CDN
-  `<script>` tag. A compromised third-party script is the other realistic way
-  a token in storage gets exfiltrated even without a bug in this app's own
-  code, so keep it that way.
-- **Minimal runtime dependencies.** Currently `@talmolab/sleap-io.js`,
-  `@ffmpeg/ffmpeg`, `@ffmpeg/util`, and the BBQS apps' own
-  `@brain-bbqs/utils` (dependency-free) and `@brain-bbqs/ember-client` (the
-  EMBER sign-in and archive client, which depends only on `@brain-bbqs/utils`
-  and `spark-md5`; this app takes `spark-md5` only transitively through it,
-  not as a direct dependency). Every added runtime dependency is
-  something that could be compromised upstream and ship code that reads
-  `localStorage`; don't add one without a reason.
+- **Third-party code fetched at runtime.** Nothing in `index.html` loads a
+  CDN `<script>` tag, and everything the app imports is bundled into its own
+  assets or emitted alongside them, with two exceptions:
+  - `src/lib/ffmpeg.ts` loads ffmpeg.wasm's core (`@ffmpeg/core@0.12.10`,
+    about 30MB of JS and WASM) from `cdn.jsdelivr.net` when a range is cut
+    from a video file already in the browser, or a pose overlay video is
+    rendered, and runs it in `@ffmpeg/ffmpeg`'s bundled Web Worker. That core
+    writes the very bytes that get uploaded. It stays on the CDN on purpose:
+    it is GPL-2.0-or-later and this app is MIT, so the app must never bundle,
+    copy or serve it from its own origin. Instead, both files are pinned by
+    SHA-256 beside the version in `FFMPEG_CORE`: the app downloads the bytes,
+    hashes them (`fetchPinned` in `src/lib/pinned.ts`), and only turns them
+    into Blob URLs for ffmpeg.wasm once both match. On a mismatch the encode
+    stops with an error and nothing from the download is loaded. A version
+    bump means recomputing both digests from `npm pack @ffmpeg/core@<version>`
+    (jsDelivr serves the tarball's files unchanged) and moving the
+    exact-pinned `@ffmpeg/core` devDependency to the same version: the
+    integration specs serve that copy in the CDN's place, and
+    `tests/unit/ffmpegInstance.test.ts` checks the pins against it.
+  - sleap-io.js carries a last-resort fallback that appends an unpkg.com
+    `<script>` for `mp4box@0.5.4` to the page itself, with no integrity
+    hash, which would run on the main thread with full access to storage.
+    It is reached only if the bundled `mp4box` chunk fails to load while the
+    mp4box video backend (the last fallback in `openLocalBackend` in
+    `src/main.ts`) is being tried. It lives inside the library and is left
+    as it is.
+
+  `@talmolab/sleap-io.js`'s `loadSlp` reads an `.slp` file in a Web Worker it
+  builds from a Blob, and that worker `importScripts` h5wasm from
+  `cdn.jsdelivr.net/npm/h5wasm@0.10.2` unless it is handed a URL.
+  `src/main.ts` hands it `h5: { h5wasmUrl }`, pointing at the app's own copy
+  of h5wasm's self-contained IIFE build, which Vite emits as an asset, so the
+  worker runs nothing from a third party. `tests/integration/cdn.spec.ts`
+  checks that parsing a `.slp` requests that asset and nothing from a CDN.
+  That default URL is still in the bundle, as is `@ffmpeg/ffmpeg`'s default
+  unpkg.com core URL, but neither is reached, because the app always passes
+  its own.
+
+  The ffmpeg Worker has no `localStorage` or `sessionStorage`, so it cannot
+  read the stored token directly, but it is third-party code running on
+  this origin. A compromised CDN copy is the other realistic way a token in
+  storage gets exfiltrated without a bug in this app's own code: the digest
+  check takes the CDN out of that chain for the ffmpeg core, and the mp4box
+  fallback is the one path still guarded only by the version in its URL. A
+  change to either pinned version, or to the digests, deserves the same
+  review as a new dependency.
+
+- **Minimal runtime dependencies.** Every entry under `dependencies` in
+  `package.json`, and what it is for:
+  - `@brain-bbqs/ember-client`: the BBQS apps' shared EMBER client, covering
+    OAuth sign-in (its PKCE verifier in `sessionStorage`), the stored
+    settings (the `localStorage` sink described below), archive API calls,
+    the admin-owned dandiset check, upload part planning, and the
+    dandi-etag and MD5 hashing. It depends only on `@brain-bbqs/utils` and
+    `spark-md5`; this app takes `spark-md5` only transitively through it.
+  - `@brain-bbqs/utils`: the BBQS apps' shared helpers (byte formatting,
+    interruption handling, a bounded work queue, filename sanitizing, and
+    the `localStorage` helpers `@brain-bbqs/ember-client` stores the settings
+    through). No dependencies and no network.
+  - `@ffmpeg/ffmpeg`: the ffmpeg.wasm wrapper, bundled; the core it runs is
+    the pinned CDN fetch above, run in a Worker.
+  - `@talmolab/sleap-io.js`: reads SLEAP `.slp` and ndx-pose `.nwb` pose
+    files, and provides the fallback video backends. It fetches a remote
+    `.slp` itself over range requests (with no credentials of ours),
+    spawns the h5wasm Worker above, and brings in `h5wasm`, `jsfive`,
+    `mediabunny`, `mp4box`, `pako` and `yaml` of its own.
+  - `h5wasm`: HDF5 compiled to WASM, imported lazily in `src/lib/nwb.ts` to
+    measure an ndx-pose series; it lands in its own lazily loaded chunk, with
+    the WASM embedded rather than fetched, and reads only from its in-memory
+    filesystem. Its IIFE build is also emitted as an asset of its own, for
+    sleap-io.js's worker above to import.
+  - `hash-wasm`: the incremental SHA-256 in `src/lib/etag.ts`, run on the
+    main thread over each file before upload, and the digest check on the
+    ffmpeg core in `src/lib/pinned.ts`. Its WASM is embedded in the
+    main bundle; it touches no network or storage.
+  - `mediabunny`: demuxes, decodes and trims video through the browser's
+    WebCodecs (no WASM). It streams archive and URL-named videos over range
+    requests without credentials of ours, and may start small Workers from
+    its own inline code.
+
+  Every added runtime dependency is something that could be compromised
+  upstream and ship code that reads `localStorage`; don't add one without a
+  reason.
 
 ## The admin-owned dandiset check calls a third party, but without our token
 
