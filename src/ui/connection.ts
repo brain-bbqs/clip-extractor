@@ -1,7 +1,7 @@
 import type { ClipExtractorElements } from "./elements";
 import type { ArchiveConfig } from "../lib/types";
 import { fetchArchiveUser, type ArchiveUser } from "../lib/users";
-import { initialsFrom } from "../lib/format";
+import { initialsFrom } from "@brain-bbqs/utils";
 
 /**
  * Renders the header's "who's signed in" avatar/username as soon as there's an access token,

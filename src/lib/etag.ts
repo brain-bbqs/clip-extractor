@@ -1,6 +1,6 @@
 import { createSHA256 } from "hash-wasm";
 import SparkMD5 from "spark-md5";
-import { throwIfInterrupted } from "./interrupt";
+import { throwIfInterrupted } from "@brain-bbqs/utils";
 import type { FilePart } from "./types";
 
 // DANDI addresses blobs by a "dandi-etag" — the S3 multipart ETag (an MD5 of the concatenated

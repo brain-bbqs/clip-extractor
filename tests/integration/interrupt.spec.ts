@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { loadRecordedVideo, seekTo, stubArchive } from "./helpers";
 
-// Stopping a delivery that is already running (see lib/interrupt.ts). What makes this worth a real
+// Stopping a delivery that is already running (see @brain-bbqs/utils). What makes this worth a real
 // browser rather than a unit test is the part nothing else covers: that the card actually comes back
 // — the Upload button returned, the video and pose swappable again — so an accidentally long
 // selection can be adjusted and sent for a second time.

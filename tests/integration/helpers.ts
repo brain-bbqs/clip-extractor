@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { expect, type Page } from "@playwright/test";
+import { seedSignedIn } from "@brain-bbqs/test-utils/playwright";
+import { STORAGE_KEY } from "../../src/lib/settings";
 
 // Shared scaffolding for the upload specs: a stubbed archive (so nothing leaves the browser) and a
 // synthesized video (so no binary video fixture has to be committed).
@@ -65,7 +67,6 @@ export function listTar(gzipped: Buffer): { path: string; size: number; text: st
 }
 
 const API = "**/api-dandi.emberarchive.org/api/**";
-const ADMIN_CHECK = "**/uploader-codycbakerphd.pythonanywhere.com/**";
 
 export interface StubbedArchive {
   /** Asset paths the app registers, in the order it registers them. */
@@ -94,6 +95,9 @@ export interface StubArchiveOptions {
 
 /**
  * Stubs the archive, its admin-ownership check and S3, and signs the page in with a stored token.
+ * The sign-in half (the stored token, the dataset listing, the draft's description and the admin
+ * check) is @brain-bbqs/test-utils' seedSignedIn, registered after the catch-all below so its
+ * routes take precedence; the upload, asset and S3 routes are this app's own.
  */
 export async function stubArchive(page: Page, { humanSubjects = false }: StubArchiveOptions = {}): Promise<StubbedArchive> {
   const registered: string[] = [];
@@ -103,9 +107,6 @@ export async function stubArchive(page: Page, { humanSubjects = false }: StubArc
     const url = route.request().url();
     const json = (body: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
     if (url.includes("/users/me/")) return json({ username: "ada-lovelace", name: "Ada Lovelace" });
-    if (url.includes("/dandisets/?user=me")) {
-      return json({ results: [{ identifier: "000123", embargo_status: "EMBARGOED", draft_version: { name: "Incoming: Test Lab" } }] });
-    }
     if (url.includes("/uploads/initialize/")) {
       const { contentSize } = JSON.parse(route.request().postData()!) as { contentSize: number };
       return json({ upload_id: "u1", parts: [{ part_number: 1, size: contentSize, upload_url: "https://s3.test/part-1" }] });
@@ -118,16 +119,14 @@ export async function stubArchive(page: Page, { humanSubjects = false }: StubArc
       registered.push(metadata.path);
       return json({ asset_id: "asset-1", path: metadata.path });
     }
-    // Checked after the assets route above, whose path starts the same way.
-    if (url.includes("/versions/draft/")) {
-      return json({ description: humanSubjects ? "Incoming staging dataset. CONTAINS HUMAN SUBJECTS." : "Incoming staging dataset." });
-    }
     return json({});
   });
 
-  await page.route(ADMIN_CHECK, (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ adminOwned: true }) }),
-  );
+  await seedSignedIn(page, {
+    storageKey: STORAGE_KEY,
+    extraSettings: { deliveryMode: "upload" },
+    draftDescription: humanSubjects ? "Incoming staging dataset. CONTAINS HUMAN SUBJECTS." : "Incoming staging dataset.",
+  });
 
   // A real bucket has to expose ETag to the page for a browser upload to work at all (see
   // lib/s3.ts), so the stub does too — along with answering the PUT's cross-origin preflight.
@@ -147,18 +146,6 @@ export async function stubArchive(page: Page, { humanSubjects = false }: StubArc
       },
       body: "",
     });
-  });
-
-  await page.addInitScript(() => {
-    // Seeded only when there is nothing stored yet, since this runs before every navigation: a
-    // reload has to read back what the app itself saved, or no persisted choice could be tested.
-    const key = "clip-extractor.settings.v1";
-    if (!localStorage.getItem(key)) {
-      localStorage.setItem(
-        key,
-        JSON.stringify({ oauth: { accessToken: "test-token", expiresAt: Date.now() + 3_600_000 }, deliveryMode: "upload" }),
-      );
-    }
   });
 
   return { registered, uploaded };

@@ -2,7 +2,7 @@
 // than fetch: it is the only way to get upload progress events. Ported from
 // brain-bbqs/bbqs-uploader.
 
-import { InterruptedError, isInterruption } from "./interrupt";
+import { InterruptedError, isInterruption } from "@brain-bbqs/utils";
 
 function uploadPartToS3(url: string, blob: Blob, onProgress: (loaded: number) => void, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {

@@ -42,13 +42,18 @@
 // BEP047's own vocabulary has no entity for. The plain extracted clip carries no `desc-` of its own:
 // it is the delivery's primary output, so there is nothing it needs setting apart from.
 
-import { foldDiacritics, sanitizeSegment } from "./sanitize";
+import { foldDiacritics, sanitizeSegment, type SanitizeSegmentOptions } from "@brain-bbqs/utils";
+
+/** Whitespace becomes `+`, keeping word boundaries legible in a name that cannot hold spaces, and
+ * `+` itself survives because this app generates it, in the `range-<in>+<out>` entity of an
+ * extracted snippet's name (see lib/extract.ts); replacing it would corrupt that entity. */
+const SEGMENT_OPTIONS: SanitizeSegmentOptions = { whitespaceAs: "+", extraAllowed: "+" };
 
 /** Every asset this app writes into a dandiset's derivatives sits under this pipeline name. */
 export const DERIVATIVES_PIPELINE = "clip-extractor";
 
 /** A BIDS entity *label* is `[0-9a-zA-Z]+` — no punctuation at all, unlike an ordinary path
- * segment (see lib/sanitize.ts's `sanitizeSegment`, which keeps `._+-`). Accents fold to their base
+ * segment (see `sanitizeSegment` with SEGMENT_OPTIONS, which keeps `._+-`). Accents fold to their base
  * letter first, so "café" reads as "cafe" rather than losing the character outright. */
 export function bidsLabel(value: string, fallback: string): string {
   const collapsed = foldDiacritics(value).replace(/[^A-Za-z0-9]+/g, "");
@@ -198,7 +203,7 @@ export function behAssetPath(directory: string, filename: string): string {
     .split("/")
     .map((s) => s.trim())
     .filter((s) => s && s !== "." && s !== "..")
-    .map((s) => sanitizeSegment(s, "_"))
+    .map((s) => sanitizeSegment(s, "_", SEGMENT_OPTIONS))
     .concat(filename)
     .join("/");
 }

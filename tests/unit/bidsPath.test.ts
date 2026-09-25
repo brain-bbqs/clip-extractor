@@ -188,4 +188,15 @@ describe("behAssetPath", () => {
   it("sanitizes a directory segment carrying spaces, dropping . and ..", () => {
     expect(behAssetPath("sourcedata/sub 1/./beh/..", "file.mp4")).toBe("sourcedata/sub+1/beh/file.mp4");
   });
+
+  // The segment rules this app passes to @brain-bbqs/utils' sanitizeSegment, which defaults to `_`
+  // for whitespace and would replace the `+` of a range entity.
+  it.each([
+    ["mice cam 2 (final)", "mice+cam+2+_final"],
+    ["name-mice_range-0+30_type-snippet", "name-mice_range-0+30_type-snippet"],
+    ["café", "cafe"],
+    ["(!)", "_"],
+  ])("sanitizes the directory segment %j to %j", (segment, expected) => {
+    expect(behAssetPath(segment, "file.mp4")).toBe(`${expected}/file.mp4`);
+  });
 });

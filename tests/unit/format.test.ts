@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bytes, fmtTime, initialsFrom, rulerLabel, rulerStep } from "../../src/lib/format";
+import { fmtTime, rulerLabel, rulerStep } from "../../src/lib/format";
 
 describe("rulerStep", () => {
   it("divides a clip into gradations someone reads at a glance", () => {
@@ -44,48 +44,5 @@ describe("fmtTime", () => {
 
   it("falls back to the bare frame number without a rate to divide by", () => {
     expect(fmtTime(45, 0)).toBe("45");
-  });
-});
-
-describe("bytes", () => {
-  it("scales through B, KB and MB", () => {
-    expect(bytes(512)).toBe("512 B");
-    expect(bytes(2048)).toBe("2.0 KB");
-    expect(bytes(5 * 1048576)).toBe("5.00 MB");
-  });
-
-  // An archived recording runs to hundreds of gigabytes, which stopping at MB rendered as six
-  // figures of them.
-  it("carries on into GB and TB, rather than counting a huge file in megabytes", () => {
-    expect(bytes(10.6 * 1024 ** 3)).toBe("10.60 GB");
-    expect(bytes(360464443754)).toBe("335.71 GB");
-    expect(bytes(3 * 1024 ** 4)).toBe("3.00 TB");
-  });
-
-  it("changes unit exactly at each multiple", () => {
-    expect(bytes(1023)).toBe("1023 B");
-    expect(bytes(1024)).toBe("1.0 KB");
-    expect(bytes(1024 ** 2 - 1)).toBe("1024.0 KB");
-    expect(bytes(1024 ** 2)).toBe("1.00 MB");
-    expect(bytes(1024 ** 3 - 1)).toBe("1024.00 MB");
-    expect(bytes(1024 ** 3)).toBe("1.00 GB");
-    expect(bytes(1024 ** 4)).toBe("1.00 TB");
-  });
-
-  it("has nothing to show for nothing", () => {
-    expect(bytes(null)).toBe("—");
-    expect(bytes(undefined)).toBe("—");
-  });
-});
-
-describe("initialsFrom", () => {
-  it("takes the first and last name's initials", () => {
-    expect(initialsFrom("Ada Lovelace")).toBe("AL");
-    expect(initialsFrom("Ada Byron King Lovelace")).toBe("AL");
-  });
-
-  it("gives up without both halves of a name", () => {
-    expect(initialsFrom("Ada")).toBe("??");
-    expect(initialsFrom("  ")).toBe("??");
   });
 });

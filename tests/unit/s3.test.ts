@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { InterruptedError } from "../../src/lib/interrupt";
+import { InterruptedError } from "@brain-bbqs/utils";
 import { uploadPartWithRetry } from "../../src/lib/s3";
 
 /** One scripted outcome for the next FakeXHR send. */

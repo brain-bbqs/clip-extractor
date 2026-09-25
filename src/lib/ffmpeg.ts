@@ -1,7 +1,7 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import { blurFilterChain, type BlurRegion } from "./blur";
-import { InterruptedError, throwIfInterrupted } from "./interrupt";
+import { InterruptedError, throwIfInterrupted } from "@brain-bbqs/utils";
 import type { PixelFormatInfo } from "./videoFormat";
 import type { TrimMode } from "./types";
 

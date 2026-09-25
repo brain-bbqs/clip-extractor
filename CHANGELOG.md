@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.7
+
+#### 🏠 Internal
+
+- Moved the shared formatting, queue, sanitizing and test helpers onto the `@brain-bbqs/utils` and `@brain-bbqs/test-utils` packages ([#75](https://github.com/brain-bbqs/clip-extractor/pull/75))
+
 ## 1.6.6
 
 #### 🏠 Internal

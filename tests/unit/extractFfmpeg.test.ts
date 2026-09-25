@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { extractClip, extractFrame, extractOverlay } from "../../src/lib/extract";
 import { ENCODED_PIXEL_FORMAT, X264_MP4_ARGS, ffmpegArgs } from "../../src/lib/ffmpeg";
-import { InterruptedError } from "../../src/lib/interrupt";
+import { InterruptedError } from "@brain-bbqs/utils";
 import { blurSummary } from "../../src/lib/blur";
 import type { BehEntities } from "../../src/lib/bidsPath";
 import type { PoseModel, SleapVideoBackend } from "../../src/lib/types";
