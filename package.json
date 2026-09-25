@@ -21,7 +21,7 @@
     "build-storybook": "storybook build --config-dir configs/storybook"
   },
   "dependencies": {
-    "@brain-bbqs/ember-client": "^0.1.1",
+    "@brain-bbqs/ember-client": "^0.2.0",
     "@brain-bbqs/utils": "^0.2.0",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",

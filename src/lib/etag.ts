@@ -1,135 +1,33 @@
 import { createSHA256 } from "hash-wasm";
-import SparkMD5 from "spark-md5";
-import { throwIfInterrupted } from "@brain-bbqs/utils";
-import { combineDigests, type FilePart } from "@brain-bbqs/ember-client";
+import { createEtag } from "@brain-bbqs/ember-client";
 
-// DANDI addresses blobs by a "dandi-etag" (the S3 multipart ETag: an MD5 of the concatenated
-// per-part MD5s, suffixed with the part count), so the part layout used to hash a file must match
-// the one the server plans for its upload (`planParts` and `combineDigests`, from
-// @brain-bbqs/ember-client). The streaming hashes stay here: the shared chunk loop words a short read
-// for bbqs-uploader ("re-add it") and cannot feed the SHA-256 only this app computes. An upload here
-// is at most two files, and the chunk loop yields to the event loop between chunks, so the page
-// stays responsive without bbqs-uploader's worker pool.
+// The dandi-etag, the per-part MD5 and the plain MD5 are @brain-bbqs/ember-client's, bound here to
+// this app's wording for a source that changes mid-hash (its empty and oversized file messages
+// already match the package's). An upload here is at most two files, and the shared chunk loop
+// yields to the event loop between chunks, so the page stays responsive without bbqs-uploader's
+// worker pool.
+const etag = createEtag({
+  fileChanged: "The source file changed while hashing — please re-load it.",
+});
 
-const MB = 2 ** 20;
-const HASH_CHUNK = 16 * MB;
+export const { hashPart, computeDandiEtag, computeMd5 } = etag;
 
-/** Reads `length` bytes of `blob` from `offset` in HASH_CHUNK-sized pieces, handing each to `take`
- * along with the running total read so far, so a multi-gigabyte source never lands in memory whole.
- * Every hash below is one pass of this: what differs between them is only which digest the bytes go
- * into and how the running total is reported.
- *
- * A short read means the file changed underneath the hash — a browser hands out a `File` as a live
- * handle on something the visitor can still edit or unmount — and a digest folded from part-old,
- * part-new bytes would name a blob that never existed.
- *
- * `signal` is read at every chunk boundary: hashing a multi-gigabyte source is the longest
- * uninterruptible stretch a delivery has, and a chunk is 16MB of it. */
-async function eachChunk(
-  blob: Blob,
-  offset: number,
-  length: number,
-  take: (buf: ArrayBuffer, readSoFar: number) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  let read = 0;
-  while (read < length) {
-    throwIfInterrupted(signal);
-    const n = Math.min(HASH_CHUNK, length - read);
-    const start = offset + read;
-    const buf = await blob.slice(start, start + n).arrayBuffer();
-    if (buf.byteLength !== n) {
-      throw new Error("The source file changed while hashing — please re-load it.");
-    }
-    read += n;
-    take(buf, read);
-  }
-}
-
-/** MD5 of one part of a blob, streamed in 16MB chunks so a large source video never lands in
- * memory whole. */
-export async function hashPart(
-  blob: Blob,
-  part: FilePart,
-  onChunk: (bytesDoneInPart: number) => void,
-  signal?: AbortSignal,
-): Promise<Uint8Array> {
-  const spark = new SparkMD5.ArrayBuffer();
-  await eachChunk(
-    blob,
-    part.offset,
-    part.size,
-    (buf, read) => {
-      spark.append(buf);
-      onChunk(read);
-    },
-    signal,
-  );
-  // end(true) yields the raw 16-byte digest as a binary string
-  const raw = spark.end(true);
-  const digest = new Uint8Array(16);
-  for (let i = 0; i < 16; i++) {
-    digest[i] = raw.charCodeAt(i) & 0xff;
-  }
-  return digest;
-}
-
-/** Hashes every part of `blob` in order and returns its dandi-etag, reporting 0..1 progress. */
-export async function computeDandiEtag(
-  blob: Blob,
-  parts: FilePart[],
-  onProgress: (fraction: number) => void = () => {},
-  signal?: AbortSignal,
-): Promise<string> {
-  const total = parts.reduce((sum, p) => sum + p.size, 0);
-  const digests = new Uint8Array(parts.length * 16);
-  let done = 0;
-  for (const part of parts) {
-    digests.set(await hashPart(blob, part, (n) => onProgress(total ? (done + n) / total : 1), signal), (part.number - 1) * 16);
-    done += part.size;
-  }
-  onProgress(1);
-  return combineDigests(digests, parts.length);
-}
-
-/** Plain whole-file MD5 — independent of the dandi-etag above, which even for a single-part blob is
- * `md5(md5(file))` rather than `md5(file)` (see `ProvenanceChecksum`'s own comment on that). A
- * sidecar's own `Checksum` field (lib/provenance.ts) names both, since only the dandi-etag identifies
- * the blob to the archive but a plain MD5 is what most tooling outside it expects. Streamed in the
- * same HASH_CHUNK-sized reads as `hashPart`, so a large source video never lands in memory whole; a
- * separate pass over the bytes rather than folded into `computeDandiEtag`'s, since that one resets its
- * digest at every part boundary and this one must not. */
-export async function computeMd5(blob: Blob, onProgress: (fraction: number) => void = () => {}, signal?: AbortSignal): Promise<string> {
-  const spark = new SparkMD5.ArrayBuffer();
-  await eachChunk(
-    blob,
-    0,
-    blob.size,
-    (buf, read) => {
-      spark.append(buf);
-      onProgress(blob.size ? read / blob.size : 1);
-    },
-    signal,
-  );
-  onProgress(1);
-  return spark.end();
-}
-
-/** Plain whole-file SHA-256, streamed in the same HASH_CHUNK-sized reads as `computeMd5` above so a
- * large source video never lands in memory whole. Web Crypto's own `crypto.subtle.digest` cannot do
- * this — it has no incremental API, so it would need the entire file buffered at once — hence
- * hash-wasm, whose hashers take the bytes a chunk at a time the way SparkMD5 does. A separate pass
- * over the bytes, for the same reason `computeMd5` is one. */
+/** Plain whole-file SHA-256, streamed through the same 16MB chunked reader as `computeMd5` so a
+ * large source video never lands in memory whole, with the same interruption checks and short-read
+ * error. Web Crypto's own `crypto.subtle.digest` cannot do this (it has no incremental API, so it
+ * would need the entire file buffered at once), hence hash-wasm, whose hashers take the bytes a
+ * chunk at a time the way SparkMD5 does. A separate pass over the bytes, since the dandi-etag resets
+ * its digest at every part boundary and this one must not. */
 export async function computeSha256(blob: Blob, onProgress: (fraction: number) => void = () => {}, signal?: AbortSignal): Promise<string> {
   const hasher = await createSHA256();
   hasher.init();
-  await eachChunk(
+  await etag.readChunks(
     blob,
     0,
     blob.size,
     (buf, read) => {
       hasher.update(new Uint8Array(buf));
-      onProgress(blob.size ? read / blob.size : 1);
+      onProgress(read / blob.size);
     },
     signal,
   );
