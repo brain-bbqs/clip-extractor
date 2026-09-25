@@ -46,10 +46,11 @@ Also keep an eye on:
   a token in storage gets exfiltrated even without a bug in this app's own
   code, so keep it that way.
 - **Minimal runtime dependencies.** Currently `@talmolab/sleap-io.js`,
-  `@ffmpeg/ffmpeg`, `@ffmpeg/util`, and the BBQS apps' own dependency-free
-  `@brain-bbqs/utils` and `@brain-bbqs/ember-client` (the EMBER sign-in and
-  archive client, which depends only on `@brain-bbqs/utils` and `spark-md5`,
-  already a dependency here). Every added runtime dependency is
+  `@ffmpeg/ffmpeg`, `@ffmpeg/util`, and the BBQS apps' own
+  `@brain-bbqs/utils` (dependency-free) and `@brain-bbqs/ember-client` (the
+  EMBER sign-in and archive client, which depends only on `@brain-bbqs/utils`
+  and `spark-md5`; this app takes `spark-md5` only transitively through it,
+  not as a direct dependency). Every added runtime dependency is
   something that could be compromised upstream and ship code that reads
   `localStorage`; don't add one without a reason.
 
