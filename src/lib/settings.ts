@@ -1,49 +1,11 @@
-import type { ArchiveConfig, StoredSettings } from "./types";
-import { EMBER_INSTANCE } from "./instances";
+import { createArchiveSettingsStore } from "@brain-bbqs/ember-client";
+import type { StoredSettings } from "./types";
 
 // Both keys are also read before first paint by the script configs/vite.config.ts injects into
-// index.html.
+// index.html. Renaming STORAGE_KEY would sign every visitor out on the next deploy.
 export const STORAGE_KEY = "clip-extractor.settings.v1";
 export const THEME_KEY = "clip-extractor.theme";
 
-export function loadStoredSettings(): StoredSettings | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as StoredSettings;
-  } catch (e) {
-    console.warn("Could not restore settings:", e);
-    return null;
-  }
-}
-
-export function saveStoredSettings(settings: StoredSettings | null): void {
-  try {
-    if (!settings) {
-      localStorage.removeItem(STORAGE_KEY);
-      return;
-    }
-    // clip-extractor is a fully static, backend-free page (no server to hold a session), so
-    // client storage is the only place to persist the OAuth token between page loads. This is an
-    // accepted, documented trade-off — see SECURITY.md ("Handling a 'clear text storage' alert on
-    // a new credential") for the reasoning and for why the marker below documents intent but does
-    // not clear the check under this repo's CodeQL setup.
-    // codeql[js/clear-text-storage-of-sensitive-data]
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch (e) {
-    console.warn("Could not save settings:", e);
-  }
-}
-
-/** Resolves the archive config the API helpers take from the current sign-in + dataset choice. */
-export function resolveConfig(input: { dandisetId: string; oauthAccessToken?: string; embargoed?: boolean }): ArchiveConfig {
-  const rawId = input.dandisetId.trim();
-  const idMatch = /(^|[^-\d])(\d{6,})/.exec(rawId);
-  return {
-    api: EMBER_INSTANCE.api,
-    web: EMBER_INSTANCE.web,
-    accessToken: input.oauthAccessToken ?? "",
-    dandisetId: idMatch ? idMatch[2] : "",
-    embargoed: input.embargoed,
-  };
-}
+// The OAuth token set lives in here, in localStorage: an accepted, documented trade-off for a
+// backend-free page (see SECURITY.md, "Handling a 'clear text storage' alert on a new credential").
+export const settingsStore = createArchiveSettingsStore<StoredSettings>(STORAGE_KEY);

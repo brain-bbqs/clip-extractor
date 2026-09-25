@@ -1,12 +1,13 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createOrReplaceAsset, findExistingAsset, uploadAsset, uploadBlob } from "../../src/lib/upload";
-import { apiFetch } from "../../src/lib/api";
+import { apiFetch, ApiError, type ArchiveConfig, type Asset, type FilePart } from "@brain-bbqs/ember-client";
 import { uploadPartWithRetry } from "../../src/lib/s3";
-import { ApiError } from "../../src/lib/errors";
 import { InterruptedError } from "@brain-bbqs/utils";
-import type { ArchiveConfig, Asset, FilePart } from "../../src/lib/types";
 
-vi.mock("../../src/lib/api");
+vi.mock("@brain-bbqs/ember-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@brain-bbqs/ember-client")>()),
+  apiFetch: vi.fn(),
+}));
 vi.mock("../../src/lib/s3");
 // jsdom has no Blob.arrayBuffer(), which the real checksum walks the blob with; all three digests
 // are covered against reference implementations in etag.test.ts.

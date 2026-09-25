@@ -6,7 +6,7 @@ import {
   listPublicDandisetIds,
   resolveEmbargoedStreamUrl,
 } from "../../src/lib/embargoed";
-import type { ArchiveConfig } from "../../src/lib/types";
+import type { ArchiveConfig } from "@brain-bbqs/ember-client";
 
 const cfg: ArchiveConfig = {
   api: "https://api.example.org/api",

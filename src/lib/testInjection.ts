@@ -1,5 +1,5 @@
 import { AudioSample, AudioSampleSource, BufferTarget, CanvasSource, Output, QUALITY_LOW, WebMOutputFormat } from "mediabunny";
-import type { IncomingDandiset } from "./dandisets";
+import type { IncomingDandiset } from "@brain-bbqs/ember-client";
 import type { ArchiveDandiset, ArchiveSource, ArchiveVideo } from "./archives";
 
 // Live smoketest URL params (`?test&...`), mirroring brain-bbqs/bbqs-uploader's own `?test` scheme

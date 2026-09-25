@@ -1,54 +1,18 @@
 import { createSHA256 } from "hash-wasm";
 import SparkMD5 from "spark-md5";
 import { throwIfInterrupted } from "@brain-bbqs/utils";
-import type { FilePart } from "./types";
+import { combineDigests, type FilePart } from "@brain-bbqs/ember-client";
 
-// DANDI addresses blobs by a "dandi-etag" — the S3 multipart ETag (an MD5 of the concatenated
-// per-part MD5s, suffixed with the part count) — so the part layout used to hash a file must match
-// the one the server plans for its upload. Ported from brain-bbqs/bbqs-uploader, minus its worker
-// pool: an upload here is at most two files, and the 16MB chunk loop below yields to the event loop
-// between chunks, so the page stays responsive without the extra machinery.
+// DANDI addresses blobs by a "dandi-etag" (the S3 multipart ETag: an MD5 of the concatenated
+// per-part MD5s, suffixed with the part count), so the part layout used to hash a file must match
+// the one the server plans for its upload (`planParts` and `combineDigests`, from
+// @brain-bbqs/ember-client). The streaming hashes stay here: the shared chunk loop words a short read
+// for bbqs-uploader ("re-add it") and cannot feed the SHA-256 only this app computes. An upload here
+// is at most two files, and the chunk loop yields to the event loop between chunks, so the page
+// stays responsive without bbqs-uploader's worker pool.
 
 const MB = 2 ** 20;
-const GB = 2 ** 30;
-const TB = 2 ** 40;
-const MAX_PARTS = 10_000;
-const MIN_PART_SIZE = 5 * MB;
-const MAX_PART_SIZE = 5 * GB;
-const DEFAULT_PART_SIZE = 64 * MB;
 const HASH_CHUNK = 16 * MB;
-
-/** Faithful port of dandischema.digests.dandietag.PartGenerator. */
-export function planParts(fileSize: number): FilePart[] {
-  if (fileSize <= 0) throw new Error("Empty files cannot be uploaded to EMBER.");
-  if (fileSize > 5 * TB) throw new Error("File is larger than the S3 maximum object size (5 TB).");
-
-  let partSize = DEFAULT_PART_SIZE;
-  if (Math.ceil(fileSize / partSize) >= MAX_PARTS) {
-    partSize = Math.ceil(fileSize / MAX_PARTS);
-  }
-  if (partSize < MIN_PART_SIZE || partSize > MAX_PART_SIZE) {
-    throw new Error("Internal error: computed part size is outside S3 limits.");
-  }
-
-  let partQty = Math.floor(fileSize / partSize);
-  let finalPartSize = fileSize - partQty * partSize;
-  if (finalPartSize === 0) {
-    finalPartSize = partSize;
-  } else {
-    partQty += 1;
-  }
-  if (partQty === 1) partSize = finalPartSize;
-
-  const parts: FilePart[] = [];
-  let offset = 0;
-  for (let number = 1; number <= partQty; number++) {
-    const size = number === partQty ? finalPartSize : partSize;
-    parts.push({ number, offset, size });
-    offset += size;
-  }
-  return parts;
-}
 
 /** Reads `length` bytes of `blob` from `offset` in HASH_CHUNK-sized pieces, handing each to `take`
  * along with the running total read so far, so a multi-gigabyte source never lands in memory whole.
@@ -108,13 +72,6 @@ export async function hashPart(
     digest[i] = raw.charCodeAt(i) & 0xff;
   }
   return digest;
-}
-
-/** Folds the concatenated per-part digests (16 bytes per part, in part order) into the final etag. */
-export function combineDigests(partDigests: Uint8Array, partCount: number): string {
-  const finalSpark = new SparkMD5.ArrayBuffer();
-  finalSpark.append(partDigests.buffer as ArrayBuffer);
-  return `${finalSpark.end()}-${partCount}`;
 }
 
 /** Hashes every part of `blob` in order and returns its dandi-etag, reporting 0..1 progress. */

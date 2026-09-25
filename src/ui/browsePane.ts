@@ -20,7 +20,7 @@ import {
 import { listEmbargoedVideos, listOwnedEmbargoedDandisets, listPublicDandisetIds, resolveEmbargoedStreamUrl } from "../lib/embargoed";
 import { unstreamableRefusal } from "../lib/streamable";
 import { fakeArchiveBrowse } from "../lib/testInjection";
-import type { ArchiveConfig } from "../lib/types";
+import type { ArchiveConfig } from "@brain-bbqs/ember-client";
 
 // Browsing EMBER for a video to stream.
 //

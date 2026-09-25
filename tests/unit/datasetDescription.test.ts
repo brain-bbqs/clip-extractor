@@ -7,7 +7,7 @@ import {
   readExistingDatasetDescriptions,
 } from "../../src/lib/datasetDescription";
 import { buildGeneratedByEntry, type SourceDatasetEntry } from "../../src/lib/generatedBy";
-import type { ArchiveConfig, Asset } from "../../src/lib/types";
+import type { ArchiveConfig, Asset } from "@brain-bbqs/ember-client";
 
 const sourceDataset: SourceDatasetEntry = {
   URL: "https://api-dandi.emberarchive.org/api/dandisets/000479",

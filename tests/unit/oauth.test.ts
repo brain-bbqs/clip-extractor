@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { webcrypto } from "node:crypto";
-import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "../../src/lib/oauth";
-import { EMBER_INSTANCE, OAUTH_CLIENT_ID } from "../../src/lib/instances";
+import { EMBER_INSTANCE } from "@brain-bbqs/ember-client";
+import { OAUTH_CLIENT_ID, OAUTH_PKCE_STORAGE_KEY, oauth } from "../../src/lib/oauth";
 
 // jsdom's Crypto has getRandomValues but no SubtleCrypto, which the PKCE challenge needs.
 beforeEach(() => {
@@ -21,7 +21,7 @@ function tokenResponse(body: unknown, ok = true, status = 200): Response {
 describe("startLogin", () => {
   it("redirects to the archive's authorize page with an S256 PKCE challenge", async () => {
     let navigated = "";
-    await startLogin((url) => (navigated = url));
+    await oauth.startLogin((url) => (navigated = url));
     const url = new URL(navigated);
     expect(url.origin + url.pathname).toBe(`${EMBER_INSTANCE.oauth}/authorize/`);
     expect(url.searchParams.get("response_type")).toBe("code");
@@ -33,8 +33,8 @@ describe("startLogin", () => {
 
   it("stashes the verifier and state for the callback to pick up", async () => {
     let navigated = "";
-    await startLogin((url) => (navigated = url));
-    const pending = JSON.parse(sessionStorage.getItem("clip-extractor.oauth-pkce.v1") ?? "null") as {
+    await oauth.startLogin((url) => (navigated = url));
+    const pending = JSON.parse(sessionStorage.getItem(OAUTH_PKCE_STORAGE_KEY) ?? "null") as {
       verifier: string;
       state: string;
     } | null;
@@ -45,17 +45,17 @@ describe("startLogin", () => {
 
 describe("handleRedirectCallback", () => {
   it("returns null when the URL isn't a callback", async () => {
-    expect(await handleRedirectCallback()).toBe(null);
+    expect(await oauth.handleRedirectCallback()).toBe(null);
   });
 
   it("exchanges the code for tokens and strips the OAuth params from the URL", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(tokenResponse({ access_token: "at", refresh_token: "rt", expires_in: 3600 })));
     vi.stubGlobal("fetch", fetchMock);
-    await startLogin(() => {});
-    const state = (JSON.parse(sessionStorage.getItem("clip-extractor.oauth-pkce.v1") ?? "{}") as { state: string }).state;
+    await oauth.startLogin(() => {});
+    const state = (JSON.parse(sessionStorage.getItem(OAUTH_PKCE_STORAGE_KEY) ?? "{}") as { state: string }).state;
     window.history.replaceState({}, "", `/?keep=1&code=the-code&state=${state}&scope=read`);
 
-    const tokens = await handleRedirectCallback();
+    const tokens = await oauth.handleRedirectCallback();
     expect(tokens?.accessToken).toBe("at");
     expect(tokens?.refreshToken).toBe("rt");
     expect(tokens?.expiresAt).toBeGreaterThan(Date.now());
@@ -69,20 +69,20 @@ describe("handleRedirectCallback", () => {
   it("treats a corrupted pending-login stash as no pending login at all", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(tokenResponse({ access_token: "at", expires_in: 3600 })));
     vi.stubGlobal("fetch", fetchMock);
-    sessionStorage.setItem("clip-extractor.oauth-pkce.v1", "{not json");
+    sessionStorage.setItem(OAUTH_PKCE_STORAGE_KEY, "{not json");
     window.history.replaceState({}, "", "/?code=the-code&state=some-state");
-    expect(await handleRedirectCallback()).toBe(null);
+    expect(await oauth.handleRedirectCallback()).toBe(null);
     expect(fetchMock).not.toHaveBeenCalled();
     // Consumed either way: a corrupted stash is not left around to confuse the next callback.
-    expect(sessionStorage.getItem("clip-extractor.oauth-pkce.v1")).toBe(null);
+    expect(sessionStorage.getItem(OAUTH_PKCE_STORAGE_KEY)).toBe(null);
   });
 
   it("refuses a callback whose state doesn't match the one it sent (CSRF guard)", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(tokenResponse({ access_token: "at", expires_in: 3600 })));
     vi.stubGlobal("fetch", fetchMock);
-    await startLogin(() => {});
+    await oauth.startLogin(() => {});
     window.history.replaceState({}, "", "/?code=the-code&state=not-the-state");
-    expect(await handleRedirectCallback()).toBe(null);
+    expect(await oauth.handleRedirectCallback()).toBe(null);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -90,7 +90,7 @@ describe("handleRedirectCallback", () => {
 describe("ensureFreshToken", () => {
   it("keeps a token that is not near expiry", async () => {
     const tokens = { accessToken: "at", refreshToken: "rt", expiresAt: Date.now() + 3_600_000 };
-    expect(await ensureFreshToken(tokens)).toBe(tokens);
+    expect(await oauth.ensureFreshToken(tokens)).toBe(tokens);
   });
 
   it("refreshes an expired token", async () => {
@@ -98,13 +98,13 @@ describe("ensureFreshToken", () => {
       "fetch",
       vi.fn(() => Promise.resolve(tokenResponse({ access_token: "fresh", refresh_token: "rt2", expires_in: 3600 }))),
     );
-    const refreshed = await ensureFreshToken({ accessToken: "old", refreshToken: "rt", expiresAt: Date.now() - 1 });
+    const refreshed = await oauth.ensureFreshToken({ accessToken: "old", refreshToken: "rt", expiresAt: Date.now() - 1 });
     expect(refreshed.accessToken).toBe("fresh");
   });
 
   it("keeps an expired token that has no refresh token to spend", async () => {
     const tokens = { accessToken: "at", expiresAt: Date.now() - 1 };
-    expect(await ensureFreshToken(tokens)).toBe(tokens);
+    expect(await oauth.ensureFreshToken(tokens)).toBe(tokens);
   });
 
   it("throws when the refresh is rejected", async () => {
@@ -112,7 +112,7 @@ describe("ensureFreshToken", () => {
       "fetch",
       vi.fn(() => Promise.resolve(tokenResponse({}, false, 400))),
     );
-    await expect(ensureFreshToken({ accessToken: "at", refreshToken: "rt", expiresAt: 0 })).rejects.toThrow(/HTTP 400/);
+    await expect(oauth.ensureFreshToken({ accessToken: "at", refreshToken: "rt", expiresAt: 0 })).rejects.toThrow(/HTTP 400/);
   });
 });
 
@@ -120,7 +120,7 @@ describe("revokeToken", () => {
   it("asks the archive to revoke the access token", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(tokenResponse({})));
     vi.stubGlobal("fetch", fetchMock);
-    await revokeToken({ accessToken: "at", expiresAt: Date.now() });
+    await oauth.revokeToken({ accessToken: "at", expiresAt: Date.now() });
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(url)).toBe(`${EMBER_INSTANCE.oauth}/revoke_token/`);
     const body = new URLSearchParams(String(init.body));
@@ -134,6 +134,69 @@ describe("revokeToken", () => {
       "fetch",
       vi.fn(() => Promise.reject(new Error("network down"))),
     );
-    await expect(revokeToken({ accessToken: "at", expiresAt: Date.now() })).resolves.toBeUndefined();
+    await expect(oauth.revokeToken({ accessToken: "at", expiresAt: Date.now() })).resolves.toBeUndefined();
+  });
+});
+
+describe("the sign-in identity the archive knows this app by", () => {
+  // A sign-in is bound to the registered application, the redirect URI and the PKCE stash's key.
+  // Any drift would strand a login that is mid-redirect across a deploy, or fail every new one.
+  it("keeps the registered client id and the pending-login key", () => {
+    expect(OAUTH_CLIENT_ID).toBe("PjanEFNTu8cZDRvnS8aUbF5rZZyzJhwSeks9nc8X");
+    expect(OAUTH_PKCE_STORAGE_KEY).toBe("clip-extractor.oauth-pkce.v1");
+  });
+
+  it("asks for no scope beyond the application's default", async () => {
+    let navigated = "";
+    await oauth.startLogin((url) => (navigated = url));
+    expect([...new URL(navigated).searchParams.keys()].sort()).toEqual(
+      ["client_id", "code_challenge", "code_challenge_method", "redirect_uri", "response_type", "state"].sort(),
+    );
+  });
+
+  it("completes a login the previous release started, from the stash it left in sessionStorage", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(tokenResponse({ access_token: "at", refresh_token: "rt", expires_in: 3600 })));
+    vi.stubGlobal("fetch", fetchMock);
+    // Exactly what the app's own savePendingLogin wrote before it moved into the shared client.
+    sessionStorage.setItem("clip-extractor.oauth-pkce.v1", JSON.stringify({ verifier: "old-verifier", state: "old-state" }));
+    window.history.replaceState({}, "", "/clips/?code=the-code&state=old-state");
+
+    expect(await oauth.handleRedirectCallback()).toEqual({ accessToken: "at", refreshToken: "rt", expiresAt: expect.any(Number) });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${EMBER_INSTANCE.oauth}/token/`);
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({ "Content-Type": "application/x-www-form-urlencoded" });
+    expect(Object.fromEntries(new URLSearchParams(String(init.body)))).toEqual({
+      grant_type: "authorization_code",
+      code: "the-code",
+      redirect_uri: `${window.location.origin}/clips/`,
+      client_id: OAUTH_CLIENT_ID,
+      code_verifier: "old-verifier",
+    });
+  });
+
+  it("refreshes with the stored refresh token under the same client id", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(tokenResponse({ access_token: "fresh", refresh_token: "rt2", expires_in: 3600 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const before = Date.now();
+    const refreshed = await oauth.ensureFreshToken({ accessToken: "old", refreshToken: "rt", expiresAt: before + 59_000 });
+    expect(refreshed.accessToken).toBe("fresh");
+    expect(refreshed.refreshToken).toBe("rt2");
+    expect(refreshed.expiresAt).toBeGreaterThanOrEqual(before + 3_600_000);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${EMBER_INSTANCE.oauth}/token/`);
+    expect(Object.fromEntries(new URLSearchParams(String(init.body)))).toEqual({
+      grant_type: "refresh_token",
+      refresh_token: "rt",
+      client_id: OAUTH_CLIENT_ID,
+    });
+  });
+
+  it("leaves a token with more than a minute to run alone", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const tokens = { accessToken: "at", refreshToken: "rt", expiresAt: Date.now() + 61_000 };
+    expect(await oauth.ensureFreshToken(tokens)).toBe(tokens);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

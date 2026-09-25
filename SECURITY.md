@@ -47,13 +47,16 @@ Also keep an eye on:
   code, so keep it that way.
 - **Minimal runtime dependencies.** Currently `@talmolab/sleap-io.js`,
   `@ffmpeg/ffmpeg`, `@ffmpeg/util`, and the BBQS apps' own dependency-free
-  `@brain-bbqs/utils`. Every added runtime dependency is
+  `@brain-bbqs/utils` and `@brain-bbqs/ember-client` (the EMBER sign-in and
+  archive client, which depends only on `@brain-bbqs/utils` and `spark-md5`,
+  already a dependency here). Every added runtime dependency is
   something that could be compromised upstream and ship code that reads
   `localStorage`; don't add one without a reason.
 
 ## The admin-owned dandiset check calls a third party, but without our token
 
-`src/lib/dandisets.ts`'s `listIncomingDandisets` calls a companion service
+`listIncomingDandisets` (from `@brain-bbqs/ember-client`, called in
+`src/main.ts`) calls a companion service
 (not part of this repo, currently hosted on PythonAnywhere) to check whether
 a BBQS/EMBER admin co-owns an "Incoming: " dandiset, once per candidate
 dandiset on every load of the picker.
@@ -70,8 +73,9 @@ that host on every picker load, which put a credential capable of acting as
 the signed-in user on a machine this repo doesn't control. Do not reintroduce
 that: if the service ever needs to know something it can't resolve with its
 own credentials, change the service, not the header.
-`tests/unit/dandisets.test.ts` pins the absence of the `Authorization` header
-on this call.
+The package's own `tests/unit/dandisets.test.ts` (in
+[bbqs-web-components](https://github.com/brain-bbqs/bbqs-web-components/tree/main/packages/ember-client))
+pins the absence of the `Authorization` header on this call.
 
 What the design does concentrate is credential custody on the service side:
 alongside the roster, that host stores a long-lived archive API key, which is
@@ -123,9 +127,12 @@ have not been added to any datasets".
 
 **Accepted here:** [PR #11](https://github.com/brain-bbqs/clip-extractor/pull/11)
 added EMBER sign-in and persists the OAuth token set in `localStorage` under
-`clip-extractor.settings.v1` (`saveStoredSettings` in `src/lib/settings.ts`),
-so a signed-in session survives a page reload the way it does in
-bbqs-uploader. That is the same sink bbqs-uploader carries, accepted here for
+`clip-extractor.settings.v1` (`settingsStore` in `src/lib/settings.ts`, the
+shared `createArchiveSettingsStore` from `@brain-bbqs/ember-client` bound to
+that key), so a signed-in session survives a page reload the way it does in
+bbqs-uploader. The stored shape is unchanged since the move into the shared
+package, which `tests/unit/settings.test.ts` pins against a record written by
+the release before it. That is the same sink bbqs-uploader carries, accepted here for
 the same reasons: the XSS check above is clean, `sessionStorage` would be
 flagged identically, and in-memory-only would mean signing in again on every
 page load.
@@ -133,10 +140,14 @@ page load.
 **Mechanism note:** this repo runs CodeQL via GitHub's default setup, and an
 inline `// codeql[js/clear-text-storage-of-sensitive-data]` comment does
 _not_ suppress the alert there (tried in PR #11, commit `100202c`, both on
-the flagged line's preceding line and further above). The marker stays in
-`src/lib/settings.ts` as documentation of intent, but clearing the check
-requires dismissing the alert in the repository's Security tab, which needs
-admin rights. Expect to do that, not to fix it in code.
+the flagged line's preceding line and further above). The write itself now
+happens inside the shared packages (`createArchiveSettingsStore` in
+`@brain-bbqs/ember-client`, writing through `@brain-bbqs/utils`), and
+`createArchiveSettingsStore` carries the same marker as documentation of
+intent. If an alert is raised
+against it, clearing the check still requires dismissing the alert in the
+repository's Security tab, which needs admin rights. Expect to do that, not to
+fix it in code.
 
 ## OAuth token lifecycle
 
@@ -148,8 +159,9 @@ admin rights. Expect to do that, not to fix it in code.
   only when the refresh token itself is invalidated, the user explicitly
   signs out (which revokes it via `/oauth/revoke_token/`), or stored settings
   are cleared.
-- Sign-in is Authorization Code + PKCE (`src/lib/oauth.ts`) against a public
-  client with no secret; the PKCE verifier lives in `sessionStorage` under
+- Sign-in is Authorization Code + PKCE (`createOAuthClient` from
+  `@brain-bbqs/ember-client`, configured with this app's client id and PKCE
+  key in `src/lib/oauth.ts`) against a public client with no secret; the PKCE verifier lives in `sessionStorage` under
   `clip-extractor.oauth-pkce.v1` only between the redirect out and the
   callback back, and the `state` parameter is checked on return before the
   code is exchanged.
