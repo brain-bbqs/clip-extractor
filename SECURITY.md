@@ -43,32 +43,50 @@ Also keep an eye on:
 
 - **Third-party code fetched at runtime.** Nothing in `index.html` loads a
   CDN `<script>` tag, and everything the app imports is bundled into its own
-  assets. Two dependencies still fetch code from a CDN the first time they
-  need it, with no integrity hash, so the version pinned in each URL is the
-  only guard:
+  assets or emitted alongside them, with two exceptions:
   - `src/lib/ffmpeg.ts` loads ffmpeg.wasm's core (`@ffmpeg/core@0.12.10`,
     about 30MB of JS and WASM) from `cdn.jsdelivr.net` when a range is cut
     from a video file already in the browser, or a pose overlay video is
     rendered, and runs it in `@ffmpeg/ffmpeg`'s bundled Web Worker. That core
-    writes the very bytes that get uploaded.
-  - `@talmolab/sleap-io.js`'s `loadSlp` reads an `.slp` file in a Web Worker
-    it builds from a Blob, and that worker `importScripts` h5wasm from
-    `cdn.jsdelivr.net/npm/h5wasm@0.10.2`, because `src/main.ts` passes it no
-    `h5wasmUrl`. Only if that worker fails does it fall back to the bundled
-    h5wasm on the main thread.
+    writes the very bytes that get uploaded. It stays on the CDN on purpose:
+    it is GPL-2.0-or-later and this app is MIT, so the app must never bundle,
+    copy or serve it from its own origin. Instead, both files are pinned by
+    SHA-256 beside the version in `FFMPEG_CORE`: the app downloads the bytes,
+    hashes them (`fetchPinned` in `src/lib/pinned.ts`), and only turns them
+    into Blob URLs for ffmpeg.wasm once both match. On a mismatch the encode
+    stops with an error and nothing from the download is loaded. A version
+    bump means recomputing both digests from `npm pack @ffmpeg/core@<version>`
+    (jsDelivr serves the tarball's files unchanged) and moving the
+    exact-pinned `@ffmpeg/core` devDependency to the same version: the
+    integration specs serve that copy in the CDN's place, and
+    `tests/unit/ffmpegInstance.test.ts` checks the pins against it.
+  - sleap-io.js carries a last-resort fallback that appends an unpkg.com
+    `<script>` for `mp4box@0.5.4` to the page itself, with no integrity
+    hash, which would run on the main thread with full access to storage.
+    It is reached only if the bundled `mp4box` chunk fails to load while the
+    mp4box video backend (the last fallback in `openLocalBackend` in
+    `src/main.ts`) is being tried. It lives inside the library and is left
+    as it is.
 
-  A Worker has no `localStorage` or `sessionStorage`, so neither can read
-  the stored token directly, but both are third-party code running on this
-  origin. sleap-io.js also carries a last-resort fallback that appends an
-  unpkg.com `<script>` for mp4box to the page itself, which would run on the
-  main thread with full access to storage; it is reached only if the bundled
-  `mp4box` chunk fails to load while the mp4box video backend (the last
-  fallback in `openLocalBackend` in `src/main.ts`) is being tried. A
-  compromised CDN copy is the other realistic way a token in storage gets
-  exfiltrated without a bug in this app's own code: serving these from the
-  app's own origin would take the CDN out of that chain, and until then a
-  change to either pinned version deserves the same review as a new
-  dependency.
+  `@talmolab/sleap-io.js`'s `loadSlp` reads an `.slp` file in a Web Worker it
+  builds from a Blob, and that worker `importScripts` h5wasm from
+  `cdn.jsdelivr.net/npm/h5wasm@0.10.2` unless it is handed a URL.
+  `src/main.ts` hands it `h5: { h5wasmUrl }`, pointing at the app's own copy
+  of h5wasm's self-contained IIFE build, which Vite emits as an asset, so the
+  worker runs nothing from a third party. `tests/integration/cdn.spec.ts`
+  checks that parsing a `.slp` requests that asset and nothing from a CDN.
+  That default URL is still in the bundle, as is `@ffmpeg/ffmpeg`'s default
+  unpkg.com core URL, but neither is reached, because the app always passes
+  its own.
+
+  The ffmpeg Worker has no `localStorage` or `sessionStorage`, so it cannot
+  read the stored token directly, but it is third-party code running on
+  this origin. A compromised CDN copy is the other realistic way a token in
+  storage gets exfiltrated without a bug in this app's own code: the digest
+  check takes the CDN out of that chain for the ffmpeg core, and the mp4box
+  fallback is the one path still guarded only by the version in its URL. A
+  change to either pinned version, or to the digests, deserves the same
+  review as a new dependency.
 
 - **Minimal runtime dependencies.** Every entry under `dependencies` in
   `package.json`, and what it is for:
@@ -82,9 +100,8 @@ Also keep an eye on:
     interruption handling, a bounded work queue, filename sanitizing, and
     the `localStorage` helpers `@brain-bbqs/ember-client` stores the settings
     through). No dependencies and no network.
-  - `@ffmpeg/ffmpeg` and `@ffmpeg/util`: the ffmpeg.wasm wrapper and the
-    helper that fetches its core, both bundled; the core itself is the
-    CDN fetch above, run in a Worker.
+  - `@ffmpeg/ffmpeg`: the ffmpeg.wasm wrapper, bundled; the core it runs is
+    the pinned CDN fetch above, run in a Worker.
   - `@talmolab/sleap-io.js`: reads SLEAP `.slp` and ndx-pose `.nwb` pose
     files, and provides the fallback video backends. It fetches a remote
     `.slp` itself over range requests (with no credentials of ours),
@@ -93,9 +110,11 @@ Also keep an eye on:
   - `h5wasm`: HDF5 compiled to WASM, imported lazily in `src/lib/nwb.ts` to
     measure an ndx-pose series; it lands in its own lazily loaded chunk, with
     the WASM embedded rather than fetched, and reads only from its in-memory
-    filesystem.
+    filesystem. Its IIFE build is also emitted as an asset of its own, for
+    sleap-io.js's worker above to import.
   - `hash-wasm`: the incremental SHA-256 in `src/lib/etag.ts`, run on the
-    main thread over each file before upload. Its WASM is embedded in the
+    main thread over each file before upload, and the digest check on the
+    ffmpeg core in `src/lib/pinned.ts`. Its WASM is embedded in the
     main bundle; it touches no network or storage.
   - `mediabunny`: demuxes, decodes and trims video through the browser's
     WebCodecs (no WASM). It streams archive and URL-named videos over range

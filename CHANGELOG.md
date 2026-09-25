@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.9
+
+#### 🚀 Enhancement
+
+- Pose files now open without fetching code from a CDN, and the video encoder downloaded from jsDelivr is refused unless it matches the exact files this app was built against ([#77](https://github.com/brain-bbqs/clip-extractor/pull/77))
+
 ## 1.6.8
 
 #### 🏠 Internal

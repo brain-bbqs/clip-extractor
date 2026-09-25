@@ -1,13 +1,32 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { toBlobURL } from "@ffmpeg/util";
 import { blurFilterChain, type BlurRegion } from "./blur";
 import { InterruptedError, throwIfInterrupted } from "@brain-bbqs/utils";
 import type { PixelFormatInfo } from "./videoFormat";
 import type { TrimMode } from "./types";
+import { fetchPinned, type PinnedFile } from "./pinned";
 
-// ffmpeg.wasm is loaded lazily (only when an MP4 clip is actually extracted) and its ~30MB core
-// is fetched from a CDN rather than bundled, so the app itself stays small. GPL-licensed.
-const FFMPEG_CORE_BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
+// ffmpeg.wasm's ~30MB core is loaded lazily (only when an MP4 clip is actually encoded) and is
+// fetched from jsDelivr rather than bundled or served from this app's origin, on purpose: the core
+// is GPL-2.0-or-later and this app is MIT, so it must never ship a copy of it. Because that fetch
+// runs third-party code whose output is what gets uploaded, each file is pinned by its SHA-256 and
+// refused on any mismatch. The version and the digests move together: bumping one without the
+// other makes every encode fail. Recompute them from `npm pack @ffmpeg/core@<version>` (the CDN
+// serves the tarball's files unchanged) and keep the `@ffmpeg/core` devDependency, which the
+// integration specs serve in the CDN's place, on the same exact version.
+const FFMPEG_CORE_VERSION = "0.12.10";
+const FFMPEG_CORE_BASE = `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/esm`;
+export const FFMPEG_CORE: { core: PinnedFile; wasm: PinnedFile } = {
+  core: {
+    url: `${FFMPEG_CORE_BASE}/ffmpeg-core.js`,
+    sha256: "67a48f11645f85439f3fde4f2119042c16b374b910206b7a7a24f342e28dcae3",
+    mimeType: "text/javascript",
+  },
+  wasm: {
+    url: `${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`,
+    sha256: "9f57947a5bd530d8f00c5b3f2cb2a3492faa7e5d823315342d6a8656d0a6b7b7",
+    mimeType: "application/wasm",
+  },
+};
 
 let ffmpegInstance: FFmpeg | null = null;
 // The single `log`/`progress` listener registered on the shared instance forwards to whichever
@@ -163,10 +182,9 @@ export async function ensureFfmpeg(handlers: EnsureFfmpegHandlers = {}): Promise
   }
   const ff = ffmpegInstance;
   if (!ff.loaded) {
-    await ff.load({
-      coreURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
-      wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
-    });
+    // Both files are checked before either becomes a URL, so a mismatch leaves nothing loadable.
+    const [core, wasm] = await Promise.all([fetchPinned(FFMPEG_CORE.core), fetchPinned(FFMPEG_CORE.wasm)]);
+    await ff.load({ coreURL: URL.createObjectURL(core), wasmURL: URL.createObjectURL(wasm) });
   }
   return ff;
 }
