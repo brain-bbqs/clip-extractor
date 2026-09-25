@@ -3,9 +3,9 @@
 // run against node's own Blob instead of this suite's default DOM environment.
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { combineDigests, computeDandiEtag, computeMd5, computeSha256, planParts } from "../../src/lib/etag";
+import { planParts, type FilePart } from "@brain-bbqs/ember-client";
+import { computeDandiEtag, computeMd5, computeSha256 } from "../../src/lib/etag";
 import { InterruptedError } from "@brain-bbqs/utils";
-import type { FilePart } from "../../src/lib/types";
 
 const MB = 2 ** 20;
 
@@ -25,30 +25,6 @@ function referenceEtag(bytes: Uint8Array, parts: FilePart[]): string {
   );
   return `${createHash("md5").update(inner).digest("hex")}-${parts.length}`;
 }
-
-describe("planParts", () => {
-  it("plans a single part for a small file", () => {
-    expect(planParts(1024)).toEqual([{ number: 1, offset: 0, size: 1024 }]);
-  });
-
-  it("splits at the 64MB default part size, leaving the remainder last", () => {
-    expect(planParts(64 * MB + 10)).toEqual([
-      { number: 1, offset: 0, size: 64 * MB },
-      { number: 2, offset: 64 * MB, size: 10 },
-    ]);
-  });
-
-  it("covers the whole file exactly, with no gaps or overlap", () => {
-    const size = 200 * MB + 7;
-    const parts = planParts(size);
-    expect(parts.reduce((sum, p) => sum + p.size, 0)).toBe(size);
-    parts.forEach((p, i) => expect(p.offset).toBe(i === 0 ? 0 : parts[i - 1].offset + parts[i - 1].size));
-  });
-
-  it("rejects an empty file, which DANDI cannot store", () => {
-    expect(() => planParts(0)).toThrow(/Empty files/);
-  });
-});
 
 describe("computeDandiEtag", () => {
   it("matches the reference dandi-etag for a single-part blob", async () => {
@@ -79,12 +55,6 @@ describe("computeDandiEtag", () => {
     await computeDandiEtag(new Blob([filled(2048)]), planParts(2048), (f) => seen.push(f));
     expect(seen.at(-1)).toBe(1);
     expect(seen).toEqual([...seen].sort((a, b) => a - b));
-  });
-});
-
-describe("combineDigests", () => {
-  it("suffixes the digest with the part count", () => {
-    expect(combineDigests(new Uint8Array(32), 2).endsWith("-2")).toBe(true);
   });
 });
 
@@ -144,5 +114,22 @@ describe("stopping a hash partway through", () => {
     const bytes = new Blob([filled(2048)]);
     await expect(computeMd5(bytes, undefined, controller.signal)).rejects.toThrow(InterruptedError);
     await expect(computeDandiEtag(bytes, planParts(2048), undefined, controller.signal)).rejects.toThrow(InterruptedError);
+  });
+});
+
+describe("a source that changes while it is being hashed", () => {
+  // A File is a live handle on something the visitor can still edit or unmount; a digest folded from
+  // part-old, part-new bytes would name a blob that never existed, so a short read stops the hash.
+  const shrinking = (claimedSize: number): Blob => {
+    const actual = new Blob([filled(claimedSize - 1)]);
+    return { size: claimedSize, slice: (start?: number, end?: number) => actual.slice(start, end) } as Blob;
+  };
+
+  it.each([
+    ["computeDandiEtag", (b: Blob) => computeDandiEtag(b, planParts(b.size))],
+    ["computeMd5", (b: Blob) => computeMd5(b)],
+    ["computeSha256", (b: Blob) => computeSha256(b)],
+  ])("%s refuses it, asking for the source to be loaded again", async (_name, hash) => {
+    await expect(hash(shrinking(2048))).rejects.toThrow("The source file changed while hashing — please re-load it.");
   });
 });

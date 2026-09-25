@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.8
+
+#### 🏠 Internal
+
+- Moved sign-in and the EMBER archive client onto the shared `@brain-bbqs/ember-client` package ([#76](https://github.com/brain-bbqs/clip-extractor/pull/76))
+
 ## 1.6.7
 
 #### 🏠 Internal

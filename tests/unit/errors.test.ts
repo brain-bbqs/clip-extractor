@@ -1,15 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, friendlyError } from "../../src/lib/errors";
-
-describe("ApiError", () => {
-  it("carries the HTTP status alongside the message, named as its own error type", () => {
-    const e = new ApiError("GET /info failed", 500);
-    expect(e.message).toBe("GET /info failed");
-    expect(e.status).toBe(500);
-    expect(e.name).toBe("ApiError");
-    expect(e).toBeInstanceOf(Error);
-  });
-});
+import { ApiError } from "@brain-bbqs/ember-client";
+import { friendlyError } from "../../src/lib/errors";
 
 describe("friendlyError", () => {
   it("turns a 401 into the one action that fixes it: signing out and back in", () => {

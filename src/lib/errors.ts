@@ -1,20 +1,11 @@
-export class ApiError extends Error {
-  status: number;
+import { friendlyError as friendlyArchiveError, type FriendlyMessages } from "@brain-bbqs/ember-client";
 
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-  }
-}
+/** Where this app's wording differs from the shared defaults: a delivery adds assets to a dataset. */
+export const CLIP_EXTRACTOR_MESSAGES: FriendlyMessages = {
+  403: "Permission denied: your account cannot add assets to this dataset.",
+};
 
-/** Turns an upload failure into something a person can act on, rather than a bare status line.
- * Mirrors brain-bbqs/bbqs-uploader's mapping. */
+/** Turns a failure into something a person can act on, in this app's words. */
 export function friendlyError(e: unknown): string {
-  if (e instanceof ApiError) {
-    if (e.status === 401) return "Authentication failed: please sign out and sign in again.";
-    if (e.status === 403) return "Permission denied: your account cannot add assets to this dataset.";
-    if (e.status === 404) return "Not found: check that the dataset still exists and has a draft version.";
-  }
-  return e instanceof Error ? e.message : String(e);
+  return friendlyArchiveError(e, CLIP_EXTRACTOR_MESSAGES);
 }

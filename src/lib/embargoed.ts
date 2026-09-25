@@ -1,7 +1,6 @@
-import type { ArchiveConfig } from "./types";
+import { apiFetch, listedTitle, nextPagePath, type ArchiveConfig, type DandisetListResponse } from "@brain-bbqs/ember-client";
 import type { ArchiveDandiset, ArchiveVideo } from "./archives";
 import { isVideoAsset } from "./archives";
-import { apiFetch, listedTitle, nextPagePath, type DandisetListResponse } from "./api";
 
 // The half of the browse pane that the public S3 bucket cannot answer.
 //
@@ -59,8 +58,9 @@ async function isListedOwner(cfg: ArchiveConfig, identifier: string, username: s
  *
  * `page_size=1000` is the archive's maximum and comfortably covers any one person's datasets, so
  * further pages are never followed — the same call as the upload destination list in
- * lib/dandisets.ts, minus that list's "Incoming: " and admin-owner gates. Those gate where an
- * upload may *go*; this only asks what its owner may already read.
+ * `listIncomingDandisets` (@brain-bbqs/ember-client), minus that list's "Incoming: " and
+ * admin-owner gates. Those gate where an upload may *go*; this only asks what its owner may already
+ * read.
  *
  * Fails closed throughout: with no username to check against, and for any dataset whose owner list
  * cannot be read, nothing is offered. Someone else's embargoed data is not a thing to show on a

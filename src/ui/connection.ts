@@ -1,6 +1,5 @@
 import type { ClipExtractorElements } from "./elements";
-import type { ArchiveConfig } from "../lib/types";
-import { fetchArchiveUser, type ArchiveUser } from "../lib/users";
+import { fetchArchiveUser, type ArchiveConfig, type ArchiveUser } from "@brain-bbqs/ember-client";
 import { initialsFrom } from "@brain-bbqs/utils";
 
 /**

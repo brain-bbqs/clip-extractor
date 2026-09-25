@@ -8,7 +8,7 @@
 // account as an `Author` too, when there is one, and cross-linking the root and the derivatives file
 // to each other via `DatasetLinks`.
 
-import type { ArchiveConfig } from "./types";
+import type { ArchiveConfig } from "@brain-bbqs/ember-client";
 import { findExistingAsset } from "./upload";
 import { DERIVATIVES_PIPELINE, SOURCEDATA_RAWBIDS } from "./bidsPath";
 import {

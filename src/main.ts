@@ -54,12 +54,21 @@ import {
 } from "./lib/match";
 import { alignDenseFrames, probeNwbSeriesLength } from "./lib/nwb";
 import { paintBlurRegions, type BlurRegion } from "./lib/blur";
-import { containsHumanSubjects, fetchDraftMetadata } from "./lib/humanSubjects";
-import { ensureFreshToken, handleRedirectCallback, revokeToken, startLogin } from "./lib/oauth";
-import { listIncomingDandisets, type IncomingDandiset } from "./lib/dandisets";
+import {
+  containsHumanSubjects,
+  fetchArchiveUser,
+  fetchDraftMetadata,
+  listIncomingDandisets,
+  resolveConfig,
+  type ArchiveConfig,
+  type ArchiveUser,
+  type IncomingDandiset,
+  type OAuthTokenSet,
+} from "@brain-bbqs/ember-client";
+import { oauth } from "./lib/oauth";
 import { type ArchiveSource } from "./lib/archives";
 import { isAssetDownloadUrl, resolveEmbargoedStreamUrl } from "./lib/embargoed";
-import { loadStoredSettings, resolveConfig, saveStoredSettings, THEME_KEY } from "./lib/settings";
+import { settingsStore, THEME_KEY } from "./lib/settings";
 import {
   defaultDeliveryMode,
   deliveryDirectories,
@@ -104,7 +113,6 @@ import {
   SOURCEDATA_DESCRIPTION_PATH,
   type ExistingDatasetDescriptions,
 } from "./lib/datasetDescription";
-import { fetchArchiveUser, type ArchiveUser } from "./lib/users";
 import { friendlyError } from "./lib/errors";
 import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
@@ -122,7 +130,7 @@ import {
   synthesizeVideoFile,
   type TestInjection,
 } from "./lib/testInjection";
-import type { ArchiveConfig, OAuthTokenSet, PoseInstance, PoseModel, SelectorMode, SleapLabels, SleapVideoBackend } from "./lib/types";
+import type { PoseInstance, PoseModel, SelectorMode, SleapLabels, SleapVideoBackend } from "./lib/types";
 
 // Injected at build time from package.json's version (see configs/vite.config.ts).
 declare const __APP_VERSION__: string;
@@ -2130,7 +2138,7 @@ window.addEventListener("drop", (e) => e.preventDefault());
 // ============================================================
 // Authorization Code + PKCE against the EMBER archive, then the same "Incoming: " dataset
 // discovery the uploader uses: datasets the signed-in user owns whose title carries the BBQS
-// staging-dataset prefix and that a BBQS/EMBER admin co-owns (see lib/dandisets.ts).
+// staging-dataset prefix and that a BBQS/EMBER admin co-owns (see `listIncomingDandisets`).
 let oauthTokens: OAuthTokenSet | null = null;
 // The dandiset id restored from a previous session, applied once the dropdown holds the signed-in
 // user's incoming datasets (a <select> can't carry a value before its options exist).
@@ -2146,7 +2154,7 @@ let currentUser: ArchiveUser | null = null;
 let storedDeliveryMode: DeliveryMode | null = null;
 
 function loadSettings(): void {
-  const s = loadStoredSettings();
+  const s = settingsStore.load();
   // Held to one of the offered widths whatever storage held, and reflected in the control either
   // way: it carries no active button of its own, so the default has to be painted onto it here.
   state.windowHalf = windowHalfSeconds(s?.windowHalfSeconds);
@@ -2162,7 +2170,7 @@ function saveSettings(): void {
   // the same as "no dataset chosen" — keep the last known id instead of blanking it.
   const selected = els.dandisetId.value.trim();
   if (selected) storedDandisetId = selected;
-  saveStoredSettings({
+  settingsStore.save({
     dandisetId: storedDandisetId,
     oauth: oauthTokens ?? undefined,
     deliveryMode: storedDeliveryMode ?? undefined,
@@ -2210,7 +2218,7 @@ function renderAuthUI(): void {
 async function ensureFreshOAuth(): Promise<void> {
   if (!oauthTokens) return;
   const current = oauthTokens;
-  const fresh = await ensureFreshToken(current).catch(() => current);
+  const fresh = await oauth.ensureFreshToken(current).catch(() => current);
   if (fresh !== current) {
     oauthTokens = fresh;
     saveSettings();
@@ -2329,7 +2337,7 @@ async function refreshDandisetOptions(): Promise<void> {
  * follows it, so that anything needing only a token can wait for only the token (see
  * streamUrlFor, which opens a link naming an embargoed asset). */
 async function resumeSignIn(): Promise<void> {
-  const callbackTokens = await handleRedirectCallback().catch((e) => {
+  const callbackTokens = await oauth.handleRedirectCallback().catch((e) => {
     log(`OAuth sign-in callback failed: ${(e as Error).message}`, "err");
     return null;
   });
@@ -2346,12 +2354,12 @@ async function initEmberAuth(): Promise<void> {
 }
 
 els.oauthSigninBtn.addEventListener("click", () => {
-  // The archive can only return to the bare page address (see lib/oauth.ts), so the session in the
+  // The archive can only return to the bare page address (see lib/oauth.ts's redirect URI), so the session in the
   // bar is held here for the load that comes back — signing in to upload a clip is no way to lose
   // the clip. Written out first, since a keystroke or a nudge of a handle may still be coalesced.
   writeUrl();
   stashUrlState(location.search);
-  void startLogin();
+  void oauth.startLogin();
 });
 els.oauthSignoutBtn.addEventListener("click", () => {
   const tokens = oauthTokens;
@@ -2359,7 +2367,7 @@ els.oauthSignoutBtn.addEventListener("click", () => {
   currentUser = null;
   saveSettings();
   renderAuthUI();
-  if (tokens) void revokeToken(tokens);
+  if (tokens) void oauth.revokeToken(tokens);
   void refreshDandisetOptions();
 });
 els.dandisetId.addEventListener("change", () => {
@@ -2447,7 +2455,7 @@ els.uploadOriginal.addEventListener("change", () => {
 // Human-subjects gate (mirrors bbqs-uploader)
 // ============================================================
 // A dataset holding recordings of people is flagged by admins in its draft description (see
-// lib/humanSubjects.ts). Picking one as the upload destination raises the same warning the uploader
+// `containsHumanSubjects`). Picking one as the upload destination raises the same warning the uploader
 // raises, holds the Upload button until it is confirmed, and brings out the blur tool above — which
 // is what makes the "properly de-identified" the warning asks for something that can be done here.
 

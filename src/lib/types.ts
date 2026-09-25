@@ -1,39 +1,14 @@
 // Domain types shared across the player, extraction, and payload modules. Kept independent of
 // any single UI framework — main.ts and ui/* are the only places that touch the DOM.
 
-// ------------------------------------------------------------------
-// EMBER archive sign-in and upload destination (see lib/oauth.ts, lib/dandisets.ts)
-// ------------------------------------------------------------------
-
-export interface DandiInstance {
-  api: string;
-  web: string;
-  oauth: string;
-}
-
-export interface ArchiveConfig {
-  api: string;
-  web: string;
-  accessToken: string;
-  dandisetId: string;
-  /** Whether the selected dandiset is embargoed, if known. Undefined when not yet resolved. */
-  embargoed?: boolean;
-}
-
-export interface OAuthTokenSet {
-  accessToken: string;
-  refreshToken?: string;
-  /** ms since epoch */
-  expiresAt: number;
-}
-
 // Type-only, so this stays a leaf module at runtime: the stored-settings shape needs the delivery
 // mode's union without pulling lib/delivery.ts into the bundle graph here.
+import type { StoredArchiveSettings } from "@brain-bbqs/ember-client";
 import type { DeliveryMode } from "./delivery";
 
-export interface StoredSettings {
-  dandisetId?: string;
-  oauth?: OAuthTokenSet;
+/** What lib/settings.ts stores: the archive client's slice (the picked dataset and the OAuth token
+ * set) plus this app's own preferences. */
+export interface StoredSettings extends StoredArchiveSettings {
   /** The Download/Upload side the visitor last picked themselves, so a refresh does not hand them
    * back to whichever side the sign-in state would have defaulted to. */
   deliveryMode?: DeliveryMode;
@@ -41,39 +16,6 @@ export interface StoredSettings {
    * seconds. A working preference rather than a property of any one video, so it is remembered
    * across loads and sessions. */
   windowHalfSeconds?: number;
-}
-
-// ------------------------------------------------------------------
-// Archive upload (see lib/etag.ts, lib/upload.ts)
-// ------------------------------------------------------------------
-
-/** One slice of a blob in the S3 multipart layout: `number` is 1-based, like S3's part numbers. */
-export interface FilePart {
-  number: number;
-  offset: number;
-  size: number;
-}
-
-export interface ServerPart {
-  part_number: number;
-  size: number;
-  upload_url: string;
-}
-
-export interface UploadInitResponse {
-  upload_id: string;
-  parts: ServerPart[];
-}
-
-export interface CompletedPart {
-  part_number: number;
-  size: number;
-  etag: string;
-}
-
-export interface Asset {
-  asset_id: string;
-  path: string;
 }
 
 /** Minimal duck-typed surface of sleap-io.js's video backend that this app actually calls. The
