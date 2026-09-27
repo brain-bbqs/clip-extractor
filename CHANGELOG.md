@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.11
+
+#### 🏠 Internal
+
+- Moved the theme toggle, account menu, human-subjects confirmation and drop targets onto the shared `@brain-bbqs/ui` package, with no visible change
+
 ## 1.6.10
 
 #### 🏠 Internal

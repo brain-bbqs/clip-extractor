@@ -1,19 +1,9 @@
-function required<T extends Element>(id: string): T {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`Expected #${id} to exist in the document`);
-  return el as unknown as T;
-}
+import { required } from "@brain-bbqs/ui";
 
+// The header and footer (theme toggle, account menu, version stamp) are the shared shell's, looked
+// up by getShellElements() from @brain-bbqs/ui, whose default ids are this app's.
 export function getElements() {
   return {
-    // Header
-    themeToggle: required<HTMLButtonElement>("themeToggle"),
-    oauthSigninBtn: required<HTMLButtonElement>("oauthSigninBtn"),
-    oauthSignedIn: required<HTMLDivElement>("oauthSignedIn"),
-    oauthAvatar: required<HTMLSpanElement>("oauthAvatar"),
-    oauthUsername: required<HTMLElement>("oauthUsername"),
-    oauthSignoutBtn: required<HTMLButtonElement>("oauthSignoutBtn"),
-
     // Source picker (the merged card's first half)
     sourcePicker: required<HTMLDivElement>("sourcePicker"),
     srcSeg: required<HTMLDivElement>("srcSeg"),
@@ -129,9 +119,6 @@ export function getElements() {
     uploadStatus: required<HTMLSpanElement>("uploadStatus"),
     uploadProgress: required<HTMLDivElement>("uploadProgress"),
     uploadProgressFill: required<HTMLDivElement>("uploadProgressFill"),
-
-    // Footer
-    versionIndicator: required<HTMLAnchorElement>("version-indicator"),
   };
 }
 
