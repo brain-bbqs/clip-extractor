@@ -72,15 +72,16 @@ test("brand watermarks and the version link frame the page", async ({ page }) =>
   // The BBQS mark is a square on a white field, so it is only a watermark once circularly masked.
   await expect(bbqs.locator("img")).toHaveCSS("border-radius", "50%");
 
-  await expect(page.locator(".con-brand-link")).toHaveAttribute("href", "https://centerforopenneuroscience.org");
-  await expect(page.locator(".con-brand-link img")).toBeVisible();
-  const talmo = page.locator(".talmo-brand-link");
+  const con = page.locator(".footer-brand-link:not(.captioned)");
+  await expect(con).toHaveAttribute("href", "https://centerforopenneuroscience.org");
+  await expect(con.locator(".footer-brand-logo")).toBeVisible();
+  const talmo = page.locator(".footer-brand-link.captioned");
   await expect(talmo).toHaveAttribute("href", "https://talmolab.org/");
   // Only the variant matching the active theme is shown; this run is in the default light theme.
-  await expect(talmo.locator(".talmo-brand-logo.on-light")).toBeVisible();
-  await expect(talmo.locator(".talmo-brand-logo.on-dark")).toBeHidden();
+  await expect(talmo.locator(".footer-brand-logo.on-light")).toBeVisible();
+  await expect(talmo.locator(".footer-brand-logo.on-dark")).toBeHidden();
   // The mark carries no wordmark of its own, so the name is spelled out under it.
-  await expect(talmo).toHaveText("Talmo Lab");
+  await expect(talmo.locator(".footer-brand-name")).toHaveText("Talmo Lab");
 
   const version = page.locator("#version-indicator");
   await expect(version).toHaveText(/^v\d+\.\d+\.\d+$/);
