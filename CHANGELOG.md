@@ -4,7 +4,7 @@
 
 #### 🏠 Internal
 
-- Moved the theme toggle, account menu, human-subjects confirmation and drop targets onto the shared `@brain-bbqs/ui` package, with no visible change
+- Moved the theme toggle, account menu, human-subjects confirmation and drop targets onto the shared `@brain-bbqs/ui` package, with no visible change ([#79](https://github.com/brain-bbqs/clip-extractor/pull/79))
 
 ## 1.6.10
 
