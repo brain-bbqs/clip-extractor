@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.10
+
+#### 🏠 Internal
+
+- Moved the page's stylesheet onto the shared `@brain-bbqs/ui` package, with no visible change ([#78](https://github.com/brain-bbqs/clip-extractor/pull/78))
+
 ## 1.6.9
 
 #### 🚀 Enhancement

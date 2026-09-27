@@ -62,7 +62,7 @@
               <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
             </svg>
           </button>
-          <button type="button" id="oauthSigninBtn" class="primary">Sign in with EMBER</button>
+          <button type="button" id="oauthSigninBtn" class="primary oauth-signin-btn">Sign in with EMBER</button>
           <div id="oauthSignedIn" class="oauth-signed-in" hidden>
             <span id="oauthAvatar" class="oauth-avatar" tabindex="0" aria-label="Account menu"></span>
             <div class="oauth-popover" role="menu">
@@ -617,21 +617,28 @@ Note anything that went wrong in it, or any other details you want to share alon
         <!-- The Talmo Lab mark is a wordless flask, so the name is spelled out beneath it the way
              the CON logo carries its own wordmark. Two logo files rather than one, because the
              lab's default flask is dark-stroked and disappears against the dark theme; CSS shows
-             whichever matches the active theme, and the span below names the link for both. -->
-        <a class="talmo-brand-link" href="https://talmolab.org/" target="_blank" rel="noopener" title="Talmo Lab">
-          <img class="talmo-brand-logo on-light" src="/src/assets/talmolab-logo.svg" alt="" />
-          <img class="talmo-brand-logo on-dark" src="/src/assets/talmolab-logo-on-dark.svg" alt="" />
-          <span>Talmo Lab</span>
+             whichever matches the active theme, and the aria-label names the link for both. -->
+        <a
+          class="footer-brand-link captioned"
+          href="https://talmolab.org/"
+          target="_blank"
+          rel="noopener"
+          aria-label="Talmo Lab"
+          title="Talmo Lab"
+        >
+          <img class="footer-brand-logo on-light" src="/src/assets/talmolab-logo.svg" alt="" />
+          <img class="footer-brand-logo on-dark" src="/src/assets/talmolab-logo-on-dark.svg" alt="" />
+          <span class="footer-brand-name">Talmo Lab</span>
         </a>
         <a
-          class="con-brand-link"
+          class="footer-brand-link"
           href="https://centerforopenneuroscience.org"
           target="_blank"
           rel="noopener"
           aria-label="Center for Open Neuroscience"
           title="Center for Open Neuroscience"
         >
-          <img src="/src/assets/con-logo.png" alt="Center for Open Neuroscience" />
+          <img class="footer-brand-logo" src="/src/assets/con-logo.png" alt="Center for Open Neuroscience" />
         </a>
       </div>
     </div>
