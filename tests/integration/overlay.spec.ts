@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
-import { loadRecordedVideo, seekTo, stubArchive, stubH5Wasm, SLP_CLIP_FRAMES } from "./helpers";
+import { loadRecordedVideo, seekTo, stubArchive, SLP_CLIP_FRAMES } from "./helpers";
 
 // A .slp loaded alongside the video adds two more assets to an upload: the annotations file itself
 // (with the "include the original content" toggle) and a rendered overlay version of the selection,
@@ -16,7 +16,6 @@ const SLP_FIXTURE = fileURLToPath(new URL("../fixtures/mice_new.tracked.slp", im
 
 test("a loaded .slp adds the annotations file (no sidecar of its own) and a rendered overlay to the upload", async ({ page }) => {
   const { registered } = await stubArchive(page);
-  await stubH5Wasm(page);
 
   await page.goto("/");
   await expect(page.locator("#dandisetSingleText")).toContainText("000123");
@@ -57,7 +56,6 @@ test("a loaded .slp adds the annotations file (no sidecar of its own) and a rend
 
 test("the overlay is uploaded even when the original content is excluded", async ({ page }) => {
   const { registered } = await stubArchive(page);
-  await stubH5Wasm(page);
 
   await page.goto("/");
   await expect(page.locator("#dandisetSingleText")).toContainText("000123");

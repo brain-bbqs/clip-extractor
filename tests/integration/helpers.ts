@@ -14,7 +14,9 @@ import { STORAGE_KEY } from "../../src/lib/settings";
 export const SLP_CLIP_FRAMES = 40;
 
 // Where lib/ffmpeg.ts fetches ffmpeg.wasm's ~32MB core from, and the copy of it `npm ci` already put
-// in node_modules (the `@ffmpeg/core` devDependency exists for exactly this).
+// in node_modules (the `@ffmpeg/core` devDependency exists for exactly this). That devDependency is
+// pinned to the exact version lib/ffmpeg.ts fetches, since the app checks these bytes against the
+// same SHA-256 digests it holds the CDN's to and refuses anything else.
 const FFMPEG_CORE_PATTERN = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@*/dist/esm/*";
 const FFMPEG_CORE_DIR = fileURLToPath(new URL("../../node_modules/@ffmpeg/core/dist/esm/", import.meta.url));
 
@@ -151,16 +153,12 @@ export async function stubArchive(page: Page, { humanSubjects = false }: StubArc
   return { registered, uploaded };
 }
 
-/**
- * sleap-io.js fetches h5wasm from jsDelivr at runtime to parse a `.slp` (both in its worker and on
- * its main-thread fallback), which would make these specs depend on a CDN — and fail outright in a
- * sandboxed environment. The same package is already in node_modules, so serve that instead.
- */
-export async function stubH5Wasm(page: Page): Promise<void> {
-  const local = readFileSync(fileURLToPath(new URL("../../node_modules/h5wasm/dist/iife/h5wasm.js", import.meta.url)), "utf8");
-  await page.route("**/cdn.jsdelivr.net/npm/h5wasm*/**", (route) =>
-    route.fulfill({ status: 200, contentType: "text/javascript", body: local }),
-  );
+/** Every URL the page and its workers request from here on, in order. Listened for on the context,
+ * which is where Chromium reports a dedicated worker's requests, such as sleap-io.js's h5wasm one. */
+export function recordRequests(page: Page): string[] {
+  const urls: string[] = [];
+  page.context().on("request", (request) => urls.push(request.url()));
+  return urls;
 }
 
 /** Records a short VP8 clip in-page and hands its bytes back, so a spec can serve a real video from

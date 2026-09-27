@@ -1,5 +1,10 @@
 import "./style.css";
 import * as sio from "@talmolab/sleap-io.js";
+// sleap-io.js parses a .slp in a Worker that `importScripts` h5wasm, from jsDelivr unless handed a
+// URL. This is the app's own copy of that package (its self-contained IIFE build, WASM embedded),
+// emitted as an asset so the worker runs no third-party code. h5wasm's exports map does not list
+// the IIFE build, hence the path into node_modules.
+import h5wasmScript from "../node_modules/h5wasm/dist/iife/h5wasm.js?url";
 import { getElements } from "./ui/elements";
 import { fmtTime, rulerLabel } from "./lib/format";
 import {
@@ -852,7 +857,10 @@ async function loadPoseFile(source: File | string, name: string): Promise<void> 
       labels = await sio.loadNwb(bytes);
       seriesLength = await probeNwbSeriesLength(bytes);
     } else {
-      labels = await sio.loadSlp(source, { openVideos: false });
+      // Absolute, because the worker is built from a Blob and would resolve a relative path
+      // against its blob: URL.
+      const h5wasmUrl = new URL(h5wasmScript, document.baseURI).href;
+      labels = await sio.loadSlp(source, { openVideos: false, h5: { h5wasmUrl } });
     }
     const meta = slpSourceMeta(labels, seriesLength);
     const video = loadedVideoMeta();
