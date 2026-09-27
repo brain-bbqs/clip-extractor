@@ -6,6 +6,16 @@ import * as sio from "@talmolab/sleap-io.js";
 // the IIFE build, hence the path into node_modules.
 import h5wasmScript from "../node_modules/h5wasm/dist/iife/h5wasm.js?url";
 import { getElements } from "./ui/elements";
+import {
+  bindAccountMenu,
+  bindDropzone,
+  createHumanSubjectsGate,
+  getShellElements,
+  initThemeToggle,
+  refreshIdentity,
+  renderAuthState,
+  renderVersion,
+} from "@brain-bbqs/ui";
 import { fmtTime, rulerLabel } from "./lib/format";
 import {
   defaultSelection,
@@ -119,7 +129,6 @@ import {
   type ExistingDatasetDescriptions,
 } from "./lib/datasetDescription";
 import { friendlyError } from "./lib/errors";
-import { renderIdentity } from "./ui/connection";
 import { saveBlob } from "./ui/download";
 import { StageStatus } from "./ui/stageStatus";
 import { createBlurTool } from "./ui/blurTool";
@@ -141,8 +150,13 @@ import type { PoseInstance, PoseModel, SelectorMode, SleapLabels, SleapVideoBack
 declare const __APP_VERSION__: string;
 
 const els = getElements();
+const shell = getShellElements();
+// This app always has the header's account menu; getShellElements leaves it null only for an app
+// without sign-in.
+if (!shell.account) throw new Error("Expected #oauthSigninBtn to exist in the document");
+const account = shell.account;
 
-els.versionIndicator.textContent = `v${__APP_VERSION__}`;
+renderVersion(shell.versionIndicator, __APP_VERSION__);
 
 // ============================================================
 // Live smoketest URL params (see lib/testInjection.ts and docs/README.md's "Live Testing" section)
@@ -195,17 +209,7 @@ const ctx: CanvasRenderingContext2D = ctx2d;
 // index.html already applied any stored override before first paint, so the toggle only has to
 // flip and persist it. With nothing stored, data-theme is unset and the OS preference applies.
 // ============================================================
-const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
-els.themeToggle.addEventListener("click", () => {
-  const current = document.documentElement.dataset.theme ?? (prefersDark.matches ? "dark" : "light");
-  const next = current === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next;
-  try {
-    localStorage.setItem(THEME_KEY, next);
-  } catch (e) {
-    console.warn("Could not save theme preference:", e);
-  }
-});
+initThemeToggle(shell.themeToggle, { storageKey: THEME_KEY });
 
 // ============================================================
 // State
@@ -2096,50 +2100,25 @@ function loadDroppedFile(f: File): void {
   else void loadVideo(f, f.name);
 }
 
-function wireDropzone(dz: HTMLElement): void {
-  ["dragenter", "dragover"].forEach((evt) =>
-    dz.addEventListener(evt, (e) => {
-      e.preventDefault();
-      dz.classList.add("dragover");
-    }),
-  );
-  ["dragleave", "drop"].forEach((evt) =>
-    dz.addEventListener(evt, (e) => {
-      e.preventDefault();
-      dz.classList.remove("dragover");
-    }),
-  );
-  dz.addEventListener("drop", (e) => {
-    for (const f of e.dataTransfer?.files ?? []) loadDroppedFile(f);
-  });
+function loadDroppedFiles(dataTransfer: DataTransfer): void {
+  for (const f of dataTransfer.files) loadDroppedFile(f);
 }
-wireDropzone(els.dropzone);
-wireDropzone(els.slpDropzone);
 
-els.dropzone.addEventListener("click", () => els.videoFile.click());
-els.slpDropzone.addEventListener("click", () => els.slpFile.click());
-// stopPropagation keeps a dropzone's own click handler from also firing on the inner buttons.
-els.browseVideoBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  els.videoFile.click();
+// Either zone takes a video or a pose file by drop, routed by extension; a click opens that zone's
+// own picker. Only the first zone installs the window-level guard against a drop that misses both.
+bindDropzone(els.dropzone, {
+  onDrop: loadDroppedFiles,
+  input: els.videoFile,
+  browseButton: els.browseVideoBtn,
+  onPick: (files) => void loadVideo(files[0], files[0].name),
 });
-els.browseSlpBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  els.slpFile.click();
+bindDropzone(els.slpDropzone, {
+  onDrop: loadDroppedFiles,
+  input: els.slpFile,
+  browseButton: els.browseSlpBtn,
+  onPick: (files) => void loadPoseFile(files[0], files[0].name),
+  guardWindow: false,
 });
-els.videoFile.addEventListener("change", () => {
-  const f = els.videoFile.files?.[0];
-  if (f) void loadVideo(f, f.name);
-  els.videoFile.value = "";
-});
-els.slpFile.addEventListener("change", () => {
-  const f = els.slpFile.files?.[0];
-  if (f) void loadPoseFile(f, f.name);
-  els.slpFile.value = "";
-});
-// Prevent the browser from navigating away when a file misses the dropzone.
-window.addEventListener("dragover", (e) => e.preventDefault());
-window.addEventListener("drop", (e) => e.preventDefault());
 
 // ============================================================
 // EMBER sign-in + upload destination (mirrors bbqs-uploader)
@@ -2211,14 +2190,11 @@ function isSignedIn(): boolean {
 
 function renderAuthUI(): void {
   const signedIn = isSignedIn();
-  els.oauthSigninBtn.hidden = signedIn;
-  els.oauthSignedIn.hidden = !signedIn;
+  // Also retires the pre-paint script's stand-in attribute (see configs/vite.config.ts).
+  renderAuthState(account, signedIn);
   // Upload is the only thing the delivery toggle leads to, and there is nowhere to upload to while
   // signed out — so the choice is not offered at all rather than offered and then refused.
   els.deliverToggleRow.hidden = !signedIn;
-  // Once the real auth state is known, this element-level hidden state is authoritative; the
-  // pre-paint script's stand-in attribute (see configs/vite.config.ts) is no longer needed.
-  delete document.documentElement.dataset.signedIn;
 }
 
 // Refreshes the access token first if it's near expiry, so the config used for the request that
@@ -2310,7 +2286,7 @@ async function refreshDandisetOptions(): Promise<void> {
   const fakedDatasets = fakedDatasetCount();
   if (fakedDatasets !== null && testInjection) {
     currentUser = { username: "test-user", name: "Live Smoketest" };
-    els.oauthUsername.textContent = currentUser.name;
+    account.oauthUsername.textContent = currentUser.name;
     applyDatasetList(fakeIncomingDatasets(fakedDatasets, testInjection.embargoed, testInjection.humanSubjects));
     updateViewDatasetLink();
     applyDeliveryMode();
@@ -2321,7 +2297,8 @@ async function refreshDandisetOptions(): Promise<void> {
   await ensureFreshOAuth();
   // Deliberately not awaited: the dataset listing below is the slow part visitors are waiting on,
   // and the header avatar can fill in whenever the identity call lands.
-  void renderIdentity(els, currentConfig()).then((user) => {
+  const cfg = currentConfig();
+  void refreshIdentity(account, () => fetchArchiveUser(cfg)).then((user) => {
     currentUser = user;
   });
   setDandisetPlaceholder("Loading your incoming datasets…");
@@ -2361,22 +2338,24 @@ async function initEmberAuth(): Promise<void> {
   await refreshDandisetOptions();
 }
 
-els.oauthSigninBtn.addEventListener("click", () => {
-  // The archive can only return to the bare page address (see lib/oauth.ts's redirect URI), so the session in the
-  // bar is held here for the load that comes back — signing in to upload a clip is no way to lose
-  // the clip. Written out first, since a keystroke or a nudge of a handle may still be coalesced.
-  writeUrl();
-  stashUrlState(location.search);
-  void oauth.startLogin();
-});
-els.oauthSignoutBtn.addEventListener("click", () => {
-  const tokens = oauthTokens;
-  oauthTokens = null;
-  currentUser = null;
-  saveSettings();
-  renderAuthUI();
-  if (tokens) void oauth.revokeToken(tokens);
-  void refreshDandisetOptions();
+bindAccountMenu(account, {
+  onSignIn: () => {
+    // The archive can only return to the bare page address (see lib/oauth.ts's redirect URI), so the session in the
+    // bar is held here for the load that comes back — signing in to upload a clip is no way to lose
+    // the clip. Written out first, since a keystroke or a nudge of a handle may still be coalesced.
+    writeUrl();
+    stashUrlState(location.search);
+    void oauth.startLogin();
+  },
+  onSignOut: () => {
+    const tokens = oauthTokens;
+    oauthTokens = null;
+    currentUser = null;
+    saveSettings();
+    renderAuthUI();
+    if (tokens) void oauth.revokeToken(tokens);
+    void refreshDandisetOptions();
+  },
 });
 els.dandisetId.addEventListener("change", () => {
   // The completion line names a dataset, so it does not survive a change of destination.
@@ -2467,13 +2446,26 @@ els.uploadOriginal.addEventListener("change", () => {
 // raises, holds the Upload button until it is confirmed, and brings out the blur tool above — which
 // is what makes the "properly de-identified" the warning asks for something that can be done here.
 
-// Whether the selected dataset's draft description carries the marker phrase, and the dandiset ids
-// already confirmed this session, so flipping between datasets does not demand re-confirming one
-// already confirmed. The counter guards the fetch, so a slow answer cannot apply to a newer
-// selection.
+// Whether the selected dataset's draft description carries the marker phrase. The gate keeps the
+// dandiset ids already confirmed this session, so flipping between datasets does not demand
+// re-confirming one already confirmed, and redraws the blur tool and the delivery gate whenever its
+// banner changes (its "I confirm" click included). The counter guards the fetch, so a slow answer
+// cannot apply to a newer selection.
 let humanSubjectsRequired = false;
-const confirmedHumanSubjects = new Set<string>();
 let humanSubjectsRefreshSeq = 0;
+const humanSubjectsGate = createHumanSubjectsGate(
+  {
+    banner: els.humanSubjectsBanner,
+    unconfirmed: els.humanSubjectsUnconfirmed,
+    confirmBtn: els.humanSubjectsConfirmBtn,
+    confirmed: els.humanSubjectsConfirmed,
+  },
+  () => {
+    // The blur tool arrives with the warning, and leaves with it unless something has been blurred.
+    blurTool.render();
+    updateDeliveryGate();
+  },
+);
 
 /** True while a flagged dataset is actually in play: signed in, on the Upload side, with a dataset
  * picked. Saving a selection to a computer sends nothing anywhere, so the warning about what may be
@@ -2484,20 +2476,13 @@ function humanSubjectsFlagged(): boolean {
 
 /** True while that dataset's warning has not been confirmed for this session. */
 function humanSubjectsUnconfirmed(): boolean {
-  return humanSubjectsFlagged() && !confirmedHumanSubjects.has(els.dandisetId.value);
+  return humanSubjectsFlagged() && humanSubjectsGate.isBlocking(els.dandisetId.value);
 }
 
 /** Hidden for an ordinary dataset, the full warning with its "I confirm" for an unconfirmed flagged
  * one, or a slimmed "confirmed" notice once confirmed. */
 function renderHumanSubjectsBanner(): void {
-  const flagged = humanSubjectsFlagged();
-  const confirmed = confirmedHumanSubjects.has(els.dandisetId.value);
-  els.humanSubjectsBanner.hidden = !flagged;
-  els.humanSubjectsUnconfirmed.hidden = confirmed;
-  els.humanSubjectsConfirmed.hidden = !confirmed;
-  // The blur tool arrives with the warning, and leaves with it unless something has been blurred.
-  blurTool.render();
-  updateDeliveryGate();
+  humanSubjectsGate.render(els.dandisetId.value, humanSubjectsFlagged());
 }
 
 /**
@@ -2531,11 +2516,6 @@ async function refreshHumanSubjectsGate(): Promise<void> {
   }
   renderHumanSubjectsBanner();
 }
-
-els.humanSubjectsConfirmBtn.addEventListener("click", () => {
-  if (els.dandisetId.value) confirmedHumanSubjects.add(els.dandisetId.value);
-  renderHumanSubjectsBanner();
-});
 
 /** What a status line can be saying: a caption about what to do next (no class), or one of the three
  * outcomes a finished delivery leaves behind — it worked, it failed, or the visitor stopped it. */
