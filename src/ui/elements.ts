@@ -1,9 +1,11 @@
-import { required } from "@brain-bbqs/ui";
+import { getWhatsNewElements, required } from "@brain-bbqs/ui";
 
 // The header and footer (theme toggle, account menu, version stamp) are the shared shell's, looked
 // up by getShellElements() from @brain-bbqs/ui, whose default ids are this app's.
 export function getElements() {
   return {
+    whatsNew: getWhatsNewElements(),
+
     // Source picker (the merged card's first half)
     sourcePicker: required<HTMLDivElement>("sourcePicker"),
     srcSeg: required<HTMLDivElement>("srcSeg"),
@@ -40,6 +42,8 @@ export function getElements() {
     stageBusy: required<HTMLDivElement>("stageBusy"),
     stageBusyLabel: required<HTMLSpanElement>("stageBusyLabel"),
     stageBusyDetail: required<HTMLSpanElement>("stageBusyDetail"),
+    // Only style.css reads this and speedGroup, by id; registered so the page's ids stay in the contract.
+    selbarWrap: required<HTMLDivElement>("selbarWrap"),
     selbar: required<HTMLDivElement>("selbar"),
     selfill: required<HTMLDivElement>("selfill"),
     inHandle: required<HTMLDivElement>("inHandle"),
@@ -65,6 +69,7 @@ export function getElements() {
     btnPrev: required<HTMLButtonElement>("btnPrev"),
     btnPlay: required<HTMLButtonElement>("btnPlay"),
     btnNext: required<HTMLButtonElement>("btnNext"),
+    speedGroup: required<HTMLDivElement>("speedGroup"),
     speedSeg: required<HTMLDivElement>("speedSeg"),
     inVal: required<HTMLInputElement>("inVal"),
     curVal: required<HTMLInputElement>("curVal"),

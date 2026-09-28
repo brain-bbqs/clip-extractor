@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.0
+
+#### 🚀 Enhancement
+
+- Added a What's New link to the footer listing recent changes. ([#80](https://github.com/brain-bbqs/clip-extractor/pull/80))
+
 ## 1.6.11
 
 #### 🏠 Internal

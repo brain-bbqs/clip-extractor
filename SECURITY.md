@@ -96,10 +96,13 @@ Also keep an eye on:
     the admin-owned dandiset check, upload part planning, and the
     dandi-etag and MD5 hashing. It depends only on `@brain-bbqs/utils` and
     `spark-md5`; this app takes `spark-md5` only transitively through it.
-  - `@brain-bbqs/ui`: the BBQS apps' shared page shell. Only its
-    stylesheet is imported (`src/style.css`), and Vite bundles that into
-    the app's own CSS, so no code from it runs on the page. It depends only
-    on `@brain-bbqs/utils`.
+  - `@brain-bbqs/ui`: the BBQS apps' shared page shell: its stylesheet
+    (`src/style.css`), and the header, footer, drop target and "What's New"
+    behaviour `src/main.ts` and `src/ui/elements.ts` import. The "What's New"
+    modal draws this repository's own `CHANGELOG.md`, bundled at build time,
+    with `createElement` and text nodes; it never parses markup, and a link
+    gets an `href` only for an absolute `https:` URL. Nothing in it uses
+    `innerHTML`. It depends only on `@brain-bbqs/utils`.
   - `@brain-bbqs/utils`: the BBQS apps' shared helpers (byte formatting,
     interruption handling, a bounded work queue, filename sanitizing, and
     the `localStorage` helpers `@brain-bbqs/ember-client` stores the settings

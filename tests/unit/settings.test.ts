@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveConfig } from "@brain-bbqs/ember-client";
+import { throwingStorage } from "@brain-bbqs/test-utils/vitest";
 import { STORAGE_KEY, THEME_KEY, settingsStore } from "../../src/lib/settings";
 import type { StoredSettings } from "../../src/lib/types";
 
@@ -51,10 +52,12 @@ describe("stored settings", () => {
 
   it("carries on, rather than throwing, when storage refuses the write", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("QuotaExceededError");
-    });
-    expect(() => settingsStore.save({ dandisetId: "000123" })).not.toThrow();
+    const restoreStorage = throwingStorage("QuotaExceededError");
+    try {
+      expect(() => settingsStore.save({ dandisetId: "000123" })).not.toThrow();
+    } finally {
+      restoreStorage();
+    }
     expect(warn).toHaveBeenCalled();
   });
 });
