@@ -49,6 +49,11 @@
     grid-row: 2;
     max-width: none;
   }
+  /* Exempt from the app's nowrap buttons: at 320px the top row cannot hold the logo, the theme
+     toggle and this label on one line, and a label that cannot wrap widened the whole page. */
+  .oauth-signin-btn {
+    white-space: normal;
+  }
 }
 
 /* The shared pre-paint stand-in for the sign-in button (see @brain-bbqs/ui's shell.css), extended to
@@ -412,6 +417,13 @@ input[type="checkbox"] {
    gone this is the first thing in the card. */
 .slp-status {
   gap: 0.75rem;
+  flex-wrap: wrap;
+}
+/* A zero basis, grown back to at most the name's own width, so the row wraps only once the badge
+   and button no longer fit beside an empty name, and lays out as before whenever they do. */
+.slp-status .loaded-source-name {
+  flex: 1 1 0;
+  max-width: max-content;
 }
 
 /* What the SLEAP card says about the pair it was handed. Red refuses a .slp that does not describe
@@ -1228,6 +1240,11 @@ textarea {
   .card-toprow {
     grid-template-columns: minmax(0, 1fr);
     justify-items: center;
+  }
+  /* A centred slot is sized to its content, not the column, so without a cap a long file name
+     pushed Change video off the right of the page instead of ellipsizing. */
+  .toprow-slot {
+    max-width: 100%;
   }
   .toprow-switches {
     justify-self: center;

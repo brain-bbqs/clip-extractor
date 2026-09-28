@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.1
+
+#### 🐛 Bug Fix
+
+- On phones, the page no longer scrolls sideways once a video or pose file is open, or at the narrowest widths before one is.
+
 ## 1.7.0
 
 #### 🚀 Enhancement
