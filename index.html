@@ -19,8 +19,8 @@ try {
     <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-small-32-Dbw-CWbA.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon-small-16-Cy9-lsb0.png" />
     <link rel="apple-touch-icon" href="./assets/icon-180-qInRyNvI.png" />
-    <script type="module" crossorigin src="./assets/index-CJCPKsQO.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-DF6ASCt8.css">
+    <script type="module" crossorigin src="./assets/index-CqWz_hzJ.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DXp1vXn3.css">
   </head>
   <body>
     <a class="brand-watermark-link" href="https://brain-bbqs.org" target="_blank" rel="noopener" aria-label="BBQS" title="BBQS">
@@ -594,6 +594,9 @@ Note anything that went wrong in it, or any other details you want to share alon
     <div class="page-footer-bar">
       <div class="footer-left">
         <div class="footer-row">
+          <button id="whats-new-button" class="whats-new-link" type="button">✨ What's New</button>
+        </div>
+        <div class="footer-row">
           <a
             class="footer-text-link"
             href="https://github.com/brain-bbqs/clip-extractor/issues/new?template=bug_report.yml"
@@ -655,6 +658,16 @@ Note anything that went wrong in it, or any other details you want to share alon
         </a>
       </div>
     </div>
+
+    <!-- initWhatsNew() in main.ts fills #whats-new-content from CHANGELOG.md. -->
+    <dialog id="whats-new-modal" class="whats-new-modal" aria-labelledby="whats-new-modal-title">
+      <div class="whats-new-modal-header">
+        <h2 id="whats-new-modal-title">What's New</h2>
+        <button id="whats-new-close" class="whats-new-close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div id="whats-new-content" class="whats-new-content"></div>
+      <button id="whats-new-show-more" class="whats-new-show-more" type="button" hidden>Show more</button>
+    </dialog>
 
   </body>
 </html>
