@@ -101,11 +101,29 @@ export function ffmpegArgs(
       outName,
     ];
   }
-  const trimChain = `trim=start_frame=${lo}:end_frame=${hi + 1},setpts=PTS-STARTPTS`;
-  if (!blur.length) return ["-i", inName, "-vf", trimChain, ...ENCODE_ARGS, outName];
+  // An MP4 is written at a constant rate, and left to itself ffmpeg takes that rate from its guess
+  // at the source's. For a variable-rate source, such as a MediaRecorder or phone recording, the
+  // guess can be the container's 1ms timebase, and the selected frames were then repeated to fill
+  // every millisecond (16 frames written as ~550, at H.264 level 4.2). Laying the selected frames
+  // back to back at the source's own rate, as the overlay encode does, writes exactly the
+  // `hi - lo + 1` frames at the rate the sidecar reports.
+  const rate = fps.toFixed(4);
+  const trimChain = `trim=start_frame=${lo}:end_frame=${hi + 1},setpts=N/(${rate}*TB)`;
+  if (!blur.length) return ["-i", inName, "-vf", trimChain, "-r", rate, ...ENCODE_ARGS, outName];
   // The blur needs the trimmed frame on two branches at once, which a linear `-vf` chain cannot
   // express — hence the graph, and the explicit `-map` naming the label it ends on.
-  return ["-i", inName, "-filter_complex", `[0:v]${trimChain},${blurFilterChain(blur)}`, "-map", "[blurout]", ...ENCODE_ARGS, outName];
+  return [
+    "-i",
+    inName,
+    "-filter_complex",
+    `[0:v]${trimChain},${blurFilterChain(blur)}`,
+    "-map",
+    "[blurout]",
+    "-r",
+    rate,
+    ...ENCODE_ARGS,
+    outName,
+  ];
 }
 
 /** Whether the trim can be served by copying the source's own frames rather than re-encoding them:

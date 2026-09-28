@@ -5,9 +5,29 @@ describe("ffmpegArgs", () => {
   it("builds a frame-exact trim filter in precise mode", () => {
     const args = ffmpegArgs("in.mp4", "clip.mp4", 10, 40, 30, "precise");
     expect(args).toContain("-vf");
-    expect(args).toContain("trim=start_frame=10:end_frame=41,setpts=PTS-STARTPTS");
+    expect(args).toContain("trim=start_frame=10:end_frame=41,setpts=N/(30.0000*TB)");
     expect(args).toContain("libx264");
     expect(args[args.length - 1]).toBe("clip.mp4");
+  });
+
+  // Left to guess the output rate, ffmpeg read a MediaRecorder clip's 1ms timebase as 1000fps and
+  // repeated the 16 selected frames ~550 times over. The selection is re-timed onto the source's own
+  // rate, and the MP4 written at that rate, so every selected frame is written exactly once.
+  it.each([
+    { name: "a re-encode", blur: [] },
+    { name: "a blurred re-encode", blur: [{ x: 10, y: 10, radius: 20 }] },
+  ])("writes $name at the source's own rate, one frame per selected frame", ({ blur }) => {
+    const args = ffmpegArgs("in.webm", "clip.mp4", 6, 21, 28.806584362, "precise", blur);
+    const filter = args[args.indexOf(blur.length ? "-filter_complex" : "-vf") + 1];
+    expect(filter).toContain("trim=start_frame=6:end_frame=22,setpts=N/(28.8066*TB)");
+    expect(args[args.indexOf("-r") + 1]).toBe("28.8066");
+    // An output option: before the output file, after the input.
+    expect(args.indexOf("-r")).toBeGreaterThan(args.indexOf("-i"));
+    expect(args.indexOf("-r")).toBeLessThan(args.indexOf("clip.mp4"));
+  });
+
+  it("leaves a stream copy's timing to the source, since its frames are the source's own", () => {
+    expect(ffmpegArgs("in.mp4", "clip.mp4", 30, 89, 30, "fast")).not.toContain("-r");
   });
 
   it("builds a keyframe-aligned stream copy in fast mode", () => {
@@ -42,7 +62,7 @@ describe("ffmpegArgs", () => {
     const args = ffmpegArgs("in.mp4", "clip.mp4", 10, 40, 30, "precise", [{ x: 320, y: 240, radius: 60 }]);
     expect(args).not.toContain("-vf");
     const graph = args[args.indexOf("-filter_complex") + 1];
-    expect(graph.startsWith("[0:v]trim=start_frame=10:end_frame=41,setpts=PTS-STARTPTS,split=2")).toBe(true);
+    expect(graph.startsWith("[0:v]trim=start_frame=10:end_frame=41,setpts=N/(30.0000*TB),split=2")).toBe(true);
     expect(graph.endsWith("[blurout]")).toBe(true);
     expect(args[args.indexOf("-map") + 1]).toBe("[blurout]");
     expect(args).toContain("libx264");

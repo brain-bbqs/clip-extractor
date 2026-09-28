@@ -45,14 +45,14 @@ const TAR_BLOCK = 512;
 
 /** Walks the 512-byte headers of a gzipped tar, the way `tar tf` lists it — how the save specs read
  * back what a Save actually wrote. */
-export function listTar(gzipped: Buffer): { path: string; size: number; text: string }[] {
+export function listTar(gzipped: Buffer): { path: string; size: number; text: string; bytes: Buffer }[] {
   const tar = gunzipSync(gzipped);
   const read = (offset: number, start: number, length: number) => {
     const raw = tar.subarray(offset + start, offset + start + length);
     const end = raw.findIndex((b) => b === 0 || b === 0x20);
     return raw.subarray(0, end === -1 ? raw.length : end).toString();
   };
-  const entries: { path: string; size: number; text: string }[] = [];
+  const entries: { path: string; size: number; text: string; bytes: Buffer }[] = [];
   for (let offset = 0; offset + TAR_BLOCK <= tar.length && tar[offset] !== 0;) {
     const prefix = read(offset, 345, 155);
     const name = read(offset, 0, 100);
@@ -62,6 +62,7 @@ export function listTar(gzipped: Buffer): { path: string; size: number; text: st
       path: prefix ? `${prefix}/${name}` : name,
       size,
       text: tar.subarray(offset, offset + size).toString(),
+      bytes: tar.subarray(offset, offset + size),
     });
     offset += Math.ceil(size / TAR_BLOCK) * TAR_BLOCK;
   }

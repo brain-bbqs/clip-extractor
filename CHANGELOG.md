@@ -5,6 +5,7 @@
 #### 🐛 Bug Fix
 
 - On phones, the page no longer scrolls sideways once a video or pose file is open, or at the narrowest widths before one is.
+- A snippet cut from a variable frame rate recording now holds exactly the frames selected, rather than repeating them to fill a guessed frame rate.
 
 ## 1.7.0
 

@@ -209,19 +209,25 @@ test("the speed buttons pick a rate, and playback runs at it", async ({ page }) 
   await expect(seg.nth(2)).toHaveAttribute("aria-pressed", "true");
   await expect(seg.nth(1)).toHaveAttribute("aria-pressed", "false");
 
-  // The pressed state has to reach playback, not just the button: play the same wall-clock stretch
-  // at 2x and at 0.5x from the same frame, and the fast one must cover more ground.
+  // The pressed state has to reach playback, not just the button: play the same stretch of the
+  // page's clock at 2x and at 0.5x from the same frame, and the fast one must cover more ground.
+  // The clock is held and stepped rather than left to the wall: the stretch between two clicks
+  // then includes however long each click takes, and under load that was long enough for 2x to
+  // run off the end of the marked range and wrap back to In, landing behind 0.5x.
+  await page.clock.install();
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
   const advancedOver = async (ms: number) => {
     await page.locator("#curVal").fill("0");
     await page.locator("#curVal").press("Enter");
     await page.locator("#btnPlay").click();
-    await page.waitForTimeout(ms);
+    await page.clock.runFor(ms);
     await page.locator("#btnPlay").click();
     return Number(await page.locator("#curVal").inputValue());
   };
-  const fast = await advancedOver(400);
+  // 200ms is about 12 frames at 2x and 3 at 0.5x: both clear of the end of the range, so neither wraps.
+  const fast = await advancedOver(200);
   await seg.nth(0).click();
-  const slow = await advancedOver(400);
+  const slow = await advancedOver(200);
   expect(fast).toBeGreaterThan(slow);
 });
 
@@ -258,12 +264,15 @@ test("playback stays inside the marked range, starting from In wherever the play
 });
 
 test("the ruler lays out time gradations, and stays put in frame mode", async ({ page }) => {
-  await page.goto("/?test&mock_video");
+  // `mock_audio`'s clip is written with set timestamps rather than recorded in real time, so it is
+  // always 30 frames at 30fps, 29/30s from first frame to last. The recorded `mock_video` clip lasts
+  // however long the recording took, and sat right on the one-second mark that adds a sixth tick.
+  await page.goto("/?test&mock_video&mock_audio");
   await expect(page.locator("#view")).toBeVisible();
 
-  // The recorded clip is about a second long, so this lands on the ruler's finest step: five
-  // gradations, and one label at the start. The point of the assertion is that the ruler is built
-  // from the loaded video rather than hard-coded.
+  // Just under a second, so this lands on the ruler's finest step: a tick every 0.2s from 0 to 0.8,
+  // and one label at the start. The point of the assertion is that the ruler is built from the
+  // loaded video rather than hard-coded.
   await expect(page.locator("#selruler .sel-tick")).toHaveCount(5);
   await expect(page.locator("#selruler .sel-tick-label").first()).toHaveText("0:00");
 
