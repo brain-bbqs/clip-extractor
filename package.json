@@ -1,6 +1,6 @@
 {
   "name": "clip-extractor",
-  "version": "1.6.11",
+  "version": "1.7.0",
   "description": "A single-page video player for selecting a frame range and extracting it as an upload-ready payload, built on sleap-io.js and ffmpeg.wasm.",
   "type": "module",
   "license": "MIT",
@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@brain-bbqs/ember-client": "^0.2.0",
-    "@brain-bbqs/ui": "^0.2.0",
+    "@brain-bbqs/ui": "^0.3.0",
     "@brain-bbqs/utils": "^0.2.0",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@talmolab/sleap-io.js": "^0.5.9",
@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@brain-bbqs/config": "^0.2.0",
-    "@brain-bbqs/test-utils": "^0.2.0",
+    "@brain-bbqs/test-utils": "^0.3.0",
     "@chromatic-com/playwright": "^0.14.11",
     "@eslint/js": "^9.39.5",
     "@ffmpeg/core": "0.12.10",

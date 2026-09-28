@@ -5,6 +5,7 @@ import * as sio from "@talmolab/sleap-io.js";
 // emitted as an asset so the worker runs no third-party code. h5wasm's exports map does not list
 // the IIFE build, hence the path into node_modules.
 import h5wasmScript from "../node_modules/h5wasm/dist/iife/h5wasm.js?url";
+import changelog from "../CHANGELOG.md?raw";
 import { getElements } from "./ui/elements";
 import {
   bindAccountMenu,
@@ -12,6 +13,7 @@ import {
   createHumanSubjectsGate,
   getShellElements,
   initThemeToggle,
+  initWhatsNew,
   refreshIdentity,
   renderAuthState,
   renderVersion,
@@ -157,6 +159,7 @@ if (!shell.account) throw new Error("Expected #oauthSigninBtn to exist in the do
 const account = shell.account;
 
 renderVersion(shell.versionIndicator, __APP_VERSION__);
+initWhatsNew(els.whatsNew, { changelog });
 
 // ============================================================
 // Live smoketest URL params (see lib/testInjection.ts and docs/README.md's "Live Testing" section)
