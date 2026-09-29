@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
+import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
 import { listTar, serveFfmpegCore } from "./helpers";
 
 // Golden-tree tests for what Save actually writes, in the `expected_output/` fixture style of
@@ -14,7 +15,8 @@ import { listTar, serveFfmpegCore } from "./helpers";
 // slipping through.
 //
 // No videos are committed: the mock source is synthesized in the page (lib/testInjection.ts), and
-// binary members are pinned by presence in `manifest.txt` rather than by bytes. The pieces of the
+// binary members are pinned by presence in `manifest.txt` rather than by bytes. The one exception is
+// an encoded snippet, which is opened and held to its own sidecar's codec string and frame count. The pieces of the
 // output this app does not decide are normalized to spelled-out placeholders before comparing, so
 // the fixtures stay stable run to run:
 //   recording-TIMESTAMP / date-DATE / time-TIME  — the delivery's own stamp, taken from the clock
@@ -124,6 +126,19 @@ for (const { name, link, encodes } of CASES) {
     for (const { path, content } of jsonEntries) {
       const golden: unknown = JSON.parse(readFileSync(join(caseDir, path), "utf8"));
       expect(content, `content of ${path}`).toEqual(golden);
+    }
+
+    // The encoded snippet itself, which the manifest pins only by name, has to be what its sidecar
+    // says it is: its own codec string, and exactly the frames selected, each written once.
+    if (encodes) {
+      const clip = entries.find((entry) => entry.path.startsWith("derivatives/") && entry.path.endsWith("_video.mp4"))!;
+      const sidecar = JSON.parse(entries.find((entry) => entry.path === clip.path.replace(/\.mp4$/, ".json"))!.text) as {
+        VideoCodecRFC6381: string;
+        VideoFrameCount: number;
+      };
+      const track = (await new Input({ source: new BufferSource(clip.bytes), formats: ALL_FORMATS }).getPrimaryVideoTrack())!;
+      expect(await track.getCodecParameterString()).toBe(sidecar.VideoCodecRFC6381);
+      expect((await track.computePacketStats()).packetCount).toBe(sidecar.VideoFrameCount);
     }
   });
 }
