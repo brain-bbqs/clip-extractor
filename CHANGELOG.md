@@ -4,7 +4,7 @@
 
 #### 🏠 Internal
 
-- Added a daily check that EMBER still answers the way the app reads it, emailing the maintainer when it stops.
+- Added a daily check that EMBER still answers the way the app reads it, emailing the maintainer when it stops. ([#86](https://github.com/brain-bbqs/clip-extractor/pull/86))
 
 ## 1.7.2
 
