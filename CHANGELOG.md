@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.3
+
+#### 🏠 Internal
+
+- Added a daily check that EMBER still answers the way the app reads it, emailing the maintainer when it stops.
+
 ## 1.7.2
 
 #### 🐛 Bug Fix
