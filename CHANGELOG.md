@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.2
+
+#### 🐛 Bug Fix
+
+- Browsing EMBER works again after the archive moved its public data to a new storage bucket, and now lists datasets added since the move.
+
 ## 1.7.1
 
 #### 🐛 Bug Fix

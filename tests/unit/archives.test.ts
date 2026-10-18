@@ -127,10 +127,10 @@ describe("selectVideoAssets", () => {
       encodingFormat: "video/mp4",
       contentUrl: [
         "https://api-dandi.emberarchive.org/api/assets/1e002c85/download/",
-        "https://ember-dandi-archive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83",
+        "https://ember-open-data.s3.amazonaws.com/blobs/f16/d2f/f16d2f83",
       ],
     },
-    { path: "sub-1/sub-1_behavior.nwb", contentSize: 12, contentUrl: ["https://ember-dandi-archive.s3.amazonaws.com/blobs/a/b/c"] },
+    { path: "sub-1/sub-1_behavior.nwb", contentSize: 12, contentUrl: ["https://ember-open-data.s3.amazonaws.com/blobs/a/b/c"] },
   ];
 
   it("keeps only the videos, streaming from the bucket and citing the archive's own URL", () => {
@@ -139,7 +139,7 @@ describe("selectVideoAssets", () => {
         dandisetId: "000265",
         path: "sub-1/mice.mp4",
         size: 31258120,
-        streamUrl: "https://ember-dandi-archive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83",
+        streamUrl: "https://ember-open-data.s3.amazonaws.com/blobs/f16/d2f/f16d2f83",
         assetUrl: "https://api-dandi.emberarchive.org/api/assets/1e002c85/download/",
         embargoed: false,
       },
@@ -148,12 +148,12 @@ describe("selectVideoAssets", () => {
 
   it("picks the bucket URL by which bucket it points at, not by its position in the list", () => {
     const reordered = [{ ...manifest[0], contentUrl: [...manifest[0].contentUrl].reverse() }];
-    expect(selectVideoAssets("000265", reordered)[0].streamUrl).toBe("https://ember-dandi-archive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83");
+    expect(selectVideoAssets("000265", reordered)[0].streamUrl).toBe("https://ember-open-data.s3.amazonaws.com/blobs/f16/d2f/f16d2f83");
   });
 
   it("cites the bucket URL when the archive lists no other one", () => {
-    const onlyS3 = [{ ...manifest[0], contentUrl: ["https://ember-dandi-archive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83"] }];
-    expect(selectVideoAssets("000265", onlyS3)[0].assetUrl).toBe("https://ember-dandi-archive.s3.amazonaws.com/blobs/f16/d2f/f16d2f83");
+    const onlyS3 = [{ ...manifest[0], contentUrl: ["https://ember-open-data.s3.amazonaws.com/blobs/f16/d2f/f16d2f83"] }];
+    expect(selectVideoAssets("000265", onlyS3)[0].assetUrl).toBe("https://ember-open-data.s3.amazonaws.com/blobs/f16/d2f/f16d2f83");
   });
 
   it("drops a video whose bytes are not on this archive's bucket", () => {
@@ -246,7 +246,7 @@ describe("reading a dataset's manifests", () => {
         Promise.resolve(
           textResponse(
             JSON.stringify([
-              { path: "sub-1/mice.mp4", contentSize: 5, contentUrl: ["https://ember-dandi-archive.s3.amazonaws.com/blobs/a/b/c"] },
+              { path: "sub-1/mice.mp4", contentSize: 5, contentUrl: ["https://ember-open-data.s3.amazonaws.com/blobs/a/b/c"] },
             ]),
           ),
         ),
@@ -262,7 +262,7 @@ describe("sweepArchiveVideos", () => {
     path: "a.mp4",
     size: 1,
     assetUrl: "https://api.example.org/api/assets/a/download/",
-    streamUrl: "https://ember-dandi-archive.s3.amazonaws.com/blobs/a",
+    streamUrl: "https://ember-open-data.s3.amazonaws.com/blobs/a",
     embargoed: false,
   });
 
