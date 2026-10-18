@@ -35,10 +35,13 @@ export interface PublicArchive {
   web: string;
 }
 
+/** EMBER's public bucket, as registered on the AWS Registry of Open Data
+ * (https://registry.opendata.aws/ember/). It replaced `ember-dandi-archive`, a leftover copy this
+ * pane read until that bucket was deleted. */
 export const EMBER_ARCHIVE: PublicArchive = {
   label: "EMBER",
-  bucket: "ember-dandi-archive",
-  origin: "https://ember-dandi-archive.s3.amazonaws.com",
+  bucket: "ember-open-data",
+  origin: "https://ember-open-data.s3.amazonaws.com",
   web: EMBER_INSTANCE.web,
 };
 
@@ -294,10 +297,10 @@ export async function fetchDandisetVideos(dandiset: ArchiveDandiset, signal?: Ab
 }
 
 /**
- * How much `assets.jsonld` a whole-archive sweep may read. EMBER's manifests come to a third of a
- * megabyte across every dataset it holds, so sweeping it up front and showing only the datasets
- * that actually contain video costs one short pause. The listing reports every manifest's size, so
- * whether that still holds is measured on each visit rather than assumed.
+ * How much `assets.jsonld` a whole-archive sweep may read. EMBER's public manifests come to about
+ * 14 MB across every dataset it holds (October 2026), so sweeping them up front and showing only
+ * the datasets that actually contain video costs a short pause. The listing reports every
+ * manifest's size, so whether that still holds is measured on each visit rather than assumed.
  */
 export const SWEEP_BUDGET_BYTES = 32 * 1024 * 1024;
 

@@ -192,7 +192,7 @@ describe("isAssetDownloadUrl", () => {
 
 describe("resolveEmbargoedStreamUrl", () => {
   const assetUrl = "https://api.example.org/api/assets/a1/download/";
-  const signed = "https://ember-dandi-archive.s3.amazonaws.com/blobs/a/b/c?X-Amz-Signature=abc";
+  const signed = "https://ember-open-data.s3.amazonaws.com/blobs/a/b/c?X-Amz-Signature=abc";
 
   function stubDownload(body: Partial<Response>): ReturnType<typeof vi.fn> {
     const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 206, body: null, ...body } as unknown as Response));

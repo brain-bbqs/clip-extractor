@@ -7,7 +7,7 @@ import { recordClipBytes } from "./helpers";
 // The other reads the archive's API for the embargoed datasets a signed-in visitor owns (see
 // lib/embargoed.ts), which is stubbed alongside it.
 
-const BUCKET = "https://ember-dandi-archive.s3.amazonaws.com";
+const BUCKET = "https://ember-open-data.s3.amazonaws.com";
 const API = "https://api-dandi.emberarchive.org/api";
 const CLIP_URL = `${BUCKET}/blobs/f16/d2f/f16d2f83`;
 
