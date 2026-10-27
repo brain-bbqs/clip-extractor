@@ -88,6 +88,18 @@ video's own path is BIDS-entity-shaped (`sub-01/ses-01/…`, and up), the same s
 dandiset's own asset paths carry. It is read-only in spirit: the fake video URLs resolve nowhere real,
 so clicking a row shows the ordinary "cannot be opened" refusal.
 
+## Daily live checks
+
+`npm run test:live` checks that EMBER still answers the way the deployed site reads it. It runs the
+browse pane's own code against the real bucket and API rather than the fixtures the unit and
+integration tests use, and sends each cross-origin request with the site's origin, so a CORS change
+fails it too. It confirms that:
+
+- the bucket lists dataset manifests;
+- the API lists the public datasets, and the bucket holds some of them;
+- a public dataset's file list names the bucket, and one of its videos answers a cross-origin range
+  request.
+
 ## Expected console noise
 
 Warnings that are known, harmless, and not fixable from this repo — don't go chasing them:

@@ -1,6 +1,6 @@
 {
   "name": "clip-extractor",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "description": "A single-page video player for selecting a frame range and extracting it as an upload-ready payload, built on sleap-io.js and ffmpeg.wasm.",
   "type": "module",
   "license": "MIT",
@@ -12,6 +12,7 @@
     "test:watch": "vitest --config configs/vitest.config.ts",
     "test:coverage": "vitest run --coverage --config configs/vitest.config.ts",
     "test:integration": "playwright test --config configs/playwright.config.ts",
+    "test:live": "vitest run --config configs/vitest.live.config.ts",
     "test:chromatic": "playwright test --config configs/playwright.chromatic.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --config configs/eslint.config.js .",
