@@ -100,11 +100,6 @@ fails it too. It confirms that:
 - a public dataset's file list names the bucket, and one of its videos answers a cross-origin range
   request.
 
-The [Daily live checks](../.github/workflows/daily_live_checks.yml) workflow runs it every day at 12:17
-UTC, and it can also be started by hand from the Actions tab. A failed scheduled or manual run emails
-the maintainer through Gmail, using the `MAIL_USERNAME` and `MAIL_PASSWORD` repository secrets.
-Ordinary pull requests do not run it; one that changes the checks themselves does.
-
 ## Expected console noise
 
 Warnings that are known, harmless, and not fixable from this repo — don't go chasing them:
