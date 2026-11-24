@@ -34,7 +34,7 @@
   "devDependencies": {
     "@brain-bbqs/config": "^0.2.0",
     "@brain-bbqs/test-utils": "^0.3.0",
-    "@chromatic-com/playwright": "^0.14.11",
+    "@chromatic-com/playwright": "^1.1.0",
     "@eslint/js": "^9.39.5",
     "@ffmpeg/core": "0.12.10",
     "@playwright/test": "^1.48.0",
@@ -47,7 +47,7 @@
     "prettier": "^3.3.0",
     "storybook": "^10.6.2",
     "typescript": "^5.6.0",
-    "typescript-eslint": "^8.64.0",
+    "typescript-eslint": "^8.74.0",
     "vite": "^8.3.5",
     "vitest": "^5.0.0"
   }
