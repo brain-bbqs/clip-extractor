@@ -1,4 +1,12 @@
-import type { DandiInstance } from "@brain-bbqs/ember-client";
+import {
+  apiFetch,
+  INCOMING_PREFIX,
+  listedTitle,
+  type ArchiveConfig,
+  type DandiInstance,
+  type DandisetListResponse,
+  type IncomingDandisetsResult,
+} from "@brain-bbqs/ember-client";
 
 // `?sandbox`: a testing-only switch that points sign-in and every EMBER API call at the archive's
 // sandbox instance rather than production, so signing in, listing owned datasets and uploading can
@@ -9,9 +17,10 @@ import type { DandiInstance } from "@brain-bbqs/ember-client";
 // to the sandbox, a sandbox one never to production, and switching between the two leaves the other
 // side's session as it was. Opening `?sandbox` for the first time therefore starts signed out.
 //
-// Only the archive's API and sign-in move. The browse pane's public listing is read from
-// production's open-data bucket either way (see lib/archives.ts's EMBER_ARCHIVE), since that bucket
-// is the only one this app knows how to list.
+// Nothing reads production while it is on. The browse pane lists the sandbox's datasets, public ones
+// included, through the sandbox's API rather than production's open-data bucket (see the pane's
+// `apiOnly`), and the upload destination list skips the BBQS/EMBER admin-check service, which
+// answers for production's datasets (see listSandboxIncomingDandisets).
 
 /** The query param that turns sandbox mode on. Present at all, with any value or none, is on. */
 export const SANDBOX_PARAM = "sandbox";
@@ -73,4 +82,24 @@ export function takeSandboxLogin(): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The upload destinations under `?sandbox`: every "Incoming: " dataset the account owns on the
+ * sandbox, without `listIncomingDandisets`' admin-owner check.
+ *
+ * That check asks a BBQS/EMBER companion service whether an admin co-owns each candidate, and the
+ * service reads production's owner lists, so it would judge a sandbox dataset by whatever production
+ * dataset happens to share its identifier. It only ever curated what the picker offers (the archive's
+ * own ownership permissions are what authorize an upload; see SECURITY.md), and a sandbox upload
+ * lands on test data, so it is dropped here rather than answered wrongly. Same call, filter and
+ * order as the checked list otherwise.
+ */
+export async function listSandboxIncomingDandisets(cfg: ArchiveConfig): Promise<IncomingDandisetsResult> {
+  const resp = await apiFetch<DandisetListResponse>(cfg, "/dandisets/?user=me&embargoed=true&page_size=1000");
+  const datasets = (resp?.results ?? [])
+    .map((d) => ({ identifier: d.identifier, title: listedTitle(d), embargoed: d.embargo_status === "EMBARGOED" }))
+    .filter((d) => d.title.startsWith(INCOMING_PREFIX))
+    .sort((a, b) => a.title.localeCompare(b.title));
+  return { datasets, unverified: 0 };
 }

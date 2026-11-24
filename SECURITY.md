@@ -182,6 +182,14 @@ cannot be reached at all, the check fails closed (the dandiset is not
 offered) and the picker says so rather than reporting an empty list as "you
 have not been added to any datasets".
 
+Under `?sandbox` (testing only) the check is skipped altogether
+(`listSandboxIncomingDandisets` in `src/lib/sandbox.ts`): the service reads
+production's owner lists, so it would judge a sandbox dandiset by whichever
+production dandiset shares its identifier. Every "Incoming: " dandiset the
+signed-in account owns on the sandbox is offered instead. Since the check is
+curation rather than access control (above), that changes only what the
+picker lists, and only for uploads landing on the sandbox.
+
 ## Handling a "clear text storage" alert on a new credential
 
 1. Run the `innerHTML`/XSS check above. If it turns up a real

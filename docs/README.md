@@ -105,10 +105,12 @@ the sandbox.
   recognized as a sandbox sign-in by its OAuth `state`, and `?sandbox` is put back in the address.
   Every location the app is served from has to be registered as a redirect URI on the sandbox
   application too, separately from production.
-- **What does not move.** The browse pane's public listing still comes from production's open-data
-  bucket (only your own embargoed datasets come from the sandbox), and the upload destination list
-  still asks the BBQS/EMBER admin-check service, which answers for production's datasets, whether each
-  "Incoming: " dataset is admin-owned.
+- **Nothing reads production.** Browse EMBER lists the sandbox's datasets, public and your own
+  embargoed ones, and their videos through the sandbox's API rather than production's open-data
+  bucket, and gets each video's stream link from the API's download redirect.
+- **No admin check.** The upload destination list offers every "Incoming: " dataset your sandbox
+  account owns, without asking the BBQS/EMBER admin-check service, which only knows production's
+  datasets.
 
 ## Daily live checks
 

@@ -6,7 +6,6 @@ import { loadCachedNames, saveCachedNames } from "../lib/archiveNames";
 import {
   canSweep,
   dandisetWebUrl,
-  EMBER_ARCHIVE,
   fetchDandisetVideos,
   hydrateDandisetNames,
   archiveSourceOf,
@@ -18,7 +17,13 @@ import {
   type ArchiveSource,
   type ArchiveVideo,
 } from "../lib/archives";
-import { listEmbargoedVideos, listOwnedEmbargoedDandisets, listPublicDandisetIds, resolveEmbargoedStreamUrl } from "../lib/embargoed";
+import {
+  listApiVideos,
+  listOwnedEmbargoedDandisets,
+  listPublicDandisetIds,
+  listPublicDandisets,
+  resolveAssetStreamUrl,
+} from "../lib/embargoed";
 import { unstreamableRefusal } from "../lib/streamable";
 import { fakeArchiveBrowse } from "../lib/testInjection";
 import type { ArchiveConfig } from "@brain-bbqs/ember-client";
@@ -43,6 +48,10 @@ export interface BrowsePaneHost {
   /** The archive config this pane's API calls run under. Unlike the upload destination's, it names
    * no dataset: which one is being read is passed per call. */
   config: () => ArchiveConfig;
+  /** Whether every dataset, public ones included, is read through `config`'s API rather than
+   * production's open-data bucket: true under `?sandbox`, whose datasets that bucket does not hold
+   * (see lib/sandbox.ts). Nothing then reads the bucket, its manifests or the titles cached from them. */
+  apiOnly: boolean;
   /** Whether every auth-dependent surface should read as signed in, live-smoketest stand-ins
    * included. What the pane can see changes with this and with nothing else, so it is the only
    * thing that forces a rebuild. */
@@ -167,7 +176,8 @@ export function createBrowsePane(els: ClipExtractorElements, host: BrowsePaneHos
     const generation = ++browseGeneration;
     const current: BrowseState = {
       datasets: [],
-      names: loadCachedNames(),
+      // Titles read out of production's manifests, which name none of the sandbox's datasets.
+      names: host.apiOnly ? new Map<string, string>() : loadCachedNames(),
       videos: new Map(),
       sweeping: false,
       swept: false,
@@ -205,15 +215,9 @@ export function createBrowsePane(els: ClipExtractorElements, host: BrowsePaneHos
       // Three independent reads, run together; only the bucket listing is allowed to fail the whole
       // pane. `publicIds` is what actually decides which bucket candidates are shown — see
       // lib/embargoed.ts's listPublicDandisetIds for why the bucket listing alone cannot be trusted
-      // with that. Asked of the bucket's own archive rather than the one signed in to, which under
-      // `?sandbox` is a different archive with different datasets behind the same identifiers.
-      const [candidates, owned, publicIds] = await Promise.all([
-        listManifestObjects(signal).then(indexDandisets),
-        listOwnedEmbargoed(signal),
-        listPublicDandisetIds({ ...host.config(), api: EMBER_ARCHIVE.api, web: EMBER_ARCHIVE.web }, signal),
-      ]);
+      // with that.
+      const [pub, owned] = await Promise.all([listPublic(signal), listOwnedEmbargoed(signal)]);
       if (generation !== browseGeneration) return;
-      const pub = candidates.filter((d) => publicIds.has(d.id));
       current.datasets = mergeDandisets(pub, owned);
       // Settled before the first paint, because it decides what that paint is allowed to show: a
       // sweep that is going to run makes every candidate row provisional, and a provisional row is
@@ -235,6 +239,17 @@ export function createBrowsePane(els: ClipExtractorElements, host: BrowsePaneHos
     }
   }
 
+  /** The public datasets: the bucket's candidates the API confirms are public, or under `?sandbox` the
+   * API's own listing, already titled. */
+  async function listPublic(signal: AbortSignal): Promise<ArchiveDandiset[]> {
+    if (host.apiOnly) return listPublicDandisets(host.config(), signal);
+    const [candidates, publicIds] = await Promise.all([
+      listManifestObjects(signal).then(indexDandisets),
+      listPublicDandisetIds(host.config(), signal),
+    ]);
+    return candidates.filter((d) => publicIds.has(d.id));
+  }
+
   /** The datasets the signed-in visitor owns and nobody else can see. Signed out, there are none; a
    * failed lookup is reported and the public half of the pane carries on without them. */
   async function listOwnedEmbargoed(signal: AbortSignal): Promise<ArchiveDandiset[]> {
@@ -254,12 +269,13 @@ export function createBrowsePane(els: ClipExtractorElements, host: BrowsePaneHos
   function browseCountLine(current: BrowseState): string {
     const mine = current.datasets.filter((d) => d.embargoed).length;
     const suffix = mine ? `, ${mine} of them embargoed and yours` : "";
-    return `${current.datasets.length} EMBER datasets${suffix}.`;
+    return `${current.datasets.length} EMBER${host.apiOnly ? " sandbox" : ""} datasets${suffix}.`;
   }
 
   /** Fills in public dataset titles, which is what makes the filter box match anything but a number. */
   async function hydrateNames(current: BrowseState, generation: number): Promise<void> {
-    const missing = current.datasets.filter((d) => !d.embargoed && !current.names.has(d.id));
+    // Every dataset the API listed arrives titled, and under `?sandbox` that is every dataset.
+    const missing = current.datasets.filter((d) => !readThroughApi(d) && !current.names.has(d.id));
     if (!missing.length) return;
     let done = 0;
     await hydrateDandisetNames(
@@ -281,9 +297,14 @@ export function createBrowsePane(els: ClipExtractorElements, host: BrowsePaneHos
     browseSay(browseCountLine(current));
   }
 
+  /** Whether a dataset's file list comes from the API rather than a manifest on the bucket. */
+  function readThroughApi(dandiset: ArchiveDandiset): boolean {
+    return host.apiOnly || dandiset.embargoed;
+  }
+
   /** Every video in one dataset, asked of whichever side can answer for it. */
   function readDandisetVideos(dandiset: ArchiveDandiset, signal?: AbortSignal): Promise<ArchiveVideo[]> {
-    if (dandiset.embargoed) return listEmbargoedVideos(host.config(), dandiset.id, signal);
+    if (readThroughApi(dandiset)) return listApiVideos(host.config(), dandiset.id, { embargoed: dandiset.embargoed, signal });
     return fetchDandisetVideos(dandiset, signal);
   }
 
@@ -425,7 +446,7 @@ export function createBrowsePane(els: ClipExtractorElements, host: BrowsePaneHos
       const { li, labelEl, metaEl } = browseRow(
         dandiset.id,
         browseName(current, dandiset),
-        videos ? videoCountLabel(videos.length) : dandiset.embargoed ? "" : bytes(dandiset.manifestBytes),
+        videos ? videoCountLabel(videos.length) : readThroughApi(dandiset) ? "" : bytes(dandiset.manifestBytes),
         () => void selectDandiset(dandiset),
         dandiset.embargoed ? "embargoed" : undefined,
       );
@@ -447,16 +468,15 @@ export function createBrowsePane(els: ClipExtractorElements, host: BrowsePaneHos
     current.selected = dandiset.id;
     renderDandisetList();
     els.browseVideoHeading.textContent = `Videos in ${dandiset.id}`;
-    // An embargoed dataset was listed by the archive signed in to, which `?sandbox` moves; a public
-    // one came out of the bucket, which it does not.
-    els.browseDandisetLink.href = dandiset.embargoed ? dandisetWebUrl(dandiset, host.config().web) : dandisetWebUrl(dandiset);
+    // The archive the pane is reading, which `?sandbox` moves along with everything else.
+    els.browseDandisetLink.href = dandisetWebUrl(dandiset, host.config().web);
     els.browseDandisetLink.hidden = false;
     const known = current.videos.get(dandiset.id);
     if (known) {
       renderVideoList(known);
       return;
     }
-    const cost = dandiset.embargoed ? "" : ` (${bytes(dandiset.manifestBytes)})`;
+    const cost = readThroughApi(dandiset) ? "" : ` (${bytes(dandiset.manifestBytes)})`;
     browseVideosEmpty(`Reading the file list for ${dandiset.id}${cost}…`);
     try {
       const videos = await readDandisetVideos(dandiset, current.abort.signal);
@@ -526,14 +546,15 @@ export function createBrowsePane(els: ClipExtractorElements, host: BrowsePaneHos
     }
     let streamUrl = video.streamUrl;
     if (!streamUrl) {
-      // Embargoed: the bytes sit behind a signature the archive has to issue, and it is only good for
-      // a while, so it is asked for at the moment the video is opened rather than when it was listed.
+      // Listed through the API (embargoed, or anything under `?sandbox`): the bytes sit behind a
+      // signature the archive has to issue, and it is only good for a while, so it is asked for at
+      // the moment the video is opened rather than when it was listed.
       browseSay(`Asking EMBER for a link to ${name}…`);
       try {
         await host.ensureFreshToken();
-        streamUrl = await resolveEmbargoedStreamUrl(host.config(), video.assetUrl);
+        streamUrl = await resolveAssetStreamUrl(host.config(), video.assetUrl);
       } catch (e) {
-        host.log(`Could not open the embargoed file ${video.path}: ${(e as Error).message}`, "err");
+        host.log(`Could not open ${video.path}: ${(e as Error).message}`, "err");
         host.reportFailure(name, friendlyError(e));
         return;
       }

@@ -85,9 +85,16 @@ import {
 } from "@brain-bbqs/ember-client";
 import { oauth as productionOAuth, sandboxOAuth } from "./lib/oauth";
 import { type ArchiveSource } from "./lib/archives";
-import { isAssetDownloadUrl, resolveEmbargoedStreamUrl } from "./lib/embargoed";
+import { isAssetDownloadUrl, resolveAssetStreamUrl } from "./lib/embargoed";
 import { sandboxSettingsStore, settingsStore as productionSettingsStore, THEME_KEY } from "./lib/settings";
-import { EMBER_SANDBOX_INSTANCE, readSandbox, rememberSandboxLogin, takeSandboxLogin, withSandboxParam } from "./lib/sandbox";
+import {
+  EMBER_SANDBOX_INSTANCE,
+  listSandboxIncomingDandisets,
+  readSandbox,
+  rememberSandboxLogin,
+  takeSandboxLogin,
+  withSandboxParam,
+} from "./lib/sandbox";
 import {
   defaultDeliveryMode,
   deliveryDirectories,
@@ -2009,6 +2016,8 @@ const browsePane = createBrowsePane(els, {
   log,
   // Not tied to the upload destination picker: which dataset is being read is passed per call.
   config: () => resolveConfig({ dandisetId: "", oauthAccessToken: oauthTokens?.accessToken }, archiveInstance),
+  // Production's open-data bucket holds none of the sandbox's datasets.
+  apiOnly: sandbox,
   signedIn: () => isSignedIn(),
   hasToken: () => oauthTokens !== null,
   ensureFreshToken: () => ensureFreshOAuth(),
@@ -2328,7 +2337,11 @@ async function refreshDandisetOptions(): Promise<void> {
   });
   setDandisetPlaceholder("Loading your incoming datasets…");
   try {
-    const { datasets, unverified } = await listIncomingDandisets(currentConfig());
+    // The admin-check service answers for production's datasets, so the sandbox offers every
+    // "Incoming: " dataset the account owns there instead (see lib/sandbox.ts).
+    const { datasets, unverified } = sandbox
+      ? await listSandboxIncomingDandisets(currentConfig())
+      : await listIncomingDandisets(currentConfig());
     applyDatasetList(datasets, unverified);
   } catch (e) {
     log(`Could not load your datasets: ${(e as Error).message}`, "err");
@@ -3333,7 +3346,7 @@ async function streamUrlFor(url: string): Promise<string> {
   if (!oauthTokens) return url;
   try {
     await ensureFreshOAuth();
-    return await resolveEmbargoedStreamUrl(currentConfig(), url);
+    return await resolveAssetStreamUrl(currentConfig(), url);
   } catch (e) {
     // The address is logged as an argument rather than interpolated into the message: it comes off
     // the query string, and console.warn reads its first argument as a format string.

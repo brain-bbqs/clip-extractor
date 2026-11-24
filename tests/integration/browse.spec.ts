@@ -365,7 +365,7 @@ test("signing in adds the embargoed datasets you own, marked as such", async ({ 
 // wherever that redirect lands. The redirect itself is not exercised here: Playwright's request
 // interception cannot fulfil a *cross-origin* redirect (a fulfilled 302 to another host resets the
 // connection, though the same fulfilment works same-origin), so what a real archive's redirect
-// resolves to is covered by the unit tests over resolveEmbargoedStreamUrl instead. What this spec
+// resolves to is covered by the unit tests over resolveAssetStreamUrl instead. What this spec
 // holds onto is the pane's own behaviour either side of that call.
 test("an embargoed dataset lists its videos through the API", async ({ page }) => {
   await stubBucket(page);
@@ -495,4 +495,50 @@ test("an unreachable bucket is reported instead of an empty archive", async ({ p
   await page.goto("/");
   await page.locator('#srcSeg button[data-src="browse"]').click();
   await expect(page.locator("#browseStatus")).toContainText("Could not read the EMBER archive");
+});
+
+test("under ?sandbox, browsing lists the sandbox's own datasets through its API and reads nothing from production", async ({ page }) => {
+  const SANDBOX_API = "https://api-dandi.sandbox.emberarchive.org/api";
+  // Anything aimed at production is recorded and refused, so a stray read fails this spec rather
+  // than reaching the real archive.
+  const production: string[] = [];
+  page.on("request", (request) => {
+    const url = request.url();
+    if (url.startsWith(BUCKET) || url.startsWith(API) || url.includes("/admin-owned/")) production.push(url);
+  });
+  await page.route(`${BUCKET}/**`, (route) => route.abort());
+  await page.route(`${API}/**`, (route) => route.abort());
+  await page.route(`${SANDBOX_API}/**`, (route) => {
+    const url = route.request().url();
+    const json = (body: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    if (url.endsWith("/dandisets/?page_size=1000")) {
+      return json({
+        results: [
+          { identifier: "000101", draft_version: { name: "Sandbox mice" } },
+          { identifier: "000102", draft_version: { name: "Sandbox ephys" } },
+        ],
+        next: null,
+      });
+    }
+    if (url.includes("/dandisets/000101/versions/draft/assets/")) {
+      return json({ results: [{ asset_id: "sb-1", path: "sub-1/mice.mp4", size: 2048 }], next: null });
+    }
+    if (url.includes("/dandisets/000102/versions/draft/assets/")) {
+      return json({ results: [{ asset_id: "sb-2", path: "sub-1/sub-1_ecephys.nwb", size: 4096 }], next: null });
+    }
+    return json({});
+  });
+
+  await page.goto("/?sandbox");
+  await page.locator('#srcSeg button[data-src="browse"]').click();
+
+  // Titled straight from the API's listing, and only the dataset that holds video is offered.
+  const rows = page.locator("#browseDandisets .browse-item");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Sandbox mice");
+  await rows.first().click();
+  await expect(page.locator("#browseDandisetLink")).toHaveAttribute("href", "https://dandi.sandbox.emberarchive.org/dandiset/000101/draft");
+  await expect(page.locator("#browseVideos .browse-item")).toHaveCount(1);
+  await expect(page.locator("#browseVideos .browse-item").first()).toContainText("sub-1/mice.mp4");
+  expect(production).toEqual([]);
 });

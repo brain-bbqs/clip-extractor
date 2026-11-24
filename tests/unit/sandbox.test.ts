@@ -1,8 +1,21 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { readSandbox, rememberSandboxLogin, SANDBOX_LOGIN_KEY, takeSandboxLogin, withSandboxParam } from "../../src/lib/sandbox";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { jsonResponse, routeFetch } from "@brain-bbqs/test-utils/vitest";
+import {
+  EMBER_SANDBOX_INSTANCE,
+  listSandboxIncomingDandisets,
+  readSandbox,
+  rememberSandboxLogin,
+  SANDBOX_LOGIN_KEY,
+  takeSandboxLogin,
+  withSandboxParam,
+} from "../../src/lib/sandbox";
 
 beforeEach(() => {
   sessionStorage.clear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("readSandbox", () => {
@@ -55,5 +68,33 @@ describe("rememberSandboxLogin / takeSandboxLogin", () => {
   it("keeps the key it is read back under", () => {
     // A sandbox sign-in mid-redirect across a deploy is matched under this name.
     expect(SANDBOX_LOGIN_KEY).toBe("clip-extractor.sandbox-login.v1");
+  });
+});
+
+describe("listSandboxIncomingDandisets", () => {
+  it("offers every Incoming dataset the account owns there, in title order, asking no admin check", async () => {
+    const archive = routeFetch([
+      {
+        match: `${EMBER_SANDBOX_INSTANCE.api}/dandisets/?user=me&embargoed=true&page_size=1000`,
+        respond: () =>
+          jsonResponse({
+            results: [
+              { identifier: "000002", draft_version: { name: "Incoming: Zebra Lab" }, embargo_status: "EMBARGOED" },
+              { identifier: "000003", draft_version: { name: "Not a staging dataset" }, embargo_status: "EMBARGOED" },
+              { identifier: "000001", draft_version: { name: "Incoming: Ant Lab" }, embargo_status: "OPEN" },
+            ],
+          }),
+      },
+    ]);
+    vi.stubGlobal("fetch", archive);
+    const cfg = { api: EMBER_SANDBOX_INSTANCE.api, web: EMBER_SANDBOX_INSTANCE.web, accessToken: "tok", dandisetId: "" };
+    expect(await listSandboxIncomingDandisets(cfg)).toEqual({
+      datasets: [
+        { identifier: "000001", title: "Incoming: Ant Lab", embargoed: false },
+        { identifier: "000002", title: "Incoming: Zebra Lab", embargoed: true },
+      ],
+      unverified: 0,
+    });
+    expect(archive.calls).toHaveLength(1);
   });
 });

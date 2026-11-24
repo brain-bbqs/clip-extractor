@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isAssetDownloadUrl,
-  listEmbargoedVideos,
+  listApiVideos,
   listOwnedEmbargoedDandisets,
   listPublicDandisetIds,
-  resolveEmbargoedStreamUrl,
+  listPublicDandisets,
+  resolveAssetStreamUrl,
 } from "../../src/lib/embargoed";
 import type { ArchiveConfig } from "@brain-bbqs/ember-client";
 
@@ -121,7 +122,30 @@ describe("listPublicDandisetIds", () => {
   });
 });
 
-describe("listEmbargoedVideos", () => {
+describe("listPublicDandisets", () => {
+  it("lists the public datasets as titled rows read from their drafts, anonymously", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({
+          results: [
+            { identifier: "000001", draft_version: { name: "Draft only" } },
+            { identifier: "000002", draft_version: { name: "Draft" }, most_recent_published_version: { name: "Published" } },
+          ],
+          next: null,
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await listPublicDandisets(cfg)).toEqual([
+      { id: "000001", version: "draft", manifestBytes: 0, embargoed: false, name: "Draft only" },
+      { id: "000002", version: "draft", manifestBytes: 0, embargoed: false, name: "Published" },
+    ]);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit | undefined];
+    expect(init?.headers).not.toHaveProperty("Authorization");
+  });
+});
+
+describe("listApiVideos", () => {
   it("keeps the videos out of the API's asset listing, following its pages", async () => {
     vi.stubGlobal(
       "fetch",
@@ -139,7 +163,7 @@ describe("listEmbargoedVideos", () => {
         ),
       ),
     );
-    expect(await listEmbargoedVideos(cfg, "000900")).toEqual([
+    expect(await listApiVideos(cfg, "000900")).toEqual([
       {
         dandisetId: "000900",
         path: "sub-1/first.mp4",
@@ -164,8 +188,16 @@ describe("listEmbargoedVideos", () => {
       Promise.resolve(jsonResponse({ results: [{ asset_id: "a1", path: "a.mp4" }], next: "https://elsewhere.example/api/assets/" })),
     );
     vi.stubGlobal("fetch", fetchMock);
-    expect(await listEmbargoedVideos(cfg, "000900")).toHaveLength(1);
+    expect(await listApiVideos(cfg, "000900")).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks the videos of a public dataset read this way as not embargoed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(jsonResponse({ results: [{ asset_id: "a1", path: "a.mp4", size: 1 }], next: null }))),
+    );
+    expect((await listApiVideos(cfg, "000001", { embargoed: false }))[0].embargoed).toBe(false);
   });
 
   it("leaves a size unknown when the listing does not report one", async () => {
@@ -173,7 +205,7 @@ describe("listEmbargoedVideos", () => {
       "fetch",
       vi.fn(() => Promise.resolve(jsonResponse({ results: [{ asset_id: "a1", path: "a.mp4" }], next: null }))),
     );
-    expect((await listEmbargoedVideos(cfg, "000900"))[0].size).toBe(null);
+    expect((await listApiVideos(cfg, "000900"))[0].size).toBe(null);
   });
 });
 
@@ -190,7 +222,7 @@ describe("isAssetDownloadUrl", () => {
   });
 });
 
-describe("resolveEmbargoedStreamUrl", () => {
+describe("resolveAssetStreamUrl", () => {
   const assetUrl = "https://api.example.org/api/assets/a1/download/";
   const signed = "https://ember-open-data.s3.amazonaws.com/blobs/a/b/c?X-Amz-Signature=abc";
 
@@ -202,27 +234,34 @@ describe("resolveEmbargoedStreamUrl", () => {
 
   it("reports where the archive's redirect landed, which is the signed bucket URL", async () => {
     const fetchMock = stubDownload({ url: signed });
-    expect(await resolveEmbargoedStreamUrl(cfg, assetUrl)).toBe(signed);
+    expect(await resolveAssetStreamUrl(cfg, assetUrl)).toBe(signed);
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
     // Only the first byte is asked for: the address the request ends at is the whole point of it.
     expect((init.headers as Record<string, string>).Range).toBe("bytes=0-0");
   });
 
+  it("asks anonymously, with no Authorization header at all, when signed out", async () => {
+    const fetchMock = stubDownload({ url: signed });
+    expect(await resolveAssetStreamUrl({ ...cfg, accessToken: "" }, assetUrl)).toBe(signed);
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.headers).toEqual({ Range: "bytes=0-0" });
+  });
+
   it("releases the byte it asked for rather than holding the connection open", async () => {
     const cancel = vi.fn(() => Promise.resolve());
     stubDownload({ url: signed, body: { cancel } as unknown as ReadableStream });
-    await resolveEmbargoedStreamUrl(cfg, assetUrl);
+    await resolveAssetStreamUrl(cfg, assetUrl);
     expect(cancel).toHaveBeenCalled();
   });
 
   it("says so when the archive refuses the file", async () => {
     stubDownload({ ok: false, status: 403, url: assetUrl });
-    await expect(resolveEmbargoedStreamUrl(cfg, assetUrl)).rejects.toThrow(/refused .* \(HTTP 403\)/);
+    await expect(resolveAssetStreamUrl(cfg, assetUrl)).rejects.toThrow(/refused .* \(HTTP 403\)/);
   });
 
   it("says so when the archive answers without redirecting anywhere", async () => {
     stubDownload({ url: assetUrl });
-    await expect(resolveEmbargoedStreamUrl(cfg, assetUrl)).rejects.toThrow(/did not redirect/);
+    await expect(resolveAssetStreamUrl(cfg, assetUrl)).rejects.toThrow(/did not redirect/);
   });
 });

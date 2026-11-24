@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // Boots the real app under `?sandbox` as a returning visitor signed in to both archives: every call
-// goes to the sandbox archive under the sandbox token, and the production one stays where it was.
+// goes to the sandbox archive under the sandbox token, the production one stays where it was, and
+// the upload destination is offered without the admin check.
 import { jsonResponse, routeFetch } from "@brain-bbqs/test-utils/vitest";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { SANDBOX_STORAGE_KEY, STORAGE_KEY } from "../../src/lib/settings";
@@ -20,7 +21,6 @@ const archive = routeFetch([
         results: [{ identifier: "000123", draft_version: { name: "Incoming: Sandbox Lab" }, embargo_status: "EMBARGOED" }],
       }),
   },
-  { match: "/admin-owned/000123", respond: () => jsonResponse({ adminOwned: true }) },
   {
     match: `${SANDBOX_API}/dandisets/000123/versions/draft/`,
     respond: () => jsonResponse({ name: "Incoming: Sandbox Lab", description: "A sandbox dataset." }),
@@ -52,6 +52,10 @@ describe("main.ts boot under ?sandbox, signed in to the sandbox", () => {
     ]);
     for (const call of sandboxCalls) expect(new Headers(call.init?.headers).get("Authorization")).toBe("Bearer sandbox-token");
     expect(archive.callsTo("api-dandi.emberarchive.org")).toEqual([]);
+  });
+
+  it("offers the dataset without asking the admin check, which answers for production", () => {
+    expect(archive.callsTo("/admin-owned/")).toEqual([]);
   });
 
   it("keeps each archive's sign-in under its own key", () => {
