@@ -501,10 +501,13 @@ test("under ?sandbox, browsing lists the sandbox's own datasets through its API 
   const SANDBOX_API = "https://api-dandi.sandbox.emberarchive.org/api";
   // Anything aimed at production is recorded and refused, so a stray read fails this spec rather
   // than reaching the real archive.
+  // Matched on the parsed origin and path rather than a string prefix, which would also match a
+  // look-alike host.
+  const productionOrigins = new Set([new URL(BUCKET).origin, new URL(API).origin]);
   const production: string[] = [];
   page.on("request", (request) => {
-    const url = request.url();
-    if (url.startsWith(BUCKET) || url.startsWith(API) || url.includes("/admin-owned/")) production.push(url);
+    const url = new URL(request.url());
+    if (productionOrigins.has(url.origin) || url.pathname.startsWith("/admin-owned/")) production.push(url.href);
   });
   await page.route(`${BUCKET}/**`, (route) => route.abort());
   await page.route(`${API}/**`, (route) => route.abort());
