@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { webcrypto } from "node:crypto";
 import { EMBER_INSTANCE } from "@brain-bbqs/ember-client";
-import { OAUTH_CLIENT_ID, OAUTH_PKCE_STORAGE_KEY, oauth } from "../../src/lib/oauth";
+import {
+  OAUTH_CLIENT_ID,
+  OAUTH_PKCE_STORAGE_KEY,
+  oauth,
+  SANDBOX_OAUTH_CLIENT_ID,
+  SANDBOX_OAUTH_PKCE_STORAGE_KEY,
+  sandboxOAuth,
+} from "../../src/lib/oauth";
 
 // jsdom's Crypto has getRandomValues but no SubtleCrypto, which the PKCE challenge needs.
 beforeEach(() => {
@@ -198,5 +205,37 @@ describe("the sign-in identity the archive knows this app by", () => {
     const tokens = { accessToken: "at", refreshToken: "rt", expiresAt: Date.now() + 61_000 };
     expect(await oauth.ensureFreshToken(tokens)).toBe(tokens);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("the sandbox sign-in (`?sandbox`)", () => {
+  it("keeps its own registered client id and pending-login key", () => {
+    expect(SANDBOX_OAUTH_CLIENT_ID).toBe("h3l5j28tbqLma0eg2tvRLkhGonI3FVYOjQXjiDla");
+    expect(SANDBOX_OAUTH_PKCE_STORAGE_KEY).toBe("clip-extractor.sandbox.oauth-pkce.v1");
+  });
+
+  it("redirects to the sandbox archive's authorize page under the sandbox client id", async () => {
+    let navigated = "";
+    await sandboxOAuth.startLogin((url) => (navigated = url));
+    const url = new URL(navigated);
+    expect(url.origin + url.pathname).toBe("https://api-dandi.sandbox.emberarchive.org/oauth/authorize/");
+    expect(url.searchParams.get("client_id")).toBe(SANDBOX_OAUTH_CLIENT_ID);
+    // The same bare page address production returns to.
+    expect(url.searchParams.get("redirect_uri")).toBe(`${window.location.origin}/`);
+    expect(sessionStorage.getItem(SANDBOX_OAUTH_PKCE_STORAGE_KEY)).not.toBe(null);
+    expect(sessionStorage.getItem(OAUTH_PKCE_STORAGE_KEY)).toBe(null);
+  });
+
+  it("refreshes and revokes against the sandbox archive", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(tokenResponse({ access_token: "at", refresh_token: "rt", expires_in: 3600 })));
+    vi.stubGlobal("fetch", fetchMock);
+    await sandboxOAuth.ensureFreshToken({ accessToken: "old", refreshToken: "rt", expiresAt: 0 });
+    await sandboxOAuth.revokeToken({ accessToken: "at", expiresAt: Date.now() });
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    expect(calls.map(([url]) => url)).toEqual([
+      "https://api-dandi.sandbox.emberarchive.org/oauth/token/",
+      "https://api-dandi.sandbox.emberarchive.org/oauth/revoke_token/",
+    ]);
+    for (const [, init] of calls) expect(new URLSearchParams(String(init.body)).get("client_id")).toBe(SANDBOX_OAUTH_CLIENT_ID);
   });
 });

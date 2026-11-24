@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.4
+
+#### 🏠 Internal
+
+- Maintainers can now try sign-in, browsing and uploads entirely against EMBER's sandbox archive, without touching anyone's real sign-in or datasets. ([#90](https://github.com/brain-bbqs/clip-extractor/pull/90))
+
 ## 1.7.3
 
 #### 🏠 Internal

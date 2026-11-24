@@ -9,6 +9,10 @@ import { isVideoAsset } from "./archives";
 // public dataset. What a signed-in visitor owns is asked of the archive's API instead, against the
 // same OAuth token the upload side already holds: which datasets they own, what is in one, and a
 // signed URL for the bytes of a chosen video.
+//
+// Under `?sandbox` this is the whole pane rather than half of it: the sandbox's datasets are in no
+// bucket this app lists, so its public datasets are read the same way (see listPublicDandisets and
+// listApiVideos), just without a token.
 
 interface DandisetOwner {
   username?: string;
@@ -28,16 +32,28 @@ const PUBLIC_LIST_PAGE_SIZE = 1000;
  * so a bucket candidate is trusted only once its identifier turns up here too.
  */
 export async function listPublicDandisetIds(cfg: ArchiveConfig, signal?: AbortSignal): Promise<Set<string>> {
+  return new Set((await listPublicDandisets(cfg, signal)).map((d) => d.id));
+}
+
+/**
+ * The same anonymous listing, as browse rows: what the pane lists in place of the bucket's
+ * candidates under `?sandbox`. Each row carries its title from the listing, so nothing is read from
+ * a manifest to name it, and names the draft, which is the version its file list is read from (see
+ * listApiVideos).
+ */
+export async function listPublicDandisets(cfg: ArchiveConfig, signal?: AbortSignal): Promise<ArchiveDandiset[]> {
   const anonymous: ArchiveConfig = { ...cfg, accessToken: "" };
-  const ids = new Set<string>();
+  const datasets: ArchiveDandiset[] = [];
   let path: string | null = `/dandisets/?page_size=${PUBLIC_LIST_PAGE_SIZE}`;
   for (let page = 0; path && page < MAX_PUBLIC_LIST_PAGES; page++) {
     if (signal?.aborted) throw new Error("Listing cancelled.");
     const body: DandisetListResponse = (await apiFetch<DandisetListResponse>(anonymous, path)) ?? {};
-    for (const d of body.results ?? []) ids.add(d.identifier);
+    for (const d of body.results ?? []) {
+      datasets.push({ id: d.identifier, version: "draft", manifestBytes: 0, embargoed: false, name: listedTitle(d) });
+    }
     path = nextPagePath(cfg, body.next);
   }
-  return ids;
+  return datasets;
 }
 
 /**
@@ -108,14 +124,19 @@ const MAX_ASSET_PAGES = 20;
 const ASSET_PAGE_SIZE = 1000;
 
 /**
- * Every video in one embargoed dataset's draft, from the API's asset listing.
+ * Every video in one dataset's draft, from the API's asset listing: an embargoed dataset's, or under
+ * `?sandbox` any dataset's (`embargoed` false, read without a token by a signed-out visitor).
  *
  * `metadata=false` keeps the response to the identifier, path and size of each asset, which is all
  * a list of videos needs; asking for each asset's full metadata would multiply the payload for
  * nothing. The listing has no `encodingFormat` either way, so what counts as video here is decided
  * by the file's own extension.
  */
-export async function listEmbargoedVideos(cfg: ArchiveConfig, dandisetId: string, signal?: AbortSignal): Promise<ArchiveVideo[]> {
+export async function listApiVideos(
+  cfg: ArchiveConfig,
+  dandisetId: string,
+  { embargoed = true, signal }: { embargoed?: boolean; signal?: AbortSignal } = {},
+): Promise<ArchiveVideo[]> {
   const videos: ArchiveVideo[] = [];
   let path: string | null = `/dandisets/${dandisetId}/versions/draft/assets/?metadata=false&page_size=${ASSET_PAGE_SIZE}`;
   for (let page = 0; path && page < MAX_ASSET_PAGES; page++) {
@@ -128,10 +149,10 @@ export async function listEmbargoedVideos(cfg: ArchiveConfig, dandisetId: string
         path: asset.path,
         size: typeof asset.size === "number" ? asset.size : null,
         // The download endpoint, which is both the citable URL for the asset and the thing that
-        // hands out a signed URL for its bytes (see resolveEmbargoedStreamUrl).
+        // hands out a signed URL for its bytes (see resolveAssetStreamUrl).
         assetUrl: `${cfg.api}/assets/${asset.asset_id}/download/`,
         streamUrl: null,
-        embargoed: true,
+        embargoed,
       });
     }
     path = nextPagePath(cfg, body.next);
@@ -152,7 +173,7 @@ export function isAssetDownloadUrl(cfg: ArchiveConfig, url: string): boolean {
 }
 
 /**
- * Turns an embargoed asset's download URL into the signed bucket URL its bytes are actually at.
+ * Turns an asset's download URL into the signed bucket URL its bytes are actually at.
  *
  * The archive answers the download endpoint with a redirect to a short-lived signed URL. The
  * browser follows that redirect itself — dropping the `Authorization` header on the way, as it
@@ -160,17 +181,19 @@ export function isAssetDownloadUrl(cfg: ArchiveConfig, url: string): boolean {
  * where it landed as `response.url`. Only the first byte is asked for, because the point of the
  * request is the address it ends at rather than anything in the body; the player opens the file
  * again from there.
+ *
+ * An embargoed asset needs the token. A public one, which only comes this way under `?sandbox`, is
+ * asked for with no `Authorization` header at all when signed out, as a real anonymous request.
  */
-export async function resolveEmbargoedStreamUrl(cfg: ArchiveConfig, assetUrl: string, signal?: AbortSignal): Promise<string> {
-  const resp = await fetch(assetUrl, {
-    headers: { Authorization: `Bearer ${cfg.accessToken}`, Range: "bytes=0-0" },
-    signal,
-  });
+export async function resolveAssetStreamUrl(cfg: ArchiveConfig, assetUrl: string, signal?: AbortSignal): Promise<string> {
+  const headers: Record<string, string> = { Range: "bytes=0-0" };
+  if (cfg.accessToken) headers.Authorization = `Bearer ${cfg.accessToken}`;
+  const resp = await fetch(assetUrl, { headers, signal });
   // Nothing reads the body; releasing it keeps the connection from being held open for a byte.
   void resp.body?.cancel().catch(() => {});
-  if (!resp.ok) throw new Error(`The archive refused to hand out this embargoed file (HTTP ${resp.status}).`);
+  if (!resp.ok) throw new Error(`The archive refused to hand out this file (HTTP ${resp.status}).`);
   if (!resp.url || resp.url === assetUrl) {
-    throw new Error("The archive did not redirect this embargoed file to a signed URL, so it cannot be streamed.");
+    throw new Error("The archive did not redirect this file to a signed URL, so it cannot be streamed.");
   }
   return resp.url;
 }

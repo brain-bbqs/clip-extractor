@@ -182,6 +182,14 @@ cannot be reached at all, the check fails closed (the dandiset is not
 offered) and the picker says so rather than reporting an empty list as "you
 have not been added to any datasets".
 
+Under `?sandbox` (testing only) the check is skipped altogether
+(`listSandboxIncomingDandisets` in `src/lib/sandbox.ts`): the service reads
+production's owner lists, so it would judge a sandbox dandiset by whichever
+production dandiset shares its identifier. Every "Incoming: " dandiset the
+signed-in account owns on the sandbox is offered instead. Since the check is
+curation rather than access control (above), that changes only what the
+picker lists, and only for uploads landing on the sandbox.
+
 ## Handling a "clear text storage" alert on a new credential
 
 1. Run the `innerHTML`/XSS check above. If it turns up a real
@@ -249,3 +257,13 @@ fix it in code.
   Redirect URIs are registered per served location (production, and any
   preview path that needs sign-in); the app computes its own redirect URI at
   runtime from `origin + pathname`.
+- `?sandbox` (testing only; see `docs/README.md`) signs in to EMBER's sandbox
+  archive with a separately registered application (`SANDBOX_OAUTH_CLIENT_ID`
+  in `src/lib/oauth.ts`) and keeps its PKCE stash and token set under their
+  own keys (`clip-extractor.sandbox.oauth-pkce.v1` in `sessionStorage`,
+  `clip-extractor.sandbox.settings.v1` in `localStorage`), so a production
+  token is never sent to the sandbox, nor a sandbox one to production. The
+  load a sandbox sign-in returns to is recognized by matching the callback's
+  `state` against the one kept under `clip-extractor.sandbox-login.v1` in
+  `sessionStorage`; the client's own `state` check before the code exchange
+  still runs as well.

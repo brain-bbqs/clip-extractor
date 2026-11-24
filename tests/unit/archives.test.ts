@@ -346,6 +346,12 @@ describe("dandisetWebUrl", () => {
   it("points at the dataset's own page in the archive", () => {
     expect(dandisetWebUrl(publicDandiset("000265"))).toBe("https://dandi.emberarchive.org/dandiset/000265/draft");
   });
+
+  it("points at another archive's web UI when given one", () => {
+    expect(dandisetWebUrl(publicDandiset("000265"), "https://dandi.sandbox.emberarchive.org")).toBe(
+      "https://dandi.sandbox.emberarchive.org/dandiset/000265/draft",
+    );
+  });
 });
 
 describe("blobIdFromBucketUrl / archiveSourceOf", () => {

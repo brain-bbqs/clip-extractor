@@ -378,7 +378,8 @@ export async function hydrateDandisetNames(
   });
 }
 
-/** The dataset's own page in the archive's web UI. */
-export function dandisetWebUrl(dandiset: ArchiveDandiset): string {
-  return `${EMBER_ARCHIVE.web}/dandiset/${dandiset.id}/${dandiset.version}`;
+/** The dataset's own page in the archive's web UI: production's by default, or `web` for another
+ * archive's (the sandbox's, under `?sandbox`). */
+export function dandisetWebUrl(dandiset: ArchiveDandiset, web: string = EMBER_ARCHIVE.web): string {
+  return `${web}/dandiset/${dandiset.id}/${dandiset.version}`;
 }
