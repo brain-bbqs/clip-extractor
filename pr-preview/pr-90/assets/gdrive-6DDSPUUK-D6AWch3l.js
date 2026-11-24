@@ -1,1 +1,0 @@
-export{i as parseGdrive}from"./index-DDl9P7us.js";
