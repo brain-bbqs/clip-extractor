@@ -249,3 +249,13 @@ fix it in code.
   Redirect URIs are registered per served location (production, and any
   preview path that needs sign-in); the app computes its own redirect URI at
   runtime from `origin + pathname`.
+- `?sandbox` (testing only; see `docs/README.md`) signs in to EMBER's sandbox
+  archive with a separately registered application (`SANDBOX_OAUTH_CLIENT_ID`
+  in `src/lib/oauth.ts`) and keeps its PKCE stash and token set under their
+  own keys (`clip-extractor.sandbox.oauth-pkce.v1` in `sessionStorage`,
+  `clip-extractor.sandbox.settings.v1` in `localStorage`), so a production
+  token is never sent to the sandbox, nor a sandbox one to production. The
+  load a sandbox sign-in returns to is recognized by matching the callback's
+  `state` against the one kept under `clip-extractor.sandbox-login.v1` in
+  `sessionStorage`; the client's own `state` check before the code exchange
+  still runs as well.

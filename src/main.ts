@@ -73,6 +73,7 @@ import { alignDenseFrames, probeNwbSeriesLength } from "./lib/nwb";
 import { paintBlurRegions, type BlurRegion } from "./lib/blur";
 import {
   containsHumanSubjects,
+  EMBER_INSTANCE,
   fetchArchiveUser,
   fetchDraftMetadata,
   listIncomingDandisets,
@@ -82,10 +83,11 @@ import {
   type IncomingDandiset,
   type OAuthTokenSet,
 } from "@brain-bbqs/ember-client";
-import { oauth } from "./lib/oauth";
+import { oauth as productionOAuth, sandboxOAuth } from "./lib/oauth";
 import { type ArchiveSource } from "./lib/archives";
 import { isAssetDownloadUrl, resolveEmbargoedStreamUrl } from "./lib/embargoed";
-import { settingsStore, THEME_KEY } from "./lib/settings";
+import { sandboxSettingsStore, settingsStore as productionSettingsStore, THEME_KEY } from "./lib/settings";
+import { EMBER_SANDBOX_INSTANCE, readSandbox, rememberSandboxLogin, takeSandboxLogin, withSandboxParam } from "./lib/sandbox";
 import {
   defaultDeliveryMode,
   deliveryDirectories,
@@ -179,6 +181,23 @@ function fakedDatasetCount(): number | null {
 /** The same for `?test&remote_listing=`, which fakes the browse pane's whole listing. */
 function fakedListingCount(): number | null {
   return testInjection?.remoteListing ?? null;
+}
+
+// ============================================================
+// `?sandbox`: sign in to, and call, EMBER's sandbox archive instead (see lib/sandbox.ts)
+// ============================================================
+// Settled before anything reads a token or the archive's address, since every one of them follows
+// it: the OAuth client, the stored settings the token lives in, and the instance each config names.
+const sandbox = readSandbox(location.search, takeSandboxLogin());
+const archiveInstance = sandbox ? EMBER_SANDBOX_INSTANCE : EMBER_INSTANCE;
+const oauth = sandbox ? sandboxOAuth : productionOAuth;
+const settingsStore = sandbox ? sandboxSettingsStore : productionSettingsStore;
+if (sandbox) {
+  // A sandbox sign-in comes back to the bare page address (see lib/sandbox.ts's SANDBOX_LOGIN_KEY),
+  // so the flag is put back in the bar here, before the callback rewrites it, for every load after.
+  const search = withSandboxParam(location.search);
+  if (search !== location.search) history.replaceState(history.state, "", `${location.pathname}${search}${location.hash}`);
+  console.info(`Sandbox mode: signing in to and calling ${archiveInstance.api} instead of production.`);
 }
 
 /** What the stage says with nothing loaded and nothing gone wrong, kept from the markup so a fresh
@@ -1989,7 +2008,7 @@ const browsePane = createBrowsePane(els, {
   appLinks: APP_LINKS,
   log,
   // Not tied to the upload destination picker: which dataset is being read is passed per call.
-  config: () => resolveConfig({ dandisetId: "", oauthAccessToken: oauthTokens?.accessToken }),
+  config: () => resolveConfig({ dandisetId: "", oauthAccessToken: oauthTokens?.accessToken }, archiveInstance),
   signedIn: () => isSignedIn(),
   hasToken: () => oauthTokens !== null,
   ensureFreshToken: () => ensureFreshOAuth(),
@@ -2170,11 +2189,14 @@ function saveSettings(): void {
 
 function currentConfig(): ArchiveConfig {
   const selected = currentDatasets.find((d) => d.identifier === els.dandisetId.value);
-  return resolveConfig({
-    dandisetId: els.dandisetId.value,
-    oauthAccessToken: oauthTokens?.accessToken,
-    embargoed: selected?.embargoed,
-  });
+  return resolveConfig(
+    {
+      dandisetId: els.dandisetId.value,
+      oauthAccessToken: oauthTokens?.accessToken,
+      embargoed: selected?.embargoed,
+    },
+    archiveInstance,
+  );
 }
 
 /**
@@ -2348,7 +2370,10 @@ bindAccountMenu(account, {
     // the clip. Written out first, since a keystroke or a nudge of a handle may still be coalesced.
     writeUrl();
     stashUrlState(location.search);
-    void oauth.startLogin();
+    void oauth.startLogin((url) => {
+      if (sandbox) rememberSandboxLogin(url);
+      window.location.assign(url);
+    });
   },
   onSignOut: () => {
     const tokens = oauthTokens;

@@ -33,6 +33,9 @@ export interface PublicArchive {
   origin: string;
   /** The archive's web UI, for linking out to a dataset's own page. */
   web: string;
+  /** The archive's REST API, which decides which of the bucket's datasets are really public (see
+   * lib/embargoed.ts's listPublicDandisetIds). Production's under `?sandbox` too: the bucket is. */
+  api: string;
 }
 
 /** EMBER's public bucket, as registered on the AWS Registry of Open Data
@@ -43,6 +46,7 @@ export const EMBER_ARCHIVE: PublicArchive = {
   bucket: "ember-open-data",
   origin: "https://ember-open-data.s3.amazonaws.com",
   web: EMBER_INSTANCE.web,
+  api: EMBER_INSTANCE.api,
 };
 
 /** Prefix every dataset manifest lives under in the bucket. */
@@ -378,7 +382,8 @@ export async function hydrateDandisetNames(
   });
 }
 
-/** The dataset's own page in the archive's web UI. */
-export function dandisetWebUrl(dandiset: ArchiveDandiset): string {
-  return `${EMBER_ARCHIVE.web}/dandiset/${dandiset.id}/${dandiset.version}`;
+/** The dataset's own page in the archive's web UI: the bucket's archive by default, or `web` for a
+ * dataset found through the signed-in archive's API instead (an embargoed one, under `?sandbox`). */
+export function dandisetWebUrl(dandiset: ArchiveDandiset, web: string = EMBER_ARCHIVE.web): string {
+  return `${web}/dandiset/${dandiset.id}/${dandiset.version}`;
 }

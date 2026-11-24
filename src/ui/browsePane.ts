@@ -6,6 +6,7 @@ import { loadCachedNames, saveCachedNames } from "../lib/archiveNames";
 import {
   canSweep,
   dandisetWebUrl,
+  EMBER_ARCHIVE,
   fetchDandisetVideos,
   hydrateDandisetNames,
   archiveSourceOf,
@@ -204,11 +205,12 @@ export function createBrowsePane(els: ClipExtractorElements, host: BrowsePaneHos
       // Three independent reads, run together; only the bucket listing is allowed to fail the whole
       // pane. `publicIds` is what actually decides which bucket candidates are shown — see
       // lib/embargoed.ts's listPublicDandisetIds for why the bucket listing alone cannot be trusted
-      // with that.
+      // with that. Asked of the bucket's own archive rather than the one signed in to, which under
+      // `?sandbox` is a different archive with different datasets behind the same identifiers.
       const [candidates, owned, publicIds] = await Promise.all([
         listManifestObjects(signal).then(indexDandisets),
         listOwnedEmbargoed(signal),
-        listPublicDandisetIds(host.config(), signal),
+        listPublicDandisetIds({ ...host.config(), api: EMBER_ARCHIVE.api, web: EMBER_ARCHIVE.web }, signal),
       ]);
       if (generation !== browseGeneration) return;
       const pub = candidates.filter((d) => publicIds.has(d.id));
@@ -445,7 +447,9 @@ export function createBrowsePane(els: ClipExtractorElements, host: BrowsePaneHos
     current.selected = dandiset.id;
     renderDandisetList();
     els.browseVideoHeading.textContent = `Videos in ${dandiset.id}`;
-    els.browseDandisetLink.href = dandisetWebUrl(dandiset);
+    // An embargoed dataset was listed by the archive signed in to, which `?sandbox` moves; a public
+    // one came out of the bucket, which it does not.
+    els.browseDandisetLink.href = dandiset.embargoed ? dandisetWebUrl(dandiset, host.config().web) : dandisetWebUrl(dandiset);
     els.browseDandisetLink.hidden = false;
     const known = current.videos.get(dandiset.id);
     if (known) {

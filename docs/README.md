@@ -88,6 +88,28 @@ video's own path is BIDS-entity-shaped (`sub-01/ses-01/…`, and up), the same s
 dandiset's own asset paths carry. It is read-only in spirit: the fake video URLs resolve nowhere real,
 so clicking a row shows the ordinary "cannot be opened" refusal.
 
+## Sandbox archive
+
+`?sandbox` points sign-in and every EMBER API call at EMBER's sandbox archive
+(`https://api-dandi.sandbox.emberarchive.org`, web UI `https://dandi.sandbox.emberarchive.org`)
+instead of production, so sign-in, the upload destination list and uploads can be tried end to end
+without real datasets on the other end. It is for testing only, and combines with anything else in the
+address, `?test` injections included. Unlike those, it is not fake: uploads under it really land in
+the sandbox.
+
+- **Its own sign-in.** It uses clip-extractor's separate OAuth application on the sandbox, and keeps
+  that sign-in (and the dataset picked there) under its own storage keys (see `src/lib/sandbox.ts`).
+  The first `?sandbox` load therefore starts signed out; a production token is never sent to the
+  sandbox, and dropping the flag finds the production session as it was.
+- **It survives signing in.** The archive returns to the bare page address, so the returning load is
+  recognized as a sandbox sign-in by its OAuth `state`, and `?sandbox` is put back in the address.
+  Every location the app is served from has to be registered as a redirect URI on the sandbox
+  application too, separately from production.
+- **What does not move.** The browse pane's public listing still comes from production's open-data
+  bucket (only your own embargoed datasets come from the sandbox), and the upload destination list
+  still asks the BBQS/EMBER admin-check service, which answers for production's datasets, whether each
+  "Incoming: " dataset is admin-owned.
+
 ## Daily live checks
 
 `npm run test:live` checks that EMBER still answers the way the deployed site reads it. It runs the

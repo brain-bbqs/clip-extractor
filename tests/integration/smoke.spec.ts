@@ -250,3 +250,13 @@ test("sign-in button starts the EMBER OAuth redirect", async ({ page }) => {
   expect(url.searchParams.get("code_challenge_method")).toBe("S256");
   expect(url.searchParams.get("response_type")).toBe("code");
 });
+
+test("under ?sandbox, sign-in leaves for the sandbox archive under its own client id", async ({ page }) => {
+  await page.goto("/?sandbox");
+  await page.route("https://api-dandi.sandbox.emberarchive.org/**", (route) => route.fulfill({ body: "" }));
+  await page.locator("#oauthSigninBtn").click();
+  await page.waitForURL(/api-dandi\.sandbox\.emberarchive\.org\/oauth\/authorize\//);
+  const url = new URL(page.url());
+  expect(url.searchParams.get("client_id")).toBe("h3l5j28tbqLma0eg2tvRLkhGonI3FVYOjQXjiDla");
+  expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+});
